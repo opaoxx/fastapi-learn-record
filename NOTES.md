@@ -8,3 +8,4 @@
 - The learner wants future course updates in two-lesson batches when feasible, while keeping each lesson readable for complete beginners.
 - The codebase has now moved from a single-file FastAPI app to a multi-file structure using APIRouter and dependency classes.
 - The items endpoints now use SQLite and SQLModel instead of the earlier in-memory dictionary. Keep explaining persistence, sessions, commit, and refresh slowly.
+- The items API now has full CRUD plus pytest coverage for create/update/delete and invalid update validation.

@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0010 - API Testing with TestClient</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0010</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0009-update-delete-crud.html">上一课</a>
+        <a href="../reference/0010-api-testing-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0010</p>
+      <h1>自动化测试：用 TestClient 证明 API 没坏</h1>
+      <p class="lead">手动点 <code>/docs</code> 很适合学习，但真实项目不能每次改代码都靠人肉测试。本节学习用 pytest 和 TestClient 自动验证接口行为。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解为什么后端项目需要自动化测试。</li>
+        <li>理解 TestClient 像一个“代码里的浏览器/HTTP 客户端”。</li>
+        <li>看懂如何用 <code>app.dependency_overrides</code> 替换数据库依赖。</li>
+        <li>能运行 <code>python -m pytest -q</code> 并读懂通过/失败结果。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 为什么需要测试</h2>
+      <p>当接口只有一个时，手动点一下就够了。但现在项目已经有创建、读取、更新、删除、数据库、依赖注入。每次改代码都手动检查全部接口，很容易漏掉。</p>
+      <p>自动化测试的价值是：把“这个接口应该怎样工作”写成代码。以后你改任何地方，只要跑测试，就能快速知道核心行为有没有坏。</p>
+      <div class="callout">
+        <p><strong>求职项目视角：</strong>有测试的后端项目会显得更专业，因为它不仅能跑，还能自证关键路径可靠。</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. TestClient 是什么</h2>
+      <p>FastAPI 官方文档推荐用 <code>TestClient</code> 测试应用。它让你不用真的打开浏览器，也不用启动独立服务器，就能向 app 发请求。</p>
+      <pre><code>from fastapi.testclient import TestClient
+from first_api.main import app
+
+with TestClient(app) as client:
+    response = client.get("/health")
+    assert response.status_code == 200</code></pre>
+      <p><code>client.get</code>、<code>client.post</code>、<code>client.patch</code>、<code>client.delete</code> 的使用方式很像真实 HTTP 客户端。</p>
+    </section>
+
+    <section>
+      <h2>3. 测试为什么不能直接用正式数据库</h2>
+      <p>如果测试直接使用 <code>first_api.db</code>，会有几个问题：</p>
+      <ul>
+        <li>测试会污染你的本地开发数据。</li>
+        <li>不同测试之间可能互相影响。</li>
+        <li>测试结果会依赖你机器上数据库当前有什么数据。</li>
+      </ul>
+      <p>所以第 10 课用了一个临时内存 SQLite 数据库，并通过依赖覆盖把正式 <code>get_session</code> 换掉。</p>
+    </section>
+
+    <section>
+      <h2>4. 依赖覆盖：dependency_overrides</h2>
+      <pre><code>app.dependency_overrides[get_session] = override_get_session</code></pre>
+      <p>FastAPI 官方文档说明，测试时可以用 <code>app.dependency_overrides</code> 替换原依赖。这里的意思是：当接口里写 <code>Depends(get_session)</code> 时，测试期间不要调用正式数据库 session，而是调用我们提供的测试 session。</p>
+      <p>这也是第 6 课 Depends 的延伸：依赖抽得越清楚，测试时越容易替换。</p>
+    </section>
+
+    <section>
+      <h2>5. 测试数据库怎么创建</h2>
+      <pre><code>engine = create_engine(
+    "sqlite://",
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
+SQLModel.metadata.create_all(engine)</code></pre>
+      <p><code>sqlite://</code> 表示内存数据库。<code>StaticPool</code> 让测试过程中复用同一个连接，否则内存数据库可能在不同连接之间丢失表和数据。</p>
+      <p>测试启动时创建表，再插入两条种子商品，保证每次测试都有稳定起点。</p>
+    </section>
+
+    <section>
+      <h2>6. 测试完整 CRUD</h2>
+      <pre><code>created = client.post("/items", json={...})
+assert created.status_code == 201
+item_id = created.json()["id"]
+
+updated = client.patch(f"/items/{item_id}", json={"price": 18.0})
+assert updated.status_code == 200
+assert updated.json()["price"] == 18.0
+
+deleted = client.delete(f"/items/{item_id}")
+assert deleted.status_code == 204
+
+missing = client.get(f"/items/{item_id}")
+assert missing.status_code == 404</code></pre>
+      <p>这不是随便测几个状态码，而是在验证一个完整用户故事：创建一个商品，更新它，删除它，再确认它已经不存在。</p>
+    </section>
+
+    <section>
+      <h2>7. 测试非法输入</h2>
+      <pre><code>response = client.patch("/items/1", json={"price": -1})
+assert response.status_code == 422</code></pre>
+      <p>这条测试证明 Pydantic/SQLModel 的校验仍然有效。接口不仅要能处理正确请求，也要能拒绝错误请求。</p>
+    </section>
+
+    <section>
+      <h2>8. 运行测试</h2>
+      <pre><code>.\.venv\Scripts\Activate.ps1
+python -m pytest -q</code></pre>
+      <p>如果看到类似：</p>
+      <pre><code>2 passed</code></pre>
+      <p>说明当前测试全部通过。如果看到 <code>FAILED</code>，就要看失败的 assert 和错误堆栈，定位是接口行为变了，还是测试预期写错了。</p>
+    </section>
+
+    <section class="practice">
+      <h2>9. 课堂练习</h2>
+      <p>请你新增一个测试：创建商品时传 <code>"price": -1</code>，断言返回 <code>422</code>。</p>
+      <p>完成标准：运行 <code>python -m pytest -q</code> 后所有测试通过。</p>
+    </section>
+
+    <section class="checkpoint">
+      <h2>10. 小测：先回忆再展开</h2>
+      <details>
+        <summary>1. TestClient 的作用是什么？</summary>
+        <p class="answer">它让测试代码像 HTTP 客户端一样向 FastAPI app 发请求，并检查响应。</p>
+      </details>
+      <details>
+        <summary>2. 为什么测试要覆盖 <code>get_session</code>？</summary>
+        <p class="answer">为了让测试使用独立测试数据库，避免污染或依赖正式开发数据库。</p>
+      </details>
+      <details>
+        <summary>3. <code>assert response.status_code == 422</code> 在证明什么？</summary>
+        <p class="answer">它证明非法输入被接口模型拦住，没有进入正常业务流程。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>11. 本节总结</h2>
+      <p>自动化测试把接口预期写成代码。<code>TestClient</code> 负责发请求，<code>pytest</code> 负责发现和运行测试，<code>dependency_overrides</code> 让测试可以替换真实依赖。对后端和 AI 服务来说，这都是工程可靠性的基础。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/testing/">FastAPI Testing</a>、<a href="https://fastapi.tiangolo.com/advanced/testing-dependencies/">FastAPI Testing Dependencies with Overrides</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0009-update-delete-crud.html">上一课：更新和删除</a>
+        <a href="../reference/0010-api-testing-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

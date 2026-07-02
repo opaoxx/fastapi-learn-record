@@ -5,7 +5,7 @@ from sqlmodel import Session, select
 
 from ..database import get_session
 from ..dependencies import ItemFilters, Pagination
-from ..schemas import Item, ItemCreate, ItemRead
+from ..schemas import Item, ItemCreate, ItemRead, ItemUpdate
 
 
 router = APIRouter(prefix="/items", tags=["items"])
@@ -54,3 +54,34 @@ def create_item(
     session.commit()
     session.refresh(item)
     return item
+
+
+@router.patch("/{item_id}", response_model=ItemRead)
+def update_item(
+    item_id: Annotated[int, Path(ge=1, description="The numeric ID of the item.")],
+    payload: ItemUpdate,
+    session: Annotated[Session, Depends(get_session)],
+) -> Item:
+    item = session.get(Item, item_id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Item {item_id} was not found.")
+
+    update_data = payload.model_dump(exclude_unset=True)
+    item.sqlmodel_update(update_data)
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+    return item
+
+
+@router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_item(
+    item_id: Annotated[int, Path(ge=1, description="The numeric ID of the item.")],
+    session: Annotated[Session, Depends(get_session)],
+) -> None:
+    item = session.get(Item, item_id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Item {item_id} was not found.")
+
+    session.delete(item)
+    session.commit()

@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0009 - Update and Delete CRUD</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0009</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0008-database-session-crud.html">上一课</a>
+        <a href="./0010-api-testing-testclient.html">下一课</a>
+        <a href="../reference/0009-update-delete-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0009</p>
+      <h1>更新和删除：补齐 CRUD 闭环</h1>
+      <p class="lead">前面已经会创建和读取数据库记录。本节补上更新和删除，形成完整 CRUD：Create、Read、Update、Delete。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解 CRUD 四个动作和 HTTP 方法的对应关系。</li>
+        <li>理解为什么部分更新通常用 <code>PATCH</code>。</li>
+        <li>看懂 <code>ItemUpdate</code> 为什么所有字段都是可选的。</li>
+        <li>掌握 <code>exclude_unset</code>、<code>sqlmodel_update</code>、<code>delete</code> 的作用。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. CRUD 是什么</h2>
+      <p>CRUD 是后端最基础的数据操作模型：</p>
+      <ul>
+        <li><strong>Create</strong>：创建资源，例如 <code>POST /items</code>。</li>
+        <li><strong>Read</strong>：读取资源，例如 <code>GET /items</code>、<code>GET /items/{item_id}</code>。</li>
+        <li><strong>Update</strong>：更新资源，例如 <code>PATCH /items/{item_id}</code>。</li>
+        <li><strong>Delete</strong>：删除资源，例如 <code>DELETE /items/{item_id}</code>。</li>
+      </ul>
+      <p>求职项目里，只要你能把一个资源完整做出 CRUD，就已经具备了普通后端接口的主干能力。</p>
+    </section>
+
+    <section>
+      <h2>2. PUT 和 PATCH 的区别</h2>
+      <p>更新接口常见两种方法：</p>
+      <ul>
+        <li><code>PUT</code>：更偏向“整体替换”，客户端通常要提交完整资源。</li>
+        <li><code>PATCH</code>：更偏向“部分更新”，客户端只提交要改的字段。</li>
+      </ul>
+      <p>本项目使用 <code>PATCH</code>，因为新手最容易理解：只想改价格，就只传价格；只想改库存，就只传库存。</p>
+    </section>
+
+    <section>
+      <h2>3. ItemUpdate 模型</h2>
+      <pre><code>class ItemUpdate(SQLModel):
+    name: str | None = Field(default=None, min_length=2, max_length=80)
+    category: ItemCategory | None = None
+    price: float | None = Field(default=None, ge=0)
+    in_stock: bool | None = None</code></pre>
+      <p>这里所有字段都是可选的，因为 <code>PATCH</code> 支持部分更新。客户端可以只传：</p>
+      <pre><code>{
+  "price": 18.0
+}</code></pre>
+      <p>但可选不等于随便传。比如 <code>price</code> 如果传了，就必须大于等于 0；<code>category</code> 如果传了，就必须是 <code>book</code>、<code>course</code> 或 <code>tool</code>。</p>
+    </section>
+
+    <section>
+      <h2>4. 更新接口逐行讲解</h2>
+      <pre><code>@router.patch("/{item_id}", response_model=ItemRead)
+def update_item(
+    item_id: Annotated[int, Path(ge=1)],
+    payload: ItemUpdate,
+    session: Annotated[Session, Depends(get_session)],
+) -&gt; Item:
+    item = session.get(Item, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"Item {item_id} was not found.")
+
+    update_data = payload.model_dump(exclude_unset=True)
+    item.sqlmodel_update(update_data)
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+    return item</code></pre>
+      <p>关键点：</p>
+      <ul>
+        <li><code>session.get(Item, item_id)</code>：先找到要更新的记录。</li>
+        <li><code>exclude_unset=True</code>：只取客户端真的传了的字段。</li>
+        <li><code>sqlmodel_update</code>：把更新字段写回数据库对象。</li>
+        <li><code>commit</code>：保存改动。</li>
+        <li><code>refresh</code>：刷新对象，返回最新数据。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>5. 删除接口逐行讲解</h2>
+      <pre><code>@router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_item(
+    item_id: Annotated[int, Path(ge=1)],
+    session: Annotated[Session, Depends(get_session)],
+) -&gt; None:
+    item = session.get(Item, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"Item {item_id} was not found.")
+
+    session.delete(item)
+    session.commit()</code></pre>
+      <p><code>204 No Content</code> 表示删除成功，但响应体为空。这是删除接口很常见的设计：客户端只需要知道删除成功，不一定需要服务器再返回被删除的对象。</p>
+    </section>
+
+    <section>
+      <h2>6. 实验：更新一条记录</h2>
+      <p>先创建一个商品，再更新它：</p>
+      <pre><code>POST /items
+{
+  "name": "Patch Practice Item",
+  "category": "tool",
+  "price": 10,
+  "in_stock": true
+}
+
+PATCH /items/{new_id}
+{
+  "price": 12.5,
+  "in_stock": false
+}</code></pre>
+      <p>你应该看到名称和分类保持不变，价格和库存发生变化。</p>
+    </section>
+
+    <section>
+      <h2>7. 实验：删除一条记录</h2>
+      <pre><code>DELETE /items/{new_id}
+GET /items/{new_id}</code></pre>
+      <p>删除请求应该返回 <code>204</code>。再次读取同一个 ID 应该返回 <code>404</code>，因为这个资源已经不存在。</p>
+    </section>
+
+    <section class="practice">
+      <h2>8. 课堂练习</h2>
+      <p>请你完成：</p>
+      <ol>
+        <li>创建一个 <code>category="course"</code> 的商品。</li>
+        <li>只用 <code>PATCH</code> 修改它的 <code>name</code>。</li>
+        <li>只用 <code>PATCH</code> 修改它的 <code>price</code>。</li>
+        <li>删除它，并解释为什么后续读取是 <code>404</code>。</li>
+      </ol>
+    </section>
+
+    <section class="checkpoint">
+      <h2>9. 小测：先回忆再展开</h2>
+      <details>
+        <summary>1. 为什么 <code>ItemUpdate</code> 的字段都是可选的？</summary>
+        <p class="answer">因为 <code>PATCH</code> 是部分更新，客户端只需要提交想改的字段。</p>
+      </details>
+      <details>
+        <summary>2. <code>exclude_unset=True</code> 避免了什么问题？</summary>
+        <p class="answer">它避免未传字段被当作 <code>None</code> 写回数据库，导致原数据被误清空。</p>
+      </details>
+      <details>
+        <summary>3. 删除成功为什么返回 <code>204</code>？</summary>
+        <p class="answer">因为 <code>204 No Content</code> 表示操作成功，但服务器没有响应体要返回。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>10. 本节总结</h2>
+      <p>现在 <code>items</code> 已经具备完整 CRUD。<code>PATCH</code> 用于部分更新，<code>DELETE</code> 用于删除资源。更新时先查、再改、再提交；删除时先查、再删、再提交。下一节会用自动化测试证明这些接口真的按预期工作。</p>
+      <p>推荐主资源：<a href="https://sqlmodel.tiangolo.com/tutorial/fastapi/update/">SQLModel Update Data with FastAPI</a>、<a href="https://sqlmodel.tiangolo.com/tutorial/fastapi/delete/">SQLModel Delete Data with FastAPI</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0008-database-session-crud.html">上一课：数据库 Session 和 CRUD</a>
+        <a href="./0010-api-testing-testclient.html">下一课：自动化测试</a>
+        <a href="../reference/0009-update-delete-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

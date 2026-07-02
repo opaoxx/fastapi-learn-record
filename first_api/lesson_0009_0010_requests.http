@@ -1,0 +1,25 @@
+### Lesson 0009: create an item to update
+POST http://127.0.0.1:8000/items
+Content-Type: application/json
+
+{
+  "name": "Patch Practice Item",
+  "category": "tool",
+  "price": 10,
+  "in_stock": true
+}
+
+### Lesson 0009: partially update the item
+PATCH http://127.0.0.1:8000/items/4
+Content-Type: application/json
+
+{
+  "price": 12.5,
+  "in_stock": false
+}
+
+### Lesson 0009: delete the item
+DELETE http://127.0.0.1:8000/items/4
+
+### Lesson 0010: run tests from PowerShell
+# python -m pytest -q

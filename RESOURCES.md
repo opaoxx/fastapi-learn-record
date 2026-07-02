@@ -34,6 +34,14 @@
   Official guide to dependencies that clean up resources. Use when teaching database session dependencies.
 - [SQLModel Simple Hero API](https://sqlmodel.tiangolo.com/tutorial/fastapi/simple-hero-api/)
   Official SQLModel FastAPI tutorial. Use when reinforcing table models and database-backed API endpoints.
+- [SQLModel Update Data with FastAPI](https://sqlmodel.tiangolo.com/tutorial/fastapi/update/)
+  Official SQLModel update tutorial. Use when teaching PATCH-style partial updates and update models.
+- [SQLModel Delete Data with FastAPI](https://sqlmodel.tiangolo.com/tutorial/fastapi/delete/)
+  Official SQLModel delete tutorial. Use when teaching DELETE endpoints and 204 responses.
+- [FastAPI Testing](https://fastapi.tiangolo.com/tutorial/testing/)
+  Official guide to TestClient and pytest. Use when teaching automated API tests.
+- [FastAPI Testing Dependencies with Overrides](https://fastapi.tiangolo.com/advanced/testing-dependencies/)
+  Official guide to app.dependency_overrides. Use when teaching test databases, mocked services, and replacing dependencies.
 - [Uvicorn Documentation](https://uvicorn.dev/)
   ASGI server documentation. Use when learning what actually runs the FastAPI app locally or in production.
 

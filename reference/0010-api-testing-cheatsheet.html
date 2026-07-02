@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>API Testing with TestClient Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0010</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0010-api-testing-testclient.html">回到第 10 课</a>
+        <a href="./0009-update-delete-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0010</p>
+      <h1>API 自动化测试速查</h1>
+      <p class="lead">TestClient 发请求，pytest 跑测试，dependency_overrides 替换依赖。</p>
+    </header>
+
+    <h2>最小测试</h2>
+    <pre><code>with TestClient(app) as client:
+    response = client.get("/health")
+    assert response.status_code == 200</code></pre>
+
+    <h2>依赖覆盖</h2>
+    <pre><code>app.dependency_overrides[get_session] = override_get_session</code></pre>
+
+    <h2>运行测试</h2>
+    <pre><code>python -m pytest -q</code></pre>
+
+    <h2>常测内容</h2>
+    <ul>
+      <li>成功路径：<code>200</code>、<code>201</code>、<code>204</code>。</li>
+      <li>业务错误：<code>404</code>。</li>
+      <li>校验错误：<code>422</code>。</li>
+      <li>响应 JSON 的关键字段。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/testing/">FastAPI Testing</a>、
+      <a href="https://fastapi.tiangolo.com/advanced/testing-dependencies/">FastAPI Testing Dependencies with Overrides</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0010-api-testing-testclient.html">回到第 10 课</a>
+        <a href="./0009-update-delete-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

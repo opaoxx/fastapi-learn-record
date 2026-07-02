@@ -47,5 +47,12 @@ class ItemCreate(ItemBase):
     in_stock: bool = True
 
 
+class ItemUpdate(SQLModel):
+    name: str | None = Field(default=None, min_length=2, max_length=80)
+    category: ItemCategory | None = None
+    price: float | None = Field(default=None, ge=0)
+    in_stock: bool | None = None
+
+
 class ItemRead(ItemBase):
     id: int
