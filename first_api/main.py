@@ -28,7 +28,7 @@ class PredictionResponse(BaseModel):
 
 @app.get("/")
 def read_root() -> dict[str, str]:
-    return {"message": "Hello FastAPI"}
+    return {"message": "Hello FastAPI,and hello world"}
 
 
 @app.get("/health", response_model=HealthResponse)
