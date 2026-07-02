@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0006 - Dependencies and Depends</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0006</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0005-project-structure-apirouter.html">上一课</a>
+        <a href="../reference/0006-dependencies-depends-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0006</p>
+      <h1>Depends 依赖注入：把重复参数和公共逻辑交给 FastAPI</h1>
+      <p class="lead">本节学习 FastAPI 非常重要的机制：依赖注入。先别被名字吓到，它本质上是“路径函数声明自己需要什么，FastAPI 自动帮它准备好”。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解依赖注入要解决的核心问题：重复逻辑和公共资源。</li>
+        <li>理解 <code>Depends</code> 的执行流程。</li>
+        <li>看懂类依赖 <code>ItemFilters</code> 和 <code>Pagination</code>。</li>
+        <li>知道依赖注入未来如何服务数据库连接、鉴权和 AI 模型客户端。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 背景问题：查询参数越来越多怎么办</h2>
+      <p>第 3 课里，<code>list_items</code> 直接写了很多查询参数：</p>
+      <pre><code>def list_items(
+    q: str | None = None,
+    category: ItemCategory | None = None,
+    max_price: float | None = None,
+    in_stock: bool | None = None,
+) -&gt; list[Item]:
+    ...</code></pre>
+      <p>接口少的时候没问题。但如果多个接口都需要 <code>q</code>、<code>category</code>、分页参数、用户信息、数据库连接，每个函数都重复写一遍，代码会膨胀。</p>
+      <p>依赖注入就是为了解决这类问题：把公共准备工作放到一个“依赖”里，路径函数只声明自己需要它。</p>
+    </section>
+
+    <section>
+      <h2>2. Depends 的核心思想</h2>
+      <p>FastAPI 官方文档说，依赖注入表示路径操作函数可以声明自己运行所需的依赖，然后 FastAPI 负责提供这些依赖。</p>
+      <p>你可以把流程理解成：</p>
+      <pre><code>请求进入
+  |
+  v
+FastAPI 看到 Depends(...)
+  |
+  v
+先执行依赖函数或依赖类
+  |
+  v
+把依赖返回值注入到路径函数参数里
+  |
+  v
+执行真正的路径函数</code></pre>
+      <p>所以 <code>Depends</code> 不是装饰器，也不是魔法变量。它是告诉 FastAPI：“这个参数不要直接从请求体拿，而是先运行这个可调用对象来得到”。</p>
+    </section>
+
+    <section>
+      <h2>3. 本项目的依赖：筛选条件</h2>
+      <p><code>first_api/dependencies.py</code> 里有一个类依赖：</p>
+      <pre><code>class ItemFilters:
+    def __init__(
+        self,
+        q: Annotated[str | None, Query(max_length=40)] = None,
+        category: ItemCategory | None = None,
+        max_price: Annotated[float | None, Query(ge=0)] = None,
+        in_stock: bool | None = None,
+    ) -&gt; None:
+        self.q = q
+        self.category = category
+        self.max_price = max_price
+        self.in_stock = in_stock</code></pre>
+      <p>类也可以作为依赖，因为 Python 类是可调用对象。FastAPI 会像处理路径函数一样分析 <code>__init__</code> 的参数，从查询字符串里取值、做校验，然后创建一个 <code>ItemFilters</code> 对象。</p>
+      <p>这样，筛选参数被收纳到一个对象里，路径函数就不用散着接收四五个参数了。</p>
+    </section>
+
+    <section>
+      <h2>4. 本项目的依赖：分页参数</h2>
+      <pre><code>class Pagination:
+    def __init__(
+        self,
+        skip: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=50)] = 10,
+    ) -&gt; None:
+        self.skip = skip
+        self.limit = limit</code></pre>
+      <p><code>skip</code> 表示跳过多少条，<code>limit</code> 表示最多返回多少条。它们也是后端列表接口很常见的分页参数。</p>
+      <ul>
+        <li><code>skip=0</code>：默认从第 0 条开始。</li>
+        <li><code>limit=10</code>：默认最多返回 10 条。</li>
+        <li><code>Query(ge=0)</code>：不能跳过负数条。</li>
+        <li><code>Query(ge=1, le=50)</code>：每次至少返回 1 条，最多返回 50 条。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>5. 路径函数怎么使用依赖</h2>
+      <pre><code>@router.get("", response_model=list[Item])
+def list_items(
+    filters: Annotated[ItemFilters, Depends(ItemFilters)],
+    pagination: Annotated[Pagination, Depends(Pagination)],
+) -&gt; list[Item]:
+    results = list(ITEMS.values())
+    ...
+    return results[pagination.skip : pagination.skip + pagination.limit]</code></pre>
+      <p>这段签名的意思是：</p>
+      <ul>
+        <li><code>filters</code> 参数由 <code>ItemFilters</code> 这个依赖创建。</li>
+        <li><code>pagination</code> 参数由 <code>Pagination</code> 这个依赖创建。</li>
+        <li>路径函数内部使用 <code>filters.q</code>、<code>pagination.limit</code> 这种对象属性。</li>
+      </ul>
+      <p>写成依赖后，未来如果另一个接口也需要同样的筛选或分页逻辑，可以直接复用这些类。</p>
+    </section>
+
+    <section>
+      <h2>6. 为什么 AI 服务也会大量用 Depends</h2>
+      <p>依赖注入在 AI 服务里非常常见。以后你可能会用它准备：</p>
+      <ul>
+        <li>数据库会话：每个请求拿一个数据库连接，用完释放。</li>
+        <li>当前用户：从 token 里解析用户身份。</li>
+        <li>权限检查：判断用户能不能调用某个接口。</li>
+        <li>模型客户端：创建 OpenAI、向量数据库或本地推理服务客户端。</li>
+        <li>公共参数：分页、排序、trace id、请求来源等。</li>
+      </ul>
+      <div class="callout">
+        <p><strong>提前建立直觉：</strong>路径函数应该专注业务逻辑，公共准备工作交给依赖。</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>7. 实验：分页和筛选一起用</h2>
+      <p>在 <code>/docs</code> 里测试：</p>
+      <pre><code>GET /items?skip=0&amp;limit=2
+GET /items?skip=1&amp;limit=2
+GET /items?category=course&amp;skip=0&amp;limit=10
+GET /items?limit=0
+GET /items?limit=100</code></pre>
+      <p>前 3 个请求应该成功，后 2 个请求应该返回 <code>422</code>，因为 <code>limit</code> 不满足 <code>ge=1</code> 或 <code>le=50</code>。</p>
+    </section>
+
+    <section class="practice">
+      <h2>8. 课堂练习</h2>
+      <p>请你完成两个小任务：</p>
+      <ol>
+        <li>用 <code>GET /items?in_stock=true&amp;limit=1</code> 查询库存商品的第一页。</li>
+        <li>打开 <code>first_api/dependencies.py</code>，把 <code>limit</code> 的最大值从 <code>50</code> 改成 <code>20</code>，重启服务后测试 <code>limit=30</code>。</li>
+      </ol>
+      <p>完成标准：你能解释为什么修改依赖类会影响使用它的接口。</p>
+    </section>
+
+    <section class="checkpoint">
+      <h2>9. 小测：先回忆再展开</h2>
+      <details>
+        <summary>1. <code>Depends</code> 解决的核心问题是什么？</summary>
+        <p class="answer">它把公共准备逻辑抽出来，让路径函数声明自己需要什么，由 FastAPI 自动执行并注入。</p>
+      </details>
+      <details>
+        <summary>2. 类为什么也能作为依赖？</summary>
+        <p class="answer">因为 Python 类是可调用对象，FastAPI 可以分析它的 <code>__init__</code> 参数并创建实例。</p>
+      </details>
+      <details>
+        <summary>3. 依赖注入未来和数据库有什么关系？</summary>
+        <p class="answer">可以用依赖为每个请求创建数据库会话，并在请求结束后统一清理。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>10. 本节总结</h2>
+      <p><code>Depends</code> 是 FastAPI 的自动装配机制。你声明路径函数需要 <code>ItemFilters</code> 和 <code>Pagination</code>，FastAPI 就负责从请求中解析参数、校验、创建对象并传入函数。掌握它之后，数据库、鉴权、AI 客户端都会更容易理解。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/dependencies/">FastAPI Dependencies</a>、<a href="https://fastapi.tiangolo.com/tutorial/dependencies/classes-as-dependencies/">FastAPI Classes as Dependencies</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0005-project-structure-apirouter.html">上一课：项目结构和 APIRouter</a>
+        <a href="../reference/0006-dependencies-depends-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

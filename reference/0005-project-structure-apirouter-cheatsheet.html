@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FastAPI Project Structure and APIRouter Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0005</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0005-project-structure-apirouter.html">回到第 5 课</a>
+        <a href="./0004-response-errors-cheatsheet.html">上一张速查</a>
+        <a href="./0006-dependencies-depends-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0005</p>
+      <h1>项目结构和 APIRouter 速查</h1>
+      <p class="lead"><code>main.py</code> 负责组装应用，router 文件负责声明接口。</p>
+    </header>
+
+    <h2>推荐结构</h2>
+    <pre><code>first_api/
+  main.py
+  schemas.py
+  store.py
+  dependencies.py
+  routers/
+    system.py
+    items.py
+    predictions.py</code></pre>
+
+    <h2>创建 router</h2>
+    <pre><code>router = APIRouter(prefix="/items", tags=["items"])
+
+@router.get("")
+def list_items():
+    ...</code></pre>
+
+    <h2>挂载 router</h2>
+    <pre><code>app.include_router(items.router)</code></pre>
+
+    <h2>职责划分</h2>
+    <ul>
+      <li><code>schemas.py</code>: Pydantic 模型。</li>
+      <li><code>store.py</code>: 临时数据和数据访问函数。</li>
+      <li><code>dependencies.py</code>: 可复用依赖。</li>
+      <li><code>routers/</code>: 按业务领域拆分接口。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/bigger-applications/">FastAPI Bigger Applications</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0005-project-structure-apirouter.html">回到第 5 课</a>
+        <a href="./0006-dependencies-depends-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

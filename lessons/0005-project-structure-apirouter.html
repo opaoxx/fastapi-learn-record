@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0005 - Project Structure and APIRouter</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0005</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0004-response-models-and-errors.html">上一课</a>
+        <a href="./0006-dependencies-depends.html">下一课</a>
+        <a href="../reference/0005-project-structure-apirouter-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0005</p>
+      <h1>项目结构和 APIRouter：让 main.py 变薄</h1>
+      <p class="lead">前几节课把所有代码写在 <code>main.py</code> 里，这是入门时最直观的方式。但真实项目会不断增长，如果不拆分，代码很快会变成难维护的一大坨。本节学习 FastAPI 官方推荐的大项目拆分方式：<code>APIRouter</code>。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解为什么后端项目需要按职责拆分文件。</li>
+        <li>理解 <code>APIRouter</code> 是“接口分组器”，不是一个新的 app。</li>
+        <li>看懂当前项目拆分后的目录结构。</li>
+        <li>知道 <code>main.py</code> 应该主要负责创建应用和挂载路由。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 背景问题：为什么不能一直写在 main.py</h2>
+      <p>如果只有 3 个接口，所有代码放在 <code>main.py</code> 里没问题。但当项目发展到登录、用户、商品、订单、AI 推理、任务队列、文件上传时，一个文件会同时包含模型、数据、业务逻辑、路由和错误处理。</p>
+      <p>这种代码会有几个问题：</p>
+      <ul>
+        <li>查找困难：想改商品接口，却要在几百行代码里搜索。</li>
+        <li>职责混乱：模型、数据和接口函数互相挤在一起。</li>
+        <li>协作困难：多人同时改一个大文件，很容易冲突。</li>
+        <li>测试困难：想测试一个模块时，很难单独拿出来。</li>
+      </ul>
+      <div class="callout">
+        <p><strong>工程原则：</strong>文件拆分不是为了显得高级，而是为了让每个文件只承担清晰的职责。</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. 当前项目结构</h2>
+      <p>这节课已经把示例项目拆成了下面这样：</p>
+      <pre><code>first_api/
+  main.py
+  schemas.py
+  store.py
+  dependencies.py
+  routers/
+    __init__.py
+    system.py
+    items.py
+    predictions.py</code></pre>
+      <p>每个文件的职责是：</p>
+      <ul>
+        <li><code>main.py</code>：创建 <code>FastAPI()</code> 应用，并挂载所有 router。</li>
+        <li><code>schemas.py</code>：放 Pydantic 模型，例如 <code>Item</code>、<code>PredictionRequest</code>。</li>
+        <li><code>store.py</code>：放临时内存数据和数据查询函数。</li>
+        <li><code>dependencies.py</code>：放可复用的依赖逻辑，第 6 课会重点讲。</li>
+        <li><code>routers/items.py</code>：放商品相关接口。</li>
+        <li><code>routers/predictions.py</code>：放 AI 预测相关接口。</li>
+        <li><code>routers/system.py</code>：放根接口、健康检查这类系统接口。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>3. APIRouter 是什么</h2>
+      <p><code>APIRouter</code> 可以理解成“一组接口的收纳盒”。你先在某个模块里创建 router，把相关接口挂到这个 router 上，再在 <code>main.py</code> 里统一挂载。</p>
+      <pre><code>from fastapi import APIRouter
+
+router = APIRouter(prefix="/items", tags=["items"])
+
+@router.get("")
+def list_items():
+    ...</code></pre>
+      <p>注意这里用的是 <code>@router.get</code>，不是 <code>@app.get</code>。原因是这个文件不直接创建总应用，它只声明“商品模块有哪些接口”。</p>
+      <p><code>prefix="/items"</code> 表示这个 router 下的接口统一以 <code>/items</code> 开头。这样 <code>@router.get("")</code> 最终就是 <code>GET /items</code>，<code>@router.get("/{item_id}")</code> 最终就是 <code>GET /items/{item_id}</code>。</p>
+    </section>
+
+    <section>
+      <h2>4. main.py 现在做什么</h2>
+      <p>拆分后，<code>main.py</code> 变得很薄：</p>
+      <pre><code>from fastapi import FastAPI
+
+from .routers import items, predictions, system
+
+app = FastAPI(
+    title="First FastAPI API",
+    description="A tiny learning API for backend basics and future AI service endpoints.",
+    version="0.1.0",
+)
+
+app.include_router(system.router)
+app.include_router(items.router)
+app.include_router(predictions.router)</code></pre>
+      <p><code>include_router</code> 的意思是：把某个 router 中声明的所有接口加入到主应用里。官方文档也强调，router 被 include 后，它里面的路径操作会成为主应用的一部分。</p>
+      <p>这个结构对求职项目很加分，因为别人打开项目时能快速判断：入口在哪、模型在哪、业务接口在哪。</p>
+    </section>
+
+    <section>
+      <h2>5. import 语法小补课</h2>
+      <p>你会看到这种写法：</p>
+      <pre><code>from .routers import items, predictions, system
+from ..schemas import Item, ItemCreate</code></pre>
+      <p>前面的点是 Python 包内相对导入：</p>
+      <ul>
+        <li><code>.</code> 表示当前包，例如 <code>first_api</code>。</li>
+        <li><code>..</code> 表示上一级包，例如从 <code>first_api/routers/items.py</code> 回到 <code>first_api</code>。</li>
+      </ul>
+      <p>这也是为什么目录里需要 <code>__init__.py</code>：它告诉 Python，这个目录可以作为包来导入。</p>
+    </section>
+
+    <section>
+      <h2>6. 实验：确认拆分后接口没变</h2>
+      <p>运行服务：</p>
+      <pre><code>.\.venv\Scripts\Activate.ps1
+fastapi dev first_api/main.py</code></pre>
+      <p>然后打开 <code>http://127.0.0.1:8000/docs</code>。你应该看到接口按 tag 分组，例如 <code>items</code>、<code>predictions</code>、<code>system</code>。</p>
+      <p>再测试这些接口：</p>
+      <pre><code>GET /health
+GET /items
+GET /items/2
+POST /predict</code></pre>
+      <p>如果拆分正确，接口行为应该和前几节课一样。拆文件不应该改变业务行为，这是重构的重要原则。</p>
+    </section>
+
+    <section class="practice">
+      <h2>7. 课堂练习</h2>
+      <p>请你打开 <code>first_api/routers/items.py</code>，回答三个问题：</p>
+      <ol>
+        <li><code>prefix="/items"</code> 对最终 URL 有什么影响？</li>
+        <li>为什么 <code>list_items</code> 的装饰器写成 <code>@router.get("")</code>？</li>
+        <li><code>Item</code> 和 <code>ItemCreate</code> 为什么放在 <code>schemas.py</code> 而不是 router 文件里？</li>
+      </ol>
+    </section>
+
+    <section class="checkpoint">
+      <h2>8. 小测：先回忆再展开</h2>
+      <details>
+        <summary>1. <code>APIRouter</code> 的核心作用是什么？</summary>
+        <p class="answer">它把一组相关接口收纳到一个模块里，再由主应用统一挂载。</p>
+      </details>
+      <details>
+        <summary>2. <code>main.py</code> 变薄有什么好处？</summary>
+        <p class="answer">入口更清晰，模块职责更明确，后续扩展、测试和协作更容易。</p>
+      </details>
+      <details>
+        <summary>3. <code>prefix="/items"</code> 和 <code>@router.get("/{item_id}")</code> 合起来是什么路径？</summary>
+        <p class="answer">合起来是 <code>GET /items/{item_id}</code>。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>9. 本节总结</h2>
+      <p>本节的核心是项目结构。<code>APIRouter</code> 让接口按领域分组，<code>main.py</code> 只负责应用组装。以后做 AI 服务时，普通业务接口、模型推理接口、任务接口都可以拆成不同 router。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/bigger-applications/">FastAPI Bigger Applications - Multiple Files</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0004-response-models-and-errors.html">上一课：响应模型和错误处理</a>
+        <a href="./0006-dependencies-depends.html">下一课：Depends 依赖注入</a>
+        <a href="../reference/0005-project-structure-apirouter-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

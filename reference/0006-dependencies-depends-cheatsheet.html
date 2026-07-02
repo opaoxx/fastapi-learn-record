@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FastAPI Dependencies and Depends Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0006</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0006-dependencies-depends.html">回到第 6 课</a>
+        <a href="./0005-project-structure-apirouter-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0006</p>
+      <h1>Depends 依赖注入速查</h1>
+      <p class="lead">路径函数声明需要什么，FastAPI 自动准备并注入。</p>
+    </header>
+
+    <h2>类依赖</h2>
+    <pre><code>class Pagination:
+    def __init__(self, skip: int = 0, limit: int = 10):
+        self.skip = skip
+        self.limit = limit</code></pre>
+
+    <h2>使用 Depends</h2>
+    <pre><code>def list_items(
+    pagination: Annotated[Pagination, Depends(Pagination)],
+):
+    return results[pagination.skip : pagination.skip + pagination.limit]</code></pre>
+
+    <h2>适合抽成依赖的内容</h2>
+    <ul>
+      <li>分页、排序、筛选等公共查询参数。</li>
+      <li>数据库会话。</li>
+      <li>当前用户和权限检查。</li>
+      <li>AI 模型客户端、向量数据库客户端。</li>
+      <li>请求追踪信息和日志上下文。</li>
+    </ul>
+
+    <h2>执行顺序</h2>
+    <pre><code>请求进入 -> 执行依赖 -> 注入参数 -> 执行路径函数</code></pre>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/dependencies/">FastAPI Dependencies</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/dependencies/classes-as-dependencies/">FastAPI Classes as Dependencies</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0006-dependencies-depends.html">回到第 6 课</a>
+        <a href="./0005-project-structure-apirouter-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

@@ -1,0 +1,14 @@
+### Lesson 0005: system router still works
+GET http://127.0.0.1:8000/health
+
+### Lesson 0005: items router still works
+GET http://127.0.0.1:8000/items/2
+
+### Lesson 0006: pagination dependency
+GET http://127.0.0.1:8000/items?skip=0&limit=2
+
+### Lesson 0006: filters and pagination together
+GET http://127.0.0.1:8000/items?category=course&skip=0&limit=10
+
+### Lesson 0006: invalid limit
+GET http://127.0.0.1:8000/items?limit=100

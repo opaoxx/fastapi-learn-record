@@ -20,3 +20,19 @@ Then open:
 ## Why this exists
 
 The ordinary backend endpoints build the foundation. The `/predict` endpoint hints at the later AI-service shape: request in, model-like function runs, typed response out.
+
+## Structure
+
+```text
+first_api/
+  main.py
+  schemas.py
+  store.py
+  dependencies.py
+  routers/
+    system.py
+    items.py
+    predictions.py
+```
+
+`main.py` creates the FastAPI app and includes routers. Models live in `schemas.py`, temporary data lives in `store.py`, shared request setup lives in `dependencies.py`, and route handlers live in `routers/`.

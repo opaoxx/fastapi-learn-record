@@ -22,6 +22,12 @@
   Official guide to response validation and filtering. Use when designing API contracts for frontend and AI-service consumers.
 - [FastAPI Handling Errors](https://fastapi.tiangolo.com/tutorial/handling-errors/)
   Official guide to HTTPException and error responses. Use when teaching 404 and business-level API errors.
+- [FastAPI Bigger Applications - Multiple Files](https://fastapi.tiangolo.com/tutorial/bigger-applications/)
+  Official guide to APIRouter and multi-file project structure. Use when teaching project organization.
+- [FastAPI Dependencies](https://fastapi.tiangolo.com/tutorial/dependencies/)
+  Official guide to dependency injection. Use when teaching Depends, shared logic, database sessions, auth, and reusable request setup.
+- [FastAPI Classes as Dependencies](https://fastapi.tiangolo.com/tutorial/dependencies/classes-as-dependencies/)
+  Official guide to class-based dependencies. Use when teaching grouped query parameters and reusable dependency objects.
 - [Uvicorn Documentation](https://uvicorn.dev/)
   ASGI server documentation. Use when learning what actually runs the FastAPI app locally or in production.
 
