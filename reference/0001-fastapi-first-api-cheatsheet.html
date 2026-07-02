@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FastAPI First API Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">Reference 0001</p>
+      <h1>FastAPI 第一个 API 速查</h1>
+      <p class="lead">从“文件里有几行代码”到“浏览器能访问接口”的最小闭环。</p>
+    </header>
+
+    <h2>最小结构</h2>
+    <pre><code>from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/")
+def read_root():
+    return {"message": "Hello FastAPI"}</code></pre>
+
+    <h2>四个关键词</h2>
+    <ul>
+      <li><code>app</code>: FastAPI 应用对象，所有接口都挂在它上面。</li>
+      <li><code>@app.get("/")</code>: 路径操作装饰器，表示 GET 请求访问 <code>/</code>。</li>
+      <li><code>def read_root()</code>: 路径操作函数，请求来了以后 FastAPI 调用它。</li>
+      <li><code>return {"message": ...}</code>: 返回 Python 字典，FastAPI 会序列化成 JSON。</li>
+    </ul>
+
+    <h2>本地运行</h2>
+    <pre><code>python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install "fastapi[standard]"
+fastapi dev first_api/main.py</code></pre>
+
+    <h2>常用地址</h2>
+    <ul>
+      <li><code>http://127.0.0.1:8000/</code>: 根接口。</li>
+      <li><code>http://127.0.0.1:8000/health</code>: 健康检查接口。</li>
+      <li><code>http://127.0.0.1:8000/docs</code>: 自动生成的交互式 API 文档。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/">FastAPI Tutorial</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/first-steps/">FastAPI First Steps</a>。
+    </footer>
+  </main>
+</body>
+</html>

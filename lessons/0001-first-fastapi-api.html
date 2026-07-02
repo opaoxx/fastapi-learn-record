@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0001 - Run Your First FastAPI API</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">Lesson 0001</p>
+      <h1>跑起来你的第一个 FastAPI API</h1>
+      <p class="lead">目标很小：理解一个接口从代码到浏览器访问的完整闭环。这个闭环以后会变成普通后端接口、AI 推理接口、求职项目接口。</p>
+    </header>
+
+    <section>
+      <h2>你今天只需要掌握一件事</h2>
+      <p>FastAPI 的核心动作是：创建一个 <code>app</code>，把一个 URL 和一个 Python 函数绑定起来，然后让服务器接收 HTTP 请求。</p>
+      <div class="callout">
+        <p><strong>官方说法对照：</strong>FastAPI 官方教程把这叫做 <em>path operation</em>。路径是 <code>/health</code> 这样的 URL 片段，operation 是 <code>GET</code>、<code>POST</code> 这样的 HTTP 方法，函数就是请求到来后被调用的 Python 函数。</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>先看代码</h2>
+      <p>工作区里已经有一个小示例：<code>first_api/main.py</code>。</p>
+      <pre><code>from fastapi import FastAPI
+from pydantic import BaseModel, Field
+
+app = FastAPI(title="First FastAPI API")
+
+@app.get("/")
+def read_root():
+    return {"message": "Hello FastAPI"}
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "service": "first-api"}</code></pre>
+      <p>这两条接口都是普通后端最常见的 GET 接口。根接口确认服务能访问，健康检查接口常用于部署、监控和面试项目。</p>
+    </section>
+
+    <section>
+      <h2>跑起来</h2>
+      <p>在 PowerShell 里进入 <code>F:\teaching_me</code>，执行：</p>
+      <pre><code>python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install "fastapi[standard]"
+fastapi dev first_api/main.py</code></pre>
+      <p>成功后，浏览器打开：</p>
+      <ul>
+        <li><code>http://127.0.0.1:8000/</code></li>
+        <li><code>http://127.0.0.1:8000/health</code></li>
+        <li><code>http://127.0.0.1:8000/docs</code></li>
+      </ul>
+      <p><code>/docs</code> 是 FastAPI 自动生成的交互式 API 文档。以后做求职项目时，它会帮你展示接口能力。</p>
+    </section>
+
+    <section>
+      <h2>为什么这能通向 AI 服务</h2>
+      <p>AI 服务接口本质上也是 API：用户发一段文本、图片地址或参数，后端调用模型，再把结果返回。示例里已经放了一个假的 <code>/predict</code> 接口，用来提前建立这个感觉。</p>
+      <pre><code>@app.post("/predict")
+def predict(payload: PredictionRequest) -&gt; PredictionResponse:
+    ...</code></pre>
+      <p>先不用管模型怎么接。你今天只要记住：AI 推理函数外面包一层 FastAPI，就能被前端、脚本或其他服务调用。</p>
+    </section>
+
+    <section class="practice">
+      <h2>练习：改一个接口</h2>
+      <p>打开 <code>first_api/main.py</code>，把根接口返回的 <code>Hello FastAPI</code> 改成你自己的句子，然后重新刷新浏览器。</p>
+      <p>完成标准：你能在浏览器看到新的 JSON 返回。</p>
+    </section>
+
+    <section class="checkpoint">
+      <h2>小测：遮住上面内容再答</h2>
+      <details>
+        <summary>1. <code>@app.get("/health")</code> 这行在做什么？</summary>
+        <p class="answer">它把 GET 请求的 <code>/health</code> 路径绑定到下面那个 Python 函数。</p>
+      </details>
+      <details>
+        <summary>2. 为什么返回字典时浏览器看到的是 JSON？</summary>
+        <p class="answer">FastAPI 会把可序列化的 Python 返回值转换成 HTTP 响应里的 JSON。</p>
+      </details>
+      <details>
+        <summary>3. <code>/docs</code> 对求职项目有什么用？</summary>
+        <p class="answer">它自动展示接口、参数和返回结构，让别人能直接试用你的 API。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>下一步</h2>
+      <p>下一课建议学：<strong>请求体和 Pydantic 模型</strong>。这会让你能写 <code>POST /predict</code> 这种 AI 服务入口，也是后端面试里很常见的验证、类型和接口契约问题。</p>
+      <p>复习时可以看 <a href="../reference/0001-fastapi-first-api-cheatsheet.html">FastAPI 第一个 API 速查</a>。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/first-steps/">FastAPI 官方 First Steps</a>，再配合 <a href="https://fastapi.tiangolo.com/tutorial/">FastAPI Tutorial - User Guide</a>。</p>
+      <p class="small">有任何地方卡住，直接问我。你可以把报错贴过来，我会带你一起 debug。</p>
+    </section>
+  </main>
+</body>
+</html>
