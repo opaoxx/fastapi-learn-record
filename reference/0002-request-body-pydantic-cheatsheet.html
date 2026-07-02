@@ -9,46 +9,54 @@
 <body>
   <main>
     <header>
-      <p class="eyebrow">Reference 0002</p>
+      <p class="eyebrow">Reference 0002 Revised</p>
       <h1>请求体和 Pydantic 速查</h1>
-      <p class="lead">写 AI 服务接口时，最常见的形状就是：客户端发 JSON，请求模型校验，函数处理，响应模型返回。</p>
+      <p class="lead">一句话：Pydantic 模型是 FastAPI 接口边界上的数据协议。</p>
     </header>
 
-    <h2>最小 POST 请求体</h2>
-    <pre><code>from pydantic import BaseModel, Field
+    <h2>请求体是什么</h2>
+    <p>请求体是客户端随 HTTP 请求发送给 API 的数据。AI 服务常用 <code>POST</code> 请求体传文本、图片地址、模型参数。</p>
 
-class PredictionRequest(BaseModel):
-    text: str = Field(min_length=3, max_length=500)
-
-@app.post("/predict")
-def predict(payload: PredictionRequest):
-    return {"text_length": len(payload.text)}</code></pre>
-
-    <h2>字段写法</h2>
+    <h2>Pydantic 模型负责什么</h2>
     <ul>
-      <li><code>text: str</code>: 必填字符串字段。</li>
-      <li><code>mode: Literal["fast", "careful"]</code>: 只能取固定选项。</li>
-      <li><code>mode = "fast"</code>: 有默认值，所以请求里可以不传。</li>
-      <li><code>Field(min_length=3)</code>: 给字段加验证规则和文档元数据。</li>
+      <li>定义 JSON 应该有哪些字段。</li>
+      <li>定义字段类型，例如 <code>str</code>、<code>float</code>。</li>
+      <li>定义字段约束，例如长度、范围、枚举值。</li>
+      <li>把合法输入转换成 Python 对象。</li>
+      <li>把模型结构交给 FastAPI 生成 <code>/docs</code> 文档。</li>
     </ul>
 
-    <h2>有效 JSON 示例</h2>
-    <pre><code>{
-  "text": "FastAPI is pleasant",
-  "mode": "careful"
-}</code></pre>
+    <h2>本课模型</h2>
+    <pre><code>class PredictionRequest(BaseModel):
+    text: str = Field(min_length=3, max_length=500)
+    mode: Literal["fast", "careful"] = "fast"
+    temperature: float = Field(default=0.2, ge=0, le=1)</code></pre>
 
-    <h2>常见 422</h2>
+    <h2>字段含义</h2>
     <ul>
-      <li>缺少必填字段：没有传 <code>text</code>。</li>
-      <li>字段类型错误：<code>text</code> 传了数字或对象。</li>
-      <li>字段值不合法：<code>mode</code> 不是 <code>fast</code> 或 <code>careful</code>。</li>
-      <li>长度不合法：<code>text</code> 太短或太长。</li>
+      <li><code>text</code>: 核心输入文本，必填，长度 3 到 500。</li>
+      <li><code>mode="fast"</code>: 默认快速模式，适合低成本、快响应。</li>
+      <li><code>mode="careful"</code>: 谨慎模式，适合更稳、更慢、更贵的处理策略。</li>
+      <li><code>temperature</code>: AI 参数雏形，范围 0 到 1，默认 0.2。</li>
+    </ul>
+
+    <h2>默认值不是可选值</h2>
+    <p><code>Literal["fast", "careful"] = "fast"</code> 只允许两个值：<code>"fast"</code> 和 <code>"careful"</code>。后面的 <code>= "fast"</code> 表示不传时自动使用 <code>"fast"</code>。</p>
+
+    <h2>422 怎么读</h2>
+    <p><code>422</code> 表示请求 JSON 能被服务器理解，但内容不符合接口模型。常见原因：</p>
+    <ul>
+      <li>缺少必填字段。</li>
+      <li>字段类型错误。</li>
+      <li>枚举值不合法。</li>
+      <li>长度或数值范围不合法。</li>
     </ul>
 
     <footer>
       来源：<a href="https://fastapi.tiangolo.com/tutorial/body/">FastAPI Request Body</a>、
-      <a href="https://fastapi.tiangolo.com/tutorial/body-fields/">FastAPI Body Fields</a>。
+      <a href="https://fastapi.tiangolo.com/tutorial/body-fields/">FastAPI Body Fields</a>、
+      <a href="https://pydantic.dev/docs/validation/latest/concepts/models/">Pydantic Models</a>、
+      <a href="https://pydantic.dev/docs/validation/latest/concepts/fields/">Pydantic Fields</a>。
     </footer>
   </main>
 </body>

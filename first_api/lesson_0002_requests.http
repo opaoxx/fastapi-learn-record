@@ -4,7 +4,8 @@ Content-Type: application/json
 
 {
   "text": "FastAPI is pleasant",
-  "mode": "careful"
+  "mode": "careful",
+  "temperature": 0.2
 }
 
 ### Invalid predict request: text too short and mode not allowed
@@ -13,5 +14,6 @@ Content-Type: application/json
 
 {
   "text": "hi",
-  "mode": "slow"
+  "mode": "slow",
+  "temperature": 2
 }

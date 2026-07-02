@@ -12,6 +12,10 @@
   Official guide to receiving JSON request bodies with Pydantic models. Use for POST endpoints and AI-service inputs.
 - [FastAPI Body - Fields](https://fastapi.tiangolo.com/tutorial/body-fields/)
   Official guide to field-level validation and JSON Schema metadata. Use for request validation rules.
+- [Pydantic Models](https://pydantic.dev/docs/validation/latest/concepts/models/)
+  Official Pydantic model concept guide. Use for explaining BaseModel, validation, model methods, and data conversion.
+- [Pydantic Fields](https://pydantic.dev/docs/validation/latest/concepts/fields/)
+  Official Pydantic field concept guide. Use for explaining Field, defaults, constraints, and schema metadata.
 - [FastAPI Response Model](https://fastapi.tiangolo.com/tutorial/response-model/)
   Official guide to response validation and filtering. Use when designing API contracts for frontend and AI-service consumers.
 - [Uvicorn Documentation](https://uvicorn.dev/)
