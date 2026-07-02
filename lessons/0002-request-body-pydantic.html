@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0002 - Request Body and Pydantic</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">Lesson 0002</p>
+      <h1>用请求体接收 JSON：Pydantic 模型</h1>
+      <p class="lead">今天的目标：让 <code>POST /predict</code> 像一个真正的 AI 服务入口。客户端传 JSON，FastAPI 自动校验，函数拿到干净的 Python 对象。</p>
+    </header>
+
+    <section>
+      <h2>为什么要学请求体</h2>
+      <p><code>GET /health</code> 适合“拿信息”。但 AI 服务通常需要客户端传入内容，比如一段文本、一个图片 URL、一组推理参数。这些数据一般放在 HTTP 请求体里，并用 <code>POST</code> 发送。</p>
+      <div class="callout">
+        <p><strong>官方依据：</strong>FastAPI 官方文档说明，声明请求体时使用 Pydantic 模型；发送数据常用 <code>POST</code>、<code>PUT</code>、<code>PATCH</code> 等方法，而不是普通 <code>GET</code>。</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>看这段模型</h2>
+      <p>第二课已经把 <code>first_api/main.py</code> 里的 <code>PredictionRequest</code> 升级了：</p>
+      <pre><code>class PredictionRequest(BaseModel):
+    text: str = Field(
+        min_length=3,
+        max_length=500,
+        examples=["FastAPI makes backend APIs pleasant."],
+    )
+    mode: Literal["fast", "careful"] = "fast"</code></pre>
+      <p>这里有三个重点：</p>
+      <ul>
+        <li><code>text: str</code> 表示请求 JSON 里必须有 <code>text</code>，而且它必须是字符串。</li>
+        <li><code>Field(min_length=3, max_length=500)</code> 表示文本长度要在 3 到 500 之间。</li>
+        <li><code>mode</code> 只能是 <code>fast</code> 或 <code>careful</code>，默认是 <code>fast</code>。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>在 /docs 里试</h2>
+      <p>确保服务正在运行：</p>
+      <pre><code>.\.venv\Scripts\Activate.ps1
+fastapi dev first_api/main.py</code></pre>
+      <p>打开 <code>http://127.0.0.1:8000/docs</code>，找到 <code>POST /predict</code>，点 <span class="kbd">Try it out</span>，填入：</p>
+      <pre><code>{
+  "text": "FastAPI is pleasant",
+  "mode": "careful"
+}</code></pre>
+      <p>你应该会看到类似结果：</p>
+      <pre><code>{
+  "label": "positive",
+  "score": 0.95,
+  "source": "rule-based-demo",
+  "text_length": 21
+}</code></pre>
+    </section>
+
+    <section>
+      <h2>故意制造一个错误</h2>
+      <p>现在把请求体改成这个：</p>
+      <pre><code>{
+  "text": "hi",
+  "mode": "slow"
+}</code></pre>
+      <p>你会得到 <code>422 Unprocessable Entity</code>。这不是坏事，它说明 FastAPI 在函数运行前就帮你挡住了脏数据。</p>
+      <div class="two-col">
+        <div class="callout">
+          <h3>普通后端视角</h3>
+          <p>接口边界越清楚，前端和后端越不容易互相猜。</p>
+        </div>
+        <div class="callout">
+          <h3>AI 服务视角</h3>
+          <p>推理参数越早校验，越不容易把非法输入送进昂贵的模型调用。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="practice">
+      <h2>练习：加一个字段</h2>
+      <p>在 <code>PredictionRequest</code> 里新增一个字段：</p>
+      <pre><code>temperature: float = Field(default=0.2, ge=0, le=1)</code></pre>
+      <p>然后在 <code>/docs</code> 里分别测试：</p>
+      <ul>
+        <li><code>"temperature": 0.7</code> 应该通过。</li>
+        <li><code>"temperature": 2</code> 应该返回 <code>422</code>。</li>
+      </ul>
+      <p>完成标准：你能解释为什么一个通过、一个失败。</p>
+    </section>
+
+    <section class="checkpoint">
+      <h2>小测：先回忆再展开</h2>
+      <details>
+        <summary>1. FastAPI 怎么知道请求体应该长什么样？</summary>
+        <p class="answer">它读取路径函数参数上的 Pydantic 模型类型，例如 <code>payload: PredictionRequest</code>。</p>
+      </details>
+      <details>
+        <summary>2. <code>Field(min_length=3)</code> 的作用是什么？</summary>
+        <p class="answer">它给字段增加校验规则，也会进入自动生成的 API 文档。</p>
+      </details>
+      <details>
+        <summary>3. 为什么 422 对后端项目是有价值的？</summary>
+        <p class="answer">它表示非法请求在进入业务逻辑前被拦住，接口边界更稳定。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>下一步</h2>
+      <p>下一课建议学：<strong>路径参数和查询参数</strong>。学完后你就能写 <code>GET /items/{item_id}</code>、<code>GET /search?q=...</code> 这类真实后端接口。</p>
+      <p>复习时可以看 <a href="../reference/0002-request-body-pydantic-cheatsheet.html">请求体和 Pydantic 速查</a>。上一课在 <a href="./0001-first-fastapi-api.html">第一个 FastAPI API</a>。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/body/">FastAPI 官方 Request Body</a>，字段校验参考 <a href="https://fastapi.tiangolo.com/tutorial/body-fields/">FastAPI 官方 Body - Fields</a>。</p>
+      <p class="small">练习里任何 422 看不懂，把响应 JSON 贴给我，我陪你拆。</p>
+    </section>
+  </main>
+</body>
+</html>

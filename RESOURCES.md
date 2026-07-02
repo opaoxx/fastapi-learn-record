@@ -8,6 +8,10 @@
   Official first endpoint explanation. Use for the mental model of app instance, path operation decorator, and path operation function.
 - [FastAPI Path Parameters](https://fastapi.tiangolo.com/tutorial/path-params/)
   Official guide to dynamic URL segments. Use when moving from fixed routes to item-specific routes.
+- [FastAPI Request Body](https://fastapi.tiangolo.com/tutorial/body/)
+  Official guide to receiving JSON request bodies with Pydantic models. Use for POST endpoints and AI-service inputs.
+- [FastAPI Body - Fields](https://fastapi.tiangolo.com/tutorial/body-fields/)
+  Official guide to field-level validation and JSON Schema metadata. Use for request validation rules.
 - [FastAPI Response Model](https://fastapi.tiangolo.com/tutorial/response-model/)
   Official guide to response validation and filtering. Use when designing API contracts for frontend and AI-service consumers.
 - [Uvicorn Documentation](https://uvicorn.dev/)

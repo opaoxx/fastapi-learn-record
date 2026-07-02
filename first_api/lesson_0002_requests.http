@@ -1,0 +1,17 @@
+### Valid predict request
+POST http://127.0.0.1:8000/predict
+Content-Type: application/json
+
+{
+  "text": "FastAPI is pleasant",
+  "mode": "careful"
+}
+
+### Invalid predict request: text too short and mode not allowed
+POST http://127.0.0.1:8000/predict
+Content-Type: application/json
+
+{
+  "text": "hi",
+  "mode": "slow"
+}
