@@ -1,6 +1,7 @@
 ### Lesson 0009: create an item to update
 POST http://127.0.0.1:8000/items
 Content-Type: application/json
+X-API-Key: dev-secret-key
 
 {
   "name": "Patch Practice Item",
@@ -12,6 +13,7 @@ Content-Type: application/json
 ### Lesson 0009: partially update the item
 PATCH http://127.0.0.1:8000/items/4
 Content-Type: application/json
+X-API-Key: dev-secret-key
 
 {
   "price": 12.5,
@@ -20,6 +22,7 @@ Content-Type: application/json
 
 ### Lesson 0009: delete the item
 DELETE http://127.0.0.1:8000/items/4
+X-API-Key: dev-secret-key
 
 ### Lesson 0010: run tests from PowerShell
 # python -m pytest -q

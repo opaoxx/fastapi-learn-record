@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from .database import create_db_and_tables
 from .routers import items, predictions, system
+from .settings import get_settings
 
 
 @asynccontextmanager
@@ -13,8 +14,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
 
 
+settings = get_settings()
+
 app = FastAPI(
-    title="First FastAPI API",
+    title=settings.app_name,
     description="A tiny learning API for backend basics and future AI service endpoints.",
     version="0.1.0",
     lifespan=lifespan,

@@ -5,6 +5,7 @@ from sqlmodel import Session, select
 
 from ..database import get_session
 from ..dependencies import ItemFilters, Pagination
+from ..security import require_api_key
 from ..schemas import Item, ItemCreate, ItemRead, ItemUpdate
 
 
@@ -44,7 +45,12 @@ def read_item(
     return item
 
 
-@router.post("", response_model=ItemRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=ItemRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_api_key)],
+)
 def create_item(
     payload: ItemCreate,
     session: Annotated[Session, Depends(get_session)],
@@ -56,7 +62,11 @@ def create_item(
     return item
 
 
-@router.patch("/{item_id}", response_model=ItemRead)
+@router.patch(
+    "/{item_id}",
+    response_model=ItemRead,
+    dependencies=[Depends(require_api_key)],
+)
 def update_item(
     item_id: Annotated[int, Path(ge=1, description="The numeric ID of the item.")],
     payload: ItemUpdate,
@@ -74,7 +84,11 @@ def update_item(
     return item
 
 
-@router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{item_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_api_key)],
+)
 def delete_item(
     item_id: Annotated[int, Path(ge=1, description="The numeric ID of the item.")],
     session: Annotated[Session, Depends(get_session)],

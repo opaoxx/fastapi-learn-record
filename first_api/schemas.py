@@ -9,6 +9,12 @@ class HealthResponse(BaseModel):
     service: str
 
 
+class PublicConfigResponse(BaseModel):
+    app_name: str
+    environment: str
+    api_key_configured: bool
+
+
 class PredictionRequest(BaseModel):
     text: str = PydanticField(
         min_length=3,

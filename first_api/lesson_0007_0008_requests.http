@@ -7,6 +7,7 @@ GET http://127.0.0.1:8000/items/2
 ### Lesson 0008: create a persistent item
 POST http://127.0.0.1:8000/items
 Content-Type: application/json
+X-API-Key: dev-secret-key
 
 {
   "name": "Persistent FastAPI Notes",

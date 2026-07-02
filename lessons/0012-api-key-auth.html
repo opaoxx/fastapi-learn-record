@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0012 - API Key Authentication</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0012</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0011-settings-env-vars.html">上一课</a>
+        <a href="../reference/0012-api-key-auth-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0012</p>
+      <h1>API Key 鉴权：保护会修改数据的接口</h1>
+      <p class="lead">读接口可以公开，但创建、更新、删除通常不能让任何人随便调用。本节用 <code>X-API-Key</code> 请求头和 <code>Depends</code> 做一个入门级 API Key 鉴权。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解鉴权和接口保护的基本目的。</li>
+        <li>理解请求头 <code>X-API-Key</code> 如何携带密钥。</li>
+        <li>看懂 <code>APIKeyHeader</code> 和 <code>require_api_key</code>。</li>
+        <li>理解为什么写接口需要保护，读接口暂时保持公开。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 为什么需要 API Key</h2>
+      <p>如果没有保护，任何人都可以调用：</p>
+      <pre><code>POST /items
+PATCH /items/{item_id}
+DELETE /items/{item_id}</code></pre>
+      <p>这意味着别人可以随便创建、改动或删除你的数据。对于 AI 服务也一样：如果推理接口不保护，别人可能滥用你的模型额度和 API Key。</p>
+      <p>API Key 是最简单的一类鉴权方式：客户端在请求里带一个约定好的密钥，后端检查它是否正确。</p>
+    </section>
+
+    <section>
+      <h2>2. 请求头是什么</h2>
+      <p>HTTP 请求除了 URL、方法、请求体，还有请求头。请求头适合携带元信息，例如认证凭据：</p>
+      <pre><code>POST /items
+X-API-Key: dev-secret-key
+Content-Type: application/json
+
+{
+  "name": "Protected Item",
+  "category": "book",
+  "price": 10,
+  "in_stock": true
+}</code></pre>
+      <p>FastAPI 官方 Header 文档说明，读取请求头要使用 <code>Header</code> 或安全工具，而不能把它当普通查询参数。</p>
+    </section>
+
+    <section>
+      <h2>3. APIKeyHeader</h2>
+      <pre><code>api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)</code></pre>
+      <p><code>APIKeyHeader</code> 来自 FastAPI 的 security 工具。它会从请求头里提取 <code>X-API-Key</code>，并且能集成到 OpenAPI 文档中。</p>
+      <p><code>auto_error=False</code> 表示缺少 header 时不要让工具自动返回错误，而是交给我们自己的 <code>require_api_key</code> 统一处理。</p>
+    </section>
+
+    <section>
+      <h2>4. require_api_key 逐行讲解</h2>
+      <pre><code>def require_api_key(
+    api_key: Annotated[str | None, Depends(api_key_header)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -&gt; None:
+    if api_key != settings.api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing API key.",
+        )</code></pre>
+      <p>这里用到了两个依赖：</p>
+      <ul>
+        <li><code>api_key_header</code>：从请求头读取客户端传来的 key。</li>
+        <li><code>get_settings</code>：读取服务端配置里的正确 key。</li>
+      </ul>
+      <p>如果两者不相等，就返回 <code>401 Unauthorized</code>。这表示请求没有通过身份凭据检查。</p>
+    </section>
+
+    <section>
+      <h2>5. 把鉴权挂到写接口上</h2>
+      <pre><code>@router.post(
+    "",
+    response_model=ItemRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_api_key)],
+)
+def create_item(...):
+    ...</code></pre>
+      <p>这里把依赖放在路径装饰器的 <code>dependencies</code> 里。这样 FastAPI 会执行 <code>require_api_key</code>，但不会把它的返回值传给路径函数。</p>
+      <p>这很适合“只需要执行检查，不需要在函数里使用结果”的场景。现在 <code>POST</code>、<code>PATCH</code>、<code>DELETE</code> 都被保护了，<code>GET</code> 仍然公开。</p>
+    </section>
+
+    <section>
+      <h2>6. 实验：无 key 请求</h2>
+      <pre><code>POST /items
+{
+  "name": "No Key Item",
+  "category": "book",
+  "price": 5,
+  "in_stock": true
+}</code></pre>
+      <p>不带 <code>X-API-Key</code> 时应该返回 <code>401</code>。</p>
+    </section>
+
+    <section>
+      <h2>7. 实验：带 key 请求</h2>
+      <p>在 <code>/docs</code> 里可以点击 Authorize，填写 API Key；或者在 HTTP 请求里加 header：</p>
+      <pre><code>X-API-Key: dev-secret-key</code></pre>
+      <p>然后再请求：</p>
+      <pre><code>POST /items
+{
+  "name": "Protected Item",
+  "category": "book",
+  "price": 10,
+  "in_stock": true
+}</code></pre>
+      <p>如果 key 正确，应该返回 <code>201</code>。</p>
+    </section>
+
+    <section>
+      <h2>8. 测试也要带 key</h2>
+      <pre><code>API_KEY_HEADERS = {"X-API-Key": "dev-secret-key"}
+
+created = client.post(
+    "/items",
+    headers=API_KEY_HEADERS,
+    json={...},
+)</code></pre>
+      <p>第 10 课的测试现在也升级了：成功创建、更新、删除时要带正确 key；另外新增了“不带 key 创建商品返回 401”的测试。</p>
+    </section>
+
+    <section class="practice">
+      <h2>9. 课堂练习</h2>
+      <p>请你完成：</p>
+      <ol>
+        <li>不带 <code>X-API-Key</code> 调用 <code>POST /items</code>，观察 <code>401</code>。</li>
+        <li>带错误 key 调用，观察 <code>401</code>。</li>
+        <li>带正确 key 调用，观察 <code>201</code>。</li>
+      </ol>
+    </section>
+
+    <section class="checkpoint">
+      <h2>10. 小测：先回忆再展开</h2>
+      <details>
+        <summary>1. API Key 应该放在代码里还是配置里？</summary>
+        <p class="answer">应该放在配置或环境变量里，不能把真实密钥硬编码并提交。</p>
+      </details>
+      <details>
+        <summary>2. 为什么写接口比读接口更需要先保护？</summary>
+        <p class="answer">因为写接口会改变数据，误用或滥用的破坏性更大。</p>
+      </details>
+      <details>
+        <summary>3. <code>401</code> 和 <code>422</code> 的区别是什么？</summary>
+        <p class="answer"><code>401</code> 是认证失败，<code>422</code> 是请求数据不符合参数或模型校验。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>11. 本节总结</h2>
+      <p>API Key 是最小可用的接口保护方式。客户端通过请求头发送 key，后端通过 <code>APIKeyHeader</code> 提取，再和 Settings 中的服务端 key 比较。真实生产系统通常还会用 OAuth2、JWT、权限角色、速率限制等更完整的安全方案，但 API Key 是入门 AI 服务保护的好起点。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/reference/security/">FastAPI Security Tools</a>、<a href="https://fastapi.tiangolo.com/tutorial/security/">FastAPI Security</a>、<a href="https://fastapi.tiangolo.com/tutorial/header-params/">FastAPI Header Parameters</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0011-settings-env-vars.html">上一课：配置和环境变量</a>
+        <a href="../reference/0012-api-key-auth-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

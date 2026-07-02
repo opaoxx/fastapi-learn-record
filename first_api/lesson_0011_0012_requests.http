@@ -1,0 +1,34 @@
+### Lesson 0011: read public config
+GET http://127.0.0.1:8000/config/public
+
+### Lesson 0012: create item without API key, expect 401
+POST http://127.0.0.1:8000/items
+Content-Type: application/json
+
+{
+  "name": "No Key Item",
+  "category": "book",
+  "price": 5,
+  "in_stock": true
+}
+
+### Lesson 0012: create item with API key, expect 201
+POST http://127.0.0.1:8000/items
+Content-Type: application/json
+X-API-Key: dev-secret-key
+
+{
+  "name": "Protected Item",
+  "category": "book",
+  "price": 10,
+  "in_stock": true
+}
+
+### Lesson 0012: update with API key
+PATCH http://127.0.0.1:8000/items/1
+Content-Type: application/json
+X-API-Key: dev-secret-key
+
+{
+  "price": 18
+}

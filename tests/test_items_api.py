@@ -9,6 +9,9 @@ from first_api.main import app
 from first_api.schemas import Item
 
 
+API_KEY_HEADERS = {"X-API-Key": "dev-secret-key"}
+
+
 def create_test_session() -> Generator[Session, None, None]:
     engine = create_engine(
         "sqlite://",
@@ -40,6 +43,7 @@ def test_create_update_and_delete_item() -> None:
         with TestClient(app) as client:
             created = client.post(
                 "/items",
+                headers=API_KEY_HEADERS,
                 json={
                     "name": "Test API Notebook",
                     "category": "book",
@@ -52,6 +56,7 @@ def test_create_update_and_delete_item() -> None:
 
             updated = client.patch(
                 f"/items/{item_id}",
+                headers=API_KEY_HEADERS,
                 json={
                     "price": 18.0,
                     "in_stock": False,
@@ -62,7 +67,7 @@ def test_create_update_and_delete_item() -> None:
             assert updated.json()["price"] == 18.0
             assert updated.json()["in_stock"] is False
 
-            deleted = client.delete(f"/items/{item_id}")
+            deleted = client.delete(f"/items/{item_id}", headers=API_KEY_HEADERS)
             assert deleted.status_code == 204
 
             missing = client.get(f"/items/{item_id}")
@@ -87,8 +92,38 @@ def test_invalid_update_returns_422() -> None:
 
     try:
         with TestClient(app) as client:
-            response = client.patch("/items/1", json={"price": -1})
+            response = client.patch("/items/1", headers=API_KEY_HEADERS, json={"price": -1})
             assert response.status_code == 422
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+        try:
+            next(session_generator)
+        except StopIteration:
+            pass
+
+
+def test_create_item_requires_api_key() -> None:
+    session_generator = create_test_session()
+    session = next(session_generator)
+
+    def override_get_session() -> Generator[Session, None, None]:
+        yield session
+
+    app.dependency_overrides[get_session] = override_get_session
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/items",
+                json={
+                    "name": "No Key Item",
+                    "category": "book",
+                    "price": 5,
+                    "in_stock": True,
+                },
+            )
+            assert response.status_code == 401
     finally:
         app.dependency_overrides.clear()
         session.close()

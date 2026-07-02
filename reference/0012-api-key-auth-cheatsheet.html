@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>API Key Authentication Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0012</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0012-api-key-auth.html">回到第 12 课</a>
+        <a href="./0011-settings-env-vars-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0012</p>
+      <h1>API Key 鉴权速查</h1>
+      <p class="lead">客户端发 <code>X-API-Key</code>，后端和 Settings 中的 key 比较。</p>
+    </header>
+
+    <h2>Security 工具</h2>
+    <pre><code>api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)</code></pre>
+
+    <h2>校验依赖</h2>
+    <pre><code>def require_api_key(api_key, settings):
+    if api_key != settings.api_key:
+        raise HTTPException(status_code=401)</code></pre>
+
+    <h2>保护接口</h2>
+    <pre><code>@router.post("", dependencies=[Depends(require_api_key)])
+def create_item(...):
+    ...</code></pre>
+
+    <h2>请求示例</h2>
+    <pre><code>X-API-Key: dev-secret-key</code></pre>
+
+    <h2>状态码</h2>
+    <ul>
+      <li><code>401</code>: 缺少 key 或 key 错误。</li>
+      <li><code>201</code>: key 正确，创建成功。</li>
+      <li><code>422</code>: key 通过，但请求体不合法。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/reference/security/">FastAPI Security Tools</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/security/">FastAPI Security</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/header-params/">FastAPI Header Parameters</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0012-api-key-auth.html">回到第 12 课</a>
+        <a href="./0011-settings-env-vars-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

@@ -42,6 +42,16 @@
   Official guide to TestClient and pytest. Use when teaching automated API tests.
 - [FastAPI Testing Dependencies with Overrides](https://fastapi.tiangolo.com/advanced/testing-dependencies/)
   Official guide to app.dependency_overrides. Use when teaching test databases, mocked services, and replacing dependencies.
+- [FastAPI Settings and Environment Variables](https://fastapi.tiangolo.com/advanced/settings/)
+  Official guide to Pydantic Settings in FastAPI. Use when teaching application configuration and environment variables.
+- [Pydantic Settings](https://pydantic.dev/docs/validation/latest/concepts/pydantic_settings/)
+  Official pydantic-settings concept guide. Use when teaching BaseSettings, env_prefix, and .env loading.
+- [FastAPI Security Tools](https://fastapi.tiangolo.com/reference/security/)
+  Official reference for API key security helpers. Use when teaching APIKeyHeader and OpenAPI integration.
+- [FastAPI Security](https://fastapi.tiangolo.com/tutorial/security/)
+  Official overview of FastAPI security schemes. Use when comparing API keys, bearer tokens, and OAuth2.
+- [FastAPI Header Parameters](https://fastapi.tiangolo.com/tutorial/header-params/)
+  Official guide to reading request headers. Use when teaching X-API-Key and other header-based metadata.
 - [Uvicorn Documentation](https://uvicorn.dev/)
   ASGI server documentation. Use when learning what actually runs the FastAPI app locally or in production.
 

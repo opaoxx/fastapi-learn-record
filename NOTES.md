@@ -9,3 +9,4 @@
 - The codebase has now moved from a single-file FastAPI app to a multi-file structure using APIRouter and dependency classes.
 - The items endpoints now use SQLite and SQLModel instead of the earlier in-memory dictionary. Keep explaining persistence, sessions, commit, and refresh slowly.
 - The items API now has full CRUD plus pytest coverage for create/update/delete and invalid update validation.
+- The app now has Settings from pydantic-settings and protects item write endpoints with X-API-Key. Any future POST/PATCH/DELETE examples need the header unless a lesson intentionally demonstrates 401.

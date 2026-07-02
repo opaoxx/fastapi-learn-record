@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0011 - Settings and Environment Variables</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0011</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0010-api-testing-testclient.html">上一课</a>
+        <a href="./0012-api-key-auth.html">下一课</a>
+        <a href="../reference/0011-settings-env-vars-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0011</p>
+      <h1>配置管理和环境变量：不要把秘密写死在代码里</h1>
+      <p class="lead">真实项目会有数据库地址、环境名称、API Key、模型服务地址等配置。它们不应该散落在代码里，而应该由统一的 Settings 对象管理。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解“配置”和“业务代码”的区别。</li>
+        <li>理解环境变量为什么适合保存不同环境的配置。</li>
+        <li>看懂 <code>pydantic-settings</code> 的 <code>BaseSettings</code>。</li>
+        <li>理解 <code>@lru_cache</code> 为什么常用于 settings。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 什么是配置</h2>
+      <p>配置是“部署或运行时会变化，但业务逻辑不应该变化”的信息。例如：</p>
+      <ul>
+        <li>应用名称：开发环境可能叫 <code>First FastAPI API</code>，生产环境可能叫正式服务名。</li>
+        <li>环境名称：<code>development</code>、<code>test</code>、<code>production</code>。</li>
+        <li>API Key：保护接口用的密钥。</li>
+        <li>数据库地址：本地 SQLite、测试数据库、生产数据库可能都不一样。</li>
+        <li>AI 服务密钥：例如 OpenAI、向量数据库、模型网关的 key。</li>
+      </ul>
+      <p>如果这些值硬编码在代码里，就会导致改环境必须改代码，还可能把秘密提交到 GitHub。</p>
+    </section>
+
+    <section>
+      <h2>2. 环境变量是什么</h2>
+      <p>环境变量是操作系统或运行环境提供给程序的键值对。程序启动时读取它们，例如：</p>
+      <pre><code>FIRST_API_ENVIRONMENT=development
+FIRST_API_API_KEY=dev-secret-key</code></pre>
+      <p>FastAPI 官方设置文档推荐使用 Pydantic Settings 来处理应用配置，它可以从环境变量和 <code>.env</code> 文件读取值，并像 Pydantic 模型一样做类型处理。</p>
+      <div class="callout">
+        <p><strong>安全直觉：</strong><code>.env.example</code> 可以提交，因为它只展示变量名和示例值；真正的 <code>.env</code> 不提交，因为它可能包含真实密钥。</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>3. settings.py 逐行讲解</h2>
+      <pre><code>class Settings(BaseSettings):
+    app_name: str = "First FastAPI API"
+    environment: str = "development"
+    api_key: str = "dev-secret-key"
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_prefix="FIRST_API_",
+        extra="ignore",
+    )</code></pre>
+      <p>这段代码表示：</p>
+      <ul>
+        <li><code>BaseSettings</code>：让这个类具备从环境变量读取值的能力。</li>
+        <li><code>app_name</code>、<code>environment</code>、<code>api_key</code>：三个配置字段。</li>
+        <li><code>env_file=".env"</code>：允许从项目根目录的 <code>.env</code> 文件读取配置。</li>
+        <li><code>env_prefix="FIRST_API_"</code>：环境变量统一加前缀，避免和系统里其他变量撞名。</li>
+      </ul>
+      <p>例如字段 <code>api_key</code> 对应的环境变量就是 <code>FIRST_API_API_KEY</code>。</p>
+    </section>
+
+    <section>
+      <h2>4. get_settings 和缓存</h2>
+      <pre><code>@lru_cache
+def get_settings() -&gt; Settings:
+    return Settings()</code></pre>
+      <p><code>@lru_cache</code> 会缓存函数结果。第一次调用 <code>get_settings()</code> 时创建 Settings 对象，后面再调用会复用同一个对象。</p>
+      <p>官方文档也提到，用缓存可以避免每次请求都重新读取 dotenv 文件。测试时仍然可以通过依赖覆盖或清缓存来调整配置。</p>
+    </section>
+
+    <section>
+      <h2>5. main.py 如何使用 Settings</h2>
+      <pre><code>settings = get_settings()
+
+app = FastAPI(
+    title=settings.app_name,
+    ...
+)</code></pre>
+      <p>这表示应用标题不再写死，而是来自配置对象。以后你可以通过环境变量改变应用名称，而不用改业务代码。</p>
+    </section>
+
+    <section>
+      <h2>6. 公开配置接口</h2>
+      <pre><code>@router.get("/config/public", response_model=PublicConfigResponse)
+def read_public_config(settings: Annotated[Settings, Depends(get_settings)]):
+    return PublicConfigResponse(
+        app_name=settings.app_name,
+        environment=settings.environment,
+        api_key_configured=bool(settings.api_key),
+    )</code></pre>
+      <p>这个接口展示的是“可以公开的配置”。注意它只返回 <code>api_key_configured</code>，不会返回真实 <code>api_key</code>。这是非常重要的安全边界。</p>
+    </section>
+
+    <section>
+      <h2>7. 实验：创建 .env</h2>
+      <p>复制 <code>.env.example</code> 为 <code>.env</code>，然后修改：</p>
+      <pre><code>FIRST_API_APP_NAME="My FastAPI Learning API"
+FIRST_API_ENVIRONMENT="local"
+FIRST_API_API_KEY="my-local-key"</code></pre>
+      <p>重启服务后访问：</p>
+      <pre><code>GET /config/public</code></pre>
+      <p>你应该看到新的 <code>app_name</code> 和 <code>environment</code>。真实 API Key 不会出现在响应里。</p>
+    </section>
+
+    <section class="practice">
+      <h2>8. 课堂练习</h2>
+      <p>请你完成：</p>
+      <ol>
+        <li>创建自己的 <code>.env</code>。</li>
+        <li>把 <code>FIRST_API_ENVIRONMENT</code> 改成 <code>student-local</code>。</li>
+        <li>重启服务，访问 <code>/config/public</code> 验证变化。</li>
+      </ol>
+    </section>
+
+    <section class="checkpoint">
+      <h2>9. 小测：先回忆再展开</h2>
+      <details>
+        <summary>1. 为什么真实 <code>.env</code> 不应该提交？</summary>
+        <p class="answer">因为它可能包含 API Key、数据库密码、模型服务密钥等敏感信息。</p>
+      </details>
+      <details>
+        <summary>2. <code>FIRST_API_API_KEY</code> 为什么能对应 <code>api_key</code>？</summary>
+        <p class="answer">因为 Settings 配置了 <code>env_prefix="FIRST_API_"</code>，字段名会和前缀组合成环境变量名。</p>
+      </details>
+      <details>
+        <summary>3. 为什么公开接口只返回 <code>api_key_configured</code>？</summary>
+        <p class="answer">因为客户端可以知道密钥是否配置，但绝不能拿到真实密钥值。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>10. 本节总结</h2>
+      <p>配置管理让代码和运行环境解耦。<code>BaseSettings</code> 负责从环境变量和 <code>.env</code> 读取配置，<code>.env.example</code> 负责告诉开发者需要哪些变量，真实 <code>.env</code> 负责保存本地秘密并被 Git 忽略。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/advanced/settings/">FastAPI Settings and Environment Variables</a>、<a href="https://pydantic.dev/docs/validation/latest/concepts/pydantic_settings/">Pydantic Settings</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0010-api-testing-testclient.html">上一课：API 自动化测试</a>
+        <a href="./0012-api-key-auth.html">下一课：API Key 鉴权</a>
+        <a href="../reference/0011-settings-env-vars-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Settings and Environment Variables Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0011</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0011-settings-env-vars.html">回到第 11 课</a>
+        <a href="./0010-api-testing-cheatsheet.html">上一张速查</a>
+        <a href="./0012-api-key-auth-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0011</p>
+      <h1>配置和环境变量速查</h1>
+      <p class="lead">配置放 Settings，秘密放环境变量，示例放 .env.example。</p>
+    </header>
+
+    <h2>Settings 类</h2>
+    <pre><code>class Settings(BaseSettings):
+    app_name: str = "First FastAPI API"
+    environment: str = "development"
+    api_key: str = "dev-secret-key"</code></pre>
+
+    <h2>环境变量前缀</h2>
+    <pre><code>FIRST_API_APP_NAME
+FIRST_API_ENVIRONMENT
+FIRST_API_API_KEY</code></pre>
+
+    <h2>缓存</h2>
+    <pre><code>@lru_cache
+def get_settings() -&gt; Settings:
+    return Settings()</code></pre>
+
+    <h2>规则</h2>
+    <ul>
+      <li><code>.env.example</code> 可以提交。</li>
+      <li><code>.env</code> 不提交。</li>
+      <li>公开接口不要返回真实密钥。</li>
+      <li>测试或部署时可以用环境变量覆盖默认值。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/advanced/settings/">FastAPI Settings</a>、
+      <a href="https://pydantic.dev/docs/validation/latest/concepts/pydantic_settings/">Pydantic Settings</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0011-settings-env-vars.html">回到第 11 课</a>
+        <a href="./0012-api-key-auth-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>
