@@ -27,7 +27,7 @@ The ordinary backend endpoints build the foundation. The `/predict` endpoint hin
 first_api/
   main.py
   schemas.py
-  store.py
+  database.py
   dependencies.py
   routers/
     system.py
@@ -35,4 +35,6 @@ first_api/
     predictions.py
 ```
 
-`main.py` creates the FastAPI app and includes routers. Models live in `schemas.py`, temporary data lives in `store.py`, shared request setup lives in `dependencies.py`, and route handlers live in `routers/`.
+`main.py` creates the FastAPI app and includes routers. Models live in `schemas.py`, SQLite setup and database sessions live in `database.py`, shared request setup lives in `dependencies.py`, and route handlers live in `routers/`.
+
+The app creates a local SQLite file at `first_api/first_api.db` when it starts. That file is ignored by Git because it is local runtime data.

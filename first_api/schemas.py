@@ -1,6 +1,7 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field as PydanticField
+from sqlmodel import Field, SQLModel
 
 
 class HealthResponse(BaseModel):
@@ -9,13 +10,13 @@ class HealthResponse(BaseModel):
 
 
 class PredictionRequest(BaseModel):
-    text: str = Field(
+    text: str = PydanticField(
         min_length=3,
         max_length=500,
         examples=["FastAPI makes backend APIs pleasant."],
     )
     mode: Literal["fast", "careful"] = "fast"
-    temperature: float = Field(default=0.2, ge=0, le=1)
+    temperature: float = PydanticField(default=0.2, ge=0, le=1)
 
 
 class PredictionResponse(BaseModel):
@@ -28,16 +29,23 @@ class PredictionResponse(BaseModel):
 ItemCategory = Literal["book", "course", "tool"]
 
 
-class Item(BaseModel):
-    id: int
+class ItemBase(SQLModel):
     name: str
-    category: ItemCategory
-    price: float
+    category: str = Field(index=True)
+    price: float = Field(ge=0)
     in_stock: bool
 
 
-class ItemCreate(BaseModel):
-    name: str = Field(min_length=2, max_length=80, examples=["FastAPI Project Notes"])
+class Item(ItemBase, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+
+
+class ItemCreate(ItemBase):
+    name: str = Field(min_length=2, max_length=80, schema_extra={"examples": ["FastAPI Project Notes"]})
     category: ItemCategory = "course"
-    price: float = Field(ge=0, examples=[29.9])
+    price: float = Field(ge=0, schema_extra={"examples": [29.9]})
     in_stock: bool = True
+
+
+class ItemRead(ItemBase):
+    id: int

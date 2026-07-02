@@ -28,6 +28,12 @@
   Official guide to dependency injection. Use when teaching Depends, shared logic, database sessions, auth, and reusable request setup.
 - [FastAPI Classes as Dependencies](https://fastapi.tiangolo.com/tutorial/dependencies/classes-as-dependencies/)
   Official guide to class-based dependencies. Use when teaching grouped query parameters and reusable dependency objects.
+- [FastAPI SQL Databases](https://fastapi.tiangolo.com/tutorial/sql-databases/)
+  Official guide to SQL databases with SQLModel. Use when teaching SQLite, SQLModel, sessions, and CRUD.
+- [FastAPI Dependencies with yield](https://fastapi.tiangolo.com/tutorial/dependencies/dependencies-with-yield/)
+  Official guide to dependencies that clean up resources. Use when teaching database session dependencies.
+- [SQLModel Simple Hero API](https://sqlmodel.tiangolo.com/tutorial/fastapi/simple-hero-api/)
+  Official SQLModel FastAPI tutorial. Use when reinforcing table models and database-backed API endpoints.
 - [Uvicorn Documentation](https://uvicorn.dev/)
   ASGI server documentation. Use when learning what actually runs the FastAPI app locally or in production.
 

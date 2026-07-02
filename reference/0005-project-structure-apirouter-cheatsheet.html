@@ -28,7 +28,7 @@
     <pre><code>first_api/
   main.py
   schemas.py
-  store.py
+  database.py
   dependencies.py
   routers/
     system.py
@@ -48,7 +48,7 @@ def list_items():
     <h2>职责划分</h2>
     <ul>
       <li><code>schemas.py</code>: Pydantic 模型。</li>
-      <li><code>store.py</code>: 临时数据和数据访问函数。</li>
+      <li><code>database.py</code>: SQLite 设置、建表和数据库 Session。</li>
       <li><code>dependencies.py</code>: 可复用依赖。</li>
       <li><code>routers/</code>: 按业务领域拆分接口。</li>
     </ul>

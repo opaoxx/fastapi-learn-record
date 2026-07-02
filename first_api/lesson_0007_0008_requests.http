@@ -1,0 +1,19 @@
+### Lesson 0007: database-backed list
+GET http://127.0.0.1:8000/items
+
+### Lesson 0007: database-backed detail
+GET http://127.0.0.1:8000/items/2
+
+### Lesson 0008: create a persistent item
+POST http://127.0.0.1:8000/items
+Content-Type: application/json
+
+{
+  "name": "Persistent FastAPI Notes",
+  "category": "book",
+  "price": 12.5,
+  "in_stock": true
+}
+
+### Lesson 0008: query persisted items
+GET http://127.0.0.1:8000/items?category=book

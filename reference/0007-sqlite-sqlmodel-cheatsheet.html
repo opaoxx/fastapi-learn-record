@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SQLite and SQLModel Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0007</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0007-sqlite-sqlmodel-basics.html">回到第 7 课</a>
+        <a href="./0006-dependencies-depends-cheatsheet.html">上一张速查</a>
+        <a href="./0008-database-crud-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0007</p>
+      <h1>SQLite 和 SQLModel 速查</h1>
+      <p class="lead">SQLite 保存数据，SQLModel 把 Python 类映射成数据库表。</p>
+    </header>
+
+    <h2>表模型</h2>
+    <pre><code>class Item(ItemBase, table=True):
+    id: int | None = Field(default=None, primary_key=True)</code></pre>
+
+    <h2>数据库引擎</h2>
+    <pre><code>DATABASE_URL = "sqlite:///first_api.db"
+engine = create_engine(DATABASE_URL)</code></pre>
+
+    <h2>建表</h2>
+    <pre><code>SQLModel.metadata.create_all(engine)</code></pre>
+
+    <h2>模型分层</h2>
+    <ul>
+      <li><code>ItemBase</code>: 公共字段。</li>
+      <li><code>Item</code>: 数据库表模型。</li>
+      <li><code>ItemCreate</code>: 创建请求模型。</li>
+      <li><code>ItemRead</code>: 响应读取模型。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/sql-databases/">FastAPI SQL Databases</a>、
+      <a href="https://sqlmodel.tiangolo.com/tutorial/fastapi/simple-hero-api/">SQLModel Simple Hero API</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0007-sqlite-sqlmodel-basics.html">回到第 7 课</a>
+        <a href="./0008-database-crud-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

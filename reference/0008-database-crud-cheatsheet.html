@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Database Session and CRUD Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0008</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0008-database-session-crud.html">回到第 8 课</a>
+        <a href="./0007-sqlite-sqlmodel-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0008</p>
+      <h1>数据库 Session 和 CRUD 速查</h1>
+      <p class="lead">Session 是一次请求访问数据库的工作单元。</p>
+    </header>
+
+    <h2>Session 依赖</h2>
+    <pre><code>def get_session():
+    with Session(engine) as session:
+        yield session</code></pre>
+
+    <h2>查询列表</h2>
+    <pre><code>statement = select(Item)
+items = list(session.exec(statement))</code></pre>
+
+    <h2>按主键查询</h2>
+    <pre><code>item = session.get(Item, item_id)</code></pre>
+
+    <h2>创建记录</h2>
+    <pre><code>session.add(item)
+session.commit()
+session.refresh(item)</code></pre>
+
+    <h2>关键词</h2>
+    <ul>
+      <li><code>add</code>: 准备新增对象。</li>
+      <li><code>commit</code>: 提交保存。</li>
+      <li><code>refresh</code>: 从数据库刷新对象。</li>
+      <li><code>yield</code>: 把资源交给路径函数，之后继续清理。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/sql-databases/">FastAPI SQL Databases</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/dependencies/dependencies-with-yield/">FastAPI Dependencies with yield</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0008-database-session-crud.html">回到第 8 课</a>
+        <a href="./0007-sqlite-sqlmodel-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

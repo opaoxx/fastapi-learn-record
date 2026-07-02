@@ -1,45 +1,56 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, status
+from fastapi import APIRouter, Depends, HTTPException, Path, status
+from sqlmodel import Session, select
 
+from ..database import get_session
 from ..dependencies import ItemFilters, Pagination
-from ..schemas import Item, ItemCreate
-from ..store import ITEMS, get_item_or_404
+from ..schemas import Item, ItemCreate, ItemRead
 
 
 router = APIRouter(prefix="/items", tags=["items"])
 
 
-@router.get("", response_model=list[Item])
+@router.get("", response_model=list[ItemRead])
 def list_items(
     filters: Annotated[ItemFilters, Depends(ItemFilters)],
     pagination: Annotated[Pagination, Depends(Pagination)],
+    session: Annotated[Session, Depends(get_session)],
 ) -> list[Item]:
-    results = list(ITEMS.values())
+    statement = select(Item)
+    items = list(session.exec(statement))
 
     if filters.q is not None:
         keyword = filters.q.lower()
-        results = [item for item in results if keyword in item.name.lower()]
+        items = [item for item in items if keyword in item.name.lower()]
     if filters.category is not None:
-        results = [item for item in results if item.category == filters.category]
+        items = [item for item in items if item.category == filters.category]
     if filters.max_price is not None:
-        results = [item for item in results if item.price <= filters.max_price]
+        items = [item for item in items if item.price <= filters.max_price]
     if filters.in_stock is not None:
-        results = [item for item in results if item.in_stock == filters.in_stock]
+        items = [item for item in items if item.in_stock == filters.in_stock]
 
-    return results[pagination.skip : pagination.skip + pagination.limit]
+    return items[pagination.skip : pagination.skip + pagination.limit]
 
 
-@router.get("/{item_id}", response_model=Item)
+@router.get("/{item_id}", response_model=ItemRead)
 def read_item(
-    item_id: Annotated[int, Path(ge=1, description="The numeric ID of the item.")]
+    item_id: Annotated[int, Path(ge=1, description="The numeric ID of the item.")],
+    session: Annotated[Session, Depends(get_session)],
 ) -> Item:
-    return get_item_or_404(item_id)
+    item = session.get(Item, item_id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Item {item_id} was not found.")
+    return item
 
 
-@router.post("", response_model=Item, status_code=status.HTTP_201_CREATED)
-def create_item(payload: ItemCreate) -> Item:
-    next_id = max(ITEMS) + 1
-    item = Item(id=next_id, **payload.model_dump())
-    ITEMS[next_id] = item
+@router.post("", response_model=ItemRead, status_code=status.HTTP_201_CREATED)
+def create_item(
+    payload: ItemCreate,
+    session: Annotated[Session, Depends(get_session)],
+) -> Item:
+    item = Item.model_validate(payload)
+    session.add(item)
+    session.commit()
+    session.refresh(item)
     return item

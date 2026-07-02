@@ -55,7 +55,7 @@
       <pre><code>first_api/
   main.py
   schemas.py
-  store.py
+  database.py
   dependencies.py
   routers/
     __init__.py
@@ -66,7 +66,7 @@
       <ul>
         <li><code>main.py</code>：创建 <code>FastAPI()</code> 应用，并挂载所有 router。</li>
         <li><code>schemas.py</code>：放 Pydantic 模型，例如 <code>Item</code>、<code>PredictionRequest</code>。</li>
-        <li><code>store.py</code>：放临时内存数据和数据查询函数。</li>
+        <li><code>database.py</code>：放 SQLite 连接、建表逻辑和数据库 Session 依赖。</li>
         <li><code>dependencies.py</code>：放可复用的依赖逻辑，第 6 课会重点讲。</li>
         <li><code>routers/items.py</code>：放商品相关接口。</li>
         <li><code>routers/predictions.py</code>：放 AI 预测相关接口。</li>
@@ -163,7 +163,7 @@ POST /predict</code></pre>
 
     <section>
       <h2>9. 本节总结</h2>
-      <p>本节的核心是项目结构。<code>APIRouter</code> 让接口按领域分组，<code>main.py</code> 只负责应用组装。以后做 AI 服务时，普通业务接口、模型推理接口、任务接口都可以拆成不同 router。</p>
+      <p>本节的核心是项目结构。<code>APIRouter</code> 让接口按领域分组，<code>main.py</code> 只负责应用组装。随着第 7/8 课加入数据库，原来的临时内存数据已经升级为 <code>database.py</code> 中的 SQLite 配置和 Session 依赖。</p>
       <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/bigger-applications/">FastAPI Bigger Applications - Multiple Files</a>。</p>
     </section>
 

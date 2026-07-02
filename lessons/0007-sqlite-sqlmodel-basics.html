@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0007 - SQLite and SQLModel Basics</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0007</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0006-dependencies-depends.html">上一课</a>
+        <a href="./0008-database-session-crud.html">下一课</a>
+        <a href="../reference/0007-sqlite-sqlmodel-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0007</p>
+      <h1>SQLite 和 SQLModel：把数据从内存搬进数据库</h1>
+      <p class="lead">前面的商品数据存在 Python 字典里，服务重启就会回到初始状态。本节学习数据库的最小闭环：SQLite 文件、SQLModel 表模型、engine、建表和种子数据。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解为什么后端项目需要数据库，而不是只用内存变量。</li>
+        <li>理解 SQLite 是一个适合入门的本地文件数据库。</li>
+        <li>理解 SQLModel 如何把 Python 类映射成数据库表。</li>
+        <li>看懂 <code>database.py</code> 里创建 engine、建表、初始化数据的流程。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 为什么需要数据库</h2>
+      <p>内存字典很适合教学，但它有一个致命问题：数据只活在当前 Python 进程里。你创建一个商品，重启服务后它就消失了。</p>
+      <p>数据库解决的是“持久化”问题：把数据保存到进程外部。服务重启、代码重载、电脑关机后，只要数据库文件还在，数据就还在。</p>
+      <div class="callout">
+        <p><strong>普通后端视角：</strong>用户、商品、订单、评论都应该放在数据库里。<br><strong>AI 服务视角：</strong>推理任务、上传文件、模型调用记录、向量索引元数据也需要持久化。</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. SQLite 是什么</h2>
+      <p>SQLite 是一个轻量级关系数据库。它不需要单独启动数据库服务器，数据通常保存在一个本地 <code>.db</code> 文件里。FastAPI 官方 SQL 数据库教程也选择 SQLite 作为入门示例，因为它可以直接复制运行。</p>
+      <p>本项目会在 <code>first_api/first_api.db</code> 创建数据库文件。这个文件是运行产物，所以已经加入 <code>.gitignore</code>，通常不提交到 GitHub。</p>
+    </section>
+
+    <section>
+      <h2>3. SQLModel 是什么</h2>
+      <p>SQLModel 是 FastAPI 作者推出的数据库库，建立在 SQLAlchemy 和 Pydantic 之上。你可以先这样理解：</p>
+      <ul>
+        <li>Pydantic 负责数据校验和 API schema。</li>
+        <li>SQLAlchemy 负责和 SQL 数据库交互。</li>
+        <li>SQLModel 把两者结合起来，让一个 Python 类既像 API 模型，也能映射数据库表。</li>
+      </ul>
+      <p>例如现在的表模型：</p>
+      <pre><code>class Item(ItemBase, table=True):
+    id: int | None = Field(default=None, primary_key=True)</code></pre>
+      <p><code>table=True</code> 是关键：它告诉 SQLModel，这个类不仅是数据模型，还对应数据库里的一张表。</p>
+    </section>
+
+    <section>
+      <h2>4. 三类 Item 模型</h2>
+      <p>现在 <code>schemas.py</code> 里不再只有一个 <code>Item</code>，而是拆成几层：</p>
+      <pre><code>class ItemBase(SQLModel):
+    name: str
+    category: str = Field(index=True)
+    price: float = Field(ge=0)
+    in_stock: bool
+
+class Item(ItemBase, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+
+class ItemCreate(ItemBase):
+    category: ItemCategory = "course"
+
+class ItemRead(ItemBase):
+    id: int</code></pre>
+      <p>这样拆是为了区分不同场景：</p>
+      <ul>
+        <li><code>ItemBase</code>：公共字段。</li>
+        <li><code>Item</code>：数据库表模型，有主键 <code>id</code>。</li>
+        <li><code>ItemCreate</code>：创建商品时客户端能提交的字段。</li>
+        <li><code>ItemRead</code>：接口返回给客户端的字段。</li>
+      </ul>
+      <p>注意：数据库表里的 <code>category</code> 用普通字符串保存，因为数据库列需要明确的 SQL 类型；创建请求里仍然用 <code>Literal["book", "course", "tool"]</code> 做输入校验。</p>
+    </section>
+
+    <section>
+      <h2>5. database.py 逐段解释</h2>
+      <pre><code>DATABASE_URL = f"sqlite:///{Path(__file__).with_name('first_api.db')}"
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False},
+)</code></pre>
+      <p><code>DATABASE_URL</code> 告诉 SQLModel 连接哪个数据库。<code>sqlite:///...</code> 表示使用 SQLite 文件。<code>engine</code> 可以理解成“数据库连接工厂”，后面所有 session 都通过它和数据库交流。</p>
+      <pre><code>def create_db_and_tables() -&gt; None:
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        seed_items(session)</code></pre>
+      <p><code>create_all</code> 会根据所有 <code>table=True</code> 的 SQLModel 模型创建数据库表。<code>seed_items</code> 会在表为空时放入三条初始商品数据。</p>
+    </section>
+
+    <section>
+      <h2>6. 应用启动时初始化数据库</h2>
+      <p><code>main.py</code> 现在使用 lifespan：</p>
+      <pre><code>@asynccontextmanager
+async def lifespan(app: FastAPI) -&gt; AsyncGenerator[None, None]:
+    create_db_and_tables()
+    yield
+
+app = FastAPI(..., lifespan=lifespan)</code></pre>
+      <p>这表示应用启动时先创建表和初始化数据，然后再开始接收请求。后面的 <code>yield</code> 表示应用正常运行阶段。</p>
+    </section>
+
+    <section>
+      <h2>7. 实验：观察数据库文件</h2>
+      <p>运行服务：</p>
+      <pre><code>.\.venv\Scripts\Activate.ps1
+fastapi dev first_api/main.py</code></pre>
+      <p>启动后，查看 <code>first_api/first_api.db</code> 是否出现。然后打开 <code>/docs</code> 测试：</p>
+      <pre><code>GET /items
+GET /items/2</code></pre>
+      <p>如果能返回商品，说明 FastAPI 已经从数据库读取数据，而不是从内存字典读取。</p>
+    </section>
+
+    <section class="practice">
+      <h2>8. 课堂练习</h2>
+      <p>请你回答两个问题：</p>
+      <ol>
+        <li>为什么 <code>first_api.db</code> 不适合提交到 GitHub？</li>
+        <li><code>Item</code> 和 <code>ItemCreate</code> 为什么不能简单合成一个模型？</li>
+      </ol>
+    </section>
+
+    <section class="checkpoint">
+      <h2>9. 小测：先回忆再展开</h2>
+      <details>
+        <summary>1. <code>table=True</code> 表示什么？</summary>
+        <p class="answer">它表示这个 SQLModel 类会映射成数据库表。</p>
+      </details>
+      <details>
+        <summary>2. <code>engine</code> 可以先理解成什么？</summary>
+        <p class="answer">可以理解成数据库连接工厂，负责让 session 和数据库建立联系。</p>
+      </details>
+      <details>
+        <summary>3. SQLite 为什么适合入门？</summary>
+        <p class="answer">因为它不需要单独数据库服务器，数据保存在一个本地文件里，运行和学习成本低。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>10. 本节总结</h2>
+      <p>数据库让数据离开内存，获得持久化能力。SQLite 是适合入门的本地数据库，SQLModel 让 Python 类型、Pydantic 校验和 SQL 表结构结合起来。下一节会把接口真正改成数据库 CRUD。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/sql-databases/">FastAPI SQL Databases</a>、<a href="https://sqlmodel.tiangolo.com/tutorial/fastapi/simple-hero-api/">SQLModel Simple Hero API</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0006-dependencies-depends.html">上一课：Depends 依赖注入</a>
+        <a href="./0008-database-session-crud.html">下一课：数据库 Session 和 CRUD</a>
+        <a href="../reference/0007-sqlite-sqlmodel-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

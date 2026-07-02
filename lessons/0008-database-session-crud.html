@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0008 - Database Session and CRUD</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0008</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0007-sqlite-sqlmodel-basics.html">上一课</a>
+        <a href="../reference/0008-database-crud-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0008</p>
+      <h1>数据库 Session 和 CRUD：让接口真正读写数据库</h1>
+      <p class="lead">本节把第 6 课的 Depends 和第 7 课的 SQLModel 连起来：用依赖为每个请求提供数据库 Session，然后用 Session 完成查询、创建、提交和刷新。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解 Session 是一次请求访问数据库的工作单元。</li>
+        <li>理解 <code>yield</code> 依赖如何创建并关闭 Session。</li>
+        <li>看懂 <code>GET /items</code>、<code>GET /items/{item_id}</code>、<code>POST /items</code> 的数据库版本。</li>
+        <li>理解 <code>add</code>、<code>commit</code>、<code>refresh</code> 的基本作用。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. Session 是什么</h2>
+      <p>你可以把数据库 Session 理解成“这一轮请求和数据库沟通的上下文”。路径函数不应该自己到处创建连接，而是通过依赖拿到一个 Session。</p>
+      <p>本项目的依赖是：</p>
+      <pre><code>def get_session() -&gt; Generator[Session, None, None]:
+    with Session(engine) as session:
+        yield session</code></pre>
+      <p>这段代码的含义是：</p>
+      <ol>
+        <li>请求进来时，创建一个 Session。</li>
+        <li><code>yield session</code> 把 Session 交给路径函数使用。</li>
+        <li>路径函数执行完后，离开 <code>with</code> 代码块，Session 自动关闭。</li>
+      </ol>
+      <div class="callout">
+        <p><strong>连接第 6 课：</strong>这就是 Depends 的价值。路径函数只声明需要 Session，创建和关闭由依赖统一管理。</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. 查询列表：select + session.exec</h2>
+      <pre><code>@router.get("", response_model=list[ItemRead])
+def list_items(
+    filters: Annotated[ItemFilters, Depends(ItemFilters)],
+    pagination: Annotated[Pagination, Depends(Pagination)],
+    session: Annotated[Session, Depends(get_session)],
+) -&gt; list[Item]:
+    statement = select(Item)
+    items = list(session.exec(statement))
+    ...
+    return items[pagination.skip : pagination.skip + pagination.limit]</code></pre>
+      <p><code>select(Item)</code> 表示构造一条“查询所有 Item”的 SQL 查询。<code>session.exec(statement)</code> 执行查询并返回结果。</p>
+      <p>当前为了保持小白友好，筛选和分页仍然在 Python 列表里完成。后面课程可以再把这些筛选下推到 SQL 查询中，让数据库做更多工作。</p>
+    </section>
+
+    <section>
+      <h2>3. 查询单个资源：session.get</h2>
+      <pre><code>item = session.get(Item, item_id)
+if item is None:
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"Item {item_id} was not found.",
+    )
+return item</code></pre>
+      <p><code>session.get(Item, item_id)</code> 表示按主键查找一条 <code>Item</code>。查不到时返回 <code>None</code>，这时我们主动抛出 <code>404</code>。</p>
+      <p>这也复习了第 4 课：<code>999</code> 是合法 ID，但数据库里没有对应记录，所以是业务层面的 <code>404</code>，不是参数校验 <code>422</code>。</p>
+    </section>
+
+    <section>
+      <h2>4. 创建资源：add + commit + refresh</h2>
+      <pre><code>@router.post("", response_model=ItemRead, status_code=status.HTTP_201_CREATED)
+def create_item(
+    payload: ItemCreate,
+    session: Annotated[Session, Depends(get_session)],
+) -&gt; Item:
+    item = Item.model_validate(payload)
+    session.add(item)
+    session.commit()
+    session.refresh(item)
+    return item</code></pre>
+      <p>逐行解释：</p>
+      <ul>
+        <li><code>Item.model_validate(payload)</code>：把创建请求模型转换成数据库表模型。</li>
+        <li><code>session.add(item)</code>：告诉 Session 准备新增这条记录。</li>
+        <li><code>session.commit()</code>：真正提交到数据库文件。</li>
+        <li><code>session.refresh(item)</code>：从数据库刷新对象，拿到自动生成的 <code>id</code>。</li>
+      </ul>
+      <p>如果忘记 <code>commit</code>，数据通常不会真正保存；如果忘记 <code>refresh</code>，返回对象可能拿不到数据库生成后的最新值。</p>
+    </section>
+
+    <section>
+      <h2>5. 为什么数据库 Session 要用 Depends</h2>
+      <p>如果每个接口都手动写 <code>Session(engine)</code>，会有三个问题：</p>
+      <ul>
+        <li>重复代码多。</li>
+        <li>容易忘记关闭 Session。</li>
+        <li>以后测试时不容易替换成测试数据库。</li>
+      </ul>
+      <p>用 <code>Depends(get_session)</code> 后，路径函数只关心“我要一个 Session”，至于怎么创建、怎么关闭、以后怎么替换，都集中在依赖函数里。</p>
+    </section>
+
+    <section>
+      <h2>6. 实验：确认数据能持久化</h2>
+      <p>在 <code>/docs</code> 里执行：</p>
+      <pre><code>POST /items
+{
+  "name": "Persistent FastAPI Notes",
+  "category": "book",
+  "price": 12.5,
+  "in_stock": true
+}</code></pre>
+      <p>然后执行：</p>
+      <pre><code>GET /items
+GET /items/{new_id}</code></pre>
+      <p>重启 FastAPI 服务后再次执行 <code>GET /items</code>。如果新商品还在，说明它已经写入 SQLite 文件，而不是只存在内存里。</p>
+    </section>
+
+    <section class="practice">
+      <h2>7. 课堂练习</h2>
+      <p>请你完成三个小实验：</p>
+      <ol>
+        <li>创建一个 <code>category="tool"</code> 的商品。</li>
+        <li>用 <code>GET /items?category=tool</code> 查到它。</li>
+        <li>重启服务后再查一次，确认数据仍然存在。</li>
+      </ol>
+      <p>完成标准：你能解释“重启后仍然存在”为什么说明数据库持久化成功。</p>
+    </section>
+
+    <section class="checkpoint">
+      <h2>8. 小测：先回忆再展开</h2>
+      <details>
+        <summary>1. <code>yield session</code> 做了什么？</summary>
+        <p class="answer">它把创建好的数据库 Session 交给路径函数使用，函数结束后依赖继续清理资源。</p>
+      </details>
+      <details>
+        <summary>2. <code>commit</code> 的作用是什么？</summary>
+        <p class="answer">它把 Session 中准备好的数据库改动真正提交保存。</p>
+      </details>
+      <details>
+        <summary>3. <code>refresh</code> 为什么常跟在创建后面？</summary>
+        <p class="answer">它从数据库重新读取对象，让自动生成的主键等最新字段回到 Python 对象上。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>9. 本节总结</h2>
+      <p>现在你的 <code>items</code> 接口已经从内存字典升级为 SQLite 数据库。<code>Depends(get_session)</code> 让每个请求获得一个可控的数据库 Session；<code>select</code>、<code>get</code>、<code>add</code>、<code>commit</code>、<code>refresh</code> 是数据库 CRUD 的基本动作。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/sql-databases/">FastAPI SQL Databases</a>、<a href="https://fastapi.tiangolo.com/tutorial/dependencies/dependencies-with-yield/">FastAPI Dependencies with yield</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0007-sqlite-sqlmodel-basics.html">上一课：SQLite 和 SQLModel</a>
+        <a href="../reference/0008-database-crud-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>
