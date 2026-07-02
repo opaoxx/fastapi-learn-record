@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BackgroundTasks Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0013</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0013-background-tasks.html">回到第 13 课</a>
+        <a href="./0012-api-key-auth-cheatsheet.html">上一张速查</a>
+        <a href="./0014-task-status-api-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0013</p>
+      <h1>BackgroundTasks 速查</h1>
+      <p class="lead">先返回响应，再执行轻量后台工作。</p>
+    </header>
+
+    <h2>路径函数参数</h2>
+    <pre><code>def create_task(background_tasks: BackgroundTasks):
+    background_tasks.add_task(worker, task_id)
+    return task</code></pre>
+
+    <h2>适合场景</h2>
+    <ul>
+      <li>发送邮件。</li>
+      <li>写日志或审计记录。</li>
+      <li>轻量数据处理。</li>
+      <li>入门级 AI 任务 demo。</li>
+    </ul>
+
+    <h2>限制</h2>
+    <ul>
+      <li>和 FastAPI 应用在同一进程。</li>
+      <li>服务重启可能丢失运行中任务。</li>
+      <li>没有内置重试和分布式 worker。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/background-tasks/">FastAPI Background Tasks</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0013-background-tasks.html">回到第 13 课</a>
+        <a href="./0014-task-status-api-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

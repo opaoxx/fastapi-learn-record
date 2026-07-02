@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Task Status API Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0014</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0014-task-status-api.html">回到第 14 课</a>
+        <a href="./0013-background-tasks-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0014</p>
+      <h1>任务状态 API 速查</h1>
+      <p class="lead">提交任务拿 ID，查询任务看状态和结果。</p>
+    </header>
+
+    <h2>状态流转</h2>
+    <pre><code>queued -> running -> completed
+queued -> running -> failed</code></pre>
+
+    <h2>表模型</h2>
+    <pre><code>class SummaryTask(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    text: str
+    text_length: int
+    status: str = "queued"
+    result: str | None = None
+    error: str | None = None</code></pre>
+
+    <h2>接口</h2>
+    <ul>
+      <li><code>POST /tasks/summaries</code>: 提交摘要任务，返回 <code>202</code>。</li>
+      <li><code>GET /tasks/{task_id}</code>: 查询单个任务。</li>
+      <li><code>GET /tasks</code>: 查询任务列表。</li>
+    </ul>
+
+    <h2>AI 服务映射</h2>
+    <ul>
+      <li>输入文本 -> prompt 或用户内容。</li>
+      <li>后台函数 -> 模型调用。</li>
+      <li>result -> 模型输出。</li>
+      <li>status -> 前端进度展示。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/background-tasks/">FastAPI Background Tasks</a>、
+      <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/202">MDN 202 Accepted</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0014-task-status-api.html">回到第 14 课</a>
+        <a href="./0013-background-tasks-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator
 from fastapi import FastAPI
 
 from .database import create_db_and_tables
-from .routers import items, predictions, system
+from .routers import items, predictions, system, tasks
 from .settings import get_settings
 
 
@@ -26,3 +26,4 @@ app = FastAPI(
 app.include_router(system.router)
 app.include_router(items.router)
 app.include_router(predictions.router)
+app.include_router(tasks.router)

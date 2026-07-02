@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0014 - Task Status API</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0014</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0013-background-tasks.html">上一课</a>
+        <a href="../reference/0014-task-status-api-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0014</p>
+      <h1>任务状态 API：让客户端查询异步结果</h1>
+      <p class="lead">后台任务只是半个故事。客户端还需要知道任务现在排队、运行、完成还是失败。本节学习用数据库记录任务状态，并提供查询接口。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解任务状态模型：<code>queued</code>、<code>running</code>、<code>completed</code>、<code>failed</code>。</li>
+        <li>理解为什么异步任务要把状态存进数据库。</li>
+        <li>看懂 <code>GET /tasks/{task_id}</code> 和 <code>GET /tasks</code>。</li>
+        <li>理解这个模式如何迁移到真实 AI 推理服务。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 为什么需要任务状态</h2>
+      <p>如果接口只返回“任务已提交”，客户端仍然不知道后续发生了什么。任务可能成功、失败、排队很久，或者结果已经生成。</p>
+      <p>所以常见异步 API 会设计成两步：</p>
+      <pre><code>POST /tasks/summaries  -> 返回 task_id
+GET  /tasks/{task_id} -> 查询状态和结果</code></pre>
+      <p>这就是很多 AI 平台、文件处理平台、视频生成平台常见的工作流。</p>
+    </section>
+
+    <section>
+      <h2>2. SummaryTask 表模型</h2>
+      <pre><code>class SummaryTask(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    text: str
+    text_length: int
+    status: str = Field(default="queued", index=True)
+    result: str | None = None
+    error: str | None = None</code></pre>
+      <p>字段含义：</p>
+      <ul>
+        <li><code>text</code>：原始输入，后台任务需要它来生成摘要。</li>
+        <li><code>text_length</code>：返回给客户端的安全摘要信息，不直接暴露全文。</li>
+        <li><code>status</code>：任务状态。</li>
+        <li><code>result</code>：成功后的结果。</li>
+        <li><code>error</code>：失败时的错误信息。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>3. 响应模型为什么不返回 text</h2>
+      <pre><code>class SummaryTaskRead(SQLModel):
+    id: int
+    text_length: int
+    status: str
+    result: str | None = None
+    error: str | None = None</code></pre>
+      <p>数据库表里保存 <code>text</code>，但响应模型不返回 <code>text</code>。这是接口设计里的一个重要习惯：数据库保存什么，不代表 API 必须暴露什么。</p>
+      <p>真实 AI 服务里，用户输入可能包含隐私信息，默认不要在状态查询接口里原样返回全文。</p>
+    </section>
+
+    <section>
+      <h2>4. 状态流转</h2>
+      <pre><code>queued -> running -> completed
+queued -> running -> failed</code></pre>
+      <p>本项目的后台函数会先把状态改成 <code>running</code>，处理成功后改成 <code>completed</code>，如果发生异常就改成 <code>failed</code> 并记录 <code>error</code>。</p>
+      <p>虽然 demo 很快完成，但真实模型调用可能需要几秒甚至几分钟。状态流转能让前端展示“排队中、处理中、已完成、失败”。</p>
+    </section>
+
+    <section>
+      <h2>5. 查询单个任务</h2>
+      <pre><code>@router.get("/{task_id}", response_model=SummaryTaskRead)
+def read_summary_task(
+    task_id: Annotated[int, Path(ge=1)],
+    session: Annotated[Session, Depends(get_session)],
+) -&gt; SummaryTask:
+    task = session.get(SummaryTask, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"Task {task_id} was not found.")
+    return task</code></pre>
+      <p>它和 <code>GET /items/{item_id}</code> 很像：按主键查询，找不到返回 <code>404</code>。这说明你前面学的资源详情接口模式正在复用。</p>
+    </section>
+
+    <section>
+      <h2>6. 查询任务列表</h2>
+      <pre><code>@router.get("", response_model=list[SummaryTaskRead])
+def list_summary_tasks(session: Annotated[Session, Depends(get_session)]):
+    return list(session.exec(select(SummaryTask)))</code></pre>
+      <p>这个接口可以帮助开发者或前端查看已有任务。后续可以继续扩展分页、按状态筛选、按用户筛选。</p>
+    </section>
+
+    <section>
+      <h2>7. 实验：提交并查询</h2>
+      <pre><code>POST /tasks/summaries
+X-API-Key: dev-secret-key
+
+{
+  "text": "FastAPI background tasks let an API accept work quickly and continue processing after sending the initial response."
+}
+
+GET /tasks/{task_id}
+X-API-Key: dev-secret-key</code></pre>
+      <p>在当前 TestClient 和本地 demo 中，任务通常会很快变成 <code>completed</code>，并出现 <code>result</code>。</p>
+    </section>
+
+    <section>
+      <h2>8. 和真实 AI 服务的对应关系</h2>
+      <p>这个 demo 可以直接映射到真实 AI 服务：</p>
+      <ul>
+        <li><code>SummaryRequest.text</code>：用户输入或 prompt。</li>
+        <li><code>SummaryTask</code>：推理任务记录。</li>
+        <li><code>process_summary_task</code>：真实模型调用函数。</li>
+        <li><code>result</code>：模型输出。</li>
+        <li><code>status</code>：前端轮询展示进度。</li>
+      </ul>
+      <p>等项目变复杂后，后台函数可以迁移到 Celery、任务队列或独立 worker，但接口契约可以保持类似。</p>
+    </section>
+
+    <section class="practice">
+      <h2>9. 课堂练习</h2>
+      <p>请你完成：</p>
+      <ol>
+        <li>提交一个摘要任务，记录返回的 <code>id</code>。</li>
+        <li>用 <code>GET /tasks/{id}</code> 查询它。</li>
+        <li>用 <code>GET /tasks/999999</code> 观察 <code>404</code>。</li>
+      </ol>
+    </section>
+
+    <section class="checkpoint">
+      <h2>10. 小测：先回忆再展开</h2>
+      <details>
+        <summary>1. 为什么状态查询接口不直接返回原始 <code>text</code>？</summary>
+        <p class="answer">因为输入可能包含隐私信息，数据库保存不代表 API 必须暴露。</p>
+      </details>
+      <details>
+        <summary>2. <code>queued</code> 和 <code>running</code> 有什么区别？</summary>
+        <p class="answer"><code>queued</code> 表示任务已创建等待处理，<code>running</code> 表示后台函数正在处理。</p>
+      </details>
+      <details>
+        <summary>3. 为什么查询不存在的任务返回 <code>404</code>？</summary>
+        <p class="answer">因为 task_id 参数合法，但数据库里没有对应任务资源。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>11. 本节总结</h2>
+      <p>异步任务需要状态 API。提交接口负责创建任务，后台函数负责处理任务，查询接口负责展示状态和结果。这个模式是 AI 服务、文件处理、视频生成、批处理任务的常见基础。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/background-tasks/">FastAPI Background Tasks</a>、<a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/202">MDN 202 Accepted</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0013-background-tasks.html">上一课：BackgroundTasks</a>
+        <a href="../reference/0014-task-status-api-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

@@ -48,3 +48,5 @@ Copy-Item .env.example .env
 ```
 
 The protected write endpoints use `FIRST_API_API_KEY`, which defaults to `dev-secret-key` for local learning. Include it as an `X-API-Key` header when calling `POST`, `PATCH`, or `DELETE` item endpoints.
+
+The task endpoints under `/tasks` are also protected with `X-API-Key`. They demonstrate the AI-service pattern of accepting work with `202 Accepted`, processing it in the background, and letting clients query task status later.

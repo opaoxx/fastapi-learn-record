@@ -32,6 +32,36 @@ class PredictionResponse(BaseModel):
     text_length: int
 
 
+TaskStatus = Literal["queued", "running", "completed", "failed"]
+
+
+class SummaryRequest(BaseModel):
+    text: str = PydanticField(
+        min_length=10,
+        max_length=2000,
+        examples=[
+            "FastAPI background tasks are useful when an API should accept work quickly and finish processing after the response."
+        ],
+    )
+
+
+class SummaryTask(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    text: str
+    text_length: int
+    status: str = Field(default="queued", index=True)
+    result: str | None = None
+    error: str | None = None
+
+
+class SummaryTaskRead(SQLModel):
+    id: int
+    text_length: int
+    status: str
+    result: str | None = None
+    error: str | None = None
+
+
 ItemCategory = Literal["book", "course", "tool"]
 
 

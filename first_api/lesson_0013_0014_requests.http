@@ -1,0 +1,24 @@
+### Lesson 0013: submit a summary task, expect 202
+POST http://127.0.0.1:8000/tasks/summaries
+Content-Type: application/json
+X-API-Key: dev-secret-key
+
+{
+  "text": "FastAPI background tasks let an API accept work quickly and continue processing after sending the initial response."
+}
+
+### Lesson 0013: submit without API key, expect 401
+POST http://127.0.0.1:8000/tasks/summaries
+Content-Type: application/json
+
+{
+  "text": "FastAPI background tasks should reject this request because the API key is missing."
+}
+
+### Lesson 0014: list tasks
+GET http://127.0.0.1:8000/tasks
+X-API-Key: dev-secret-key
+
+### Lesson 0014: read task by ID
+GET http://127.0.0.1:8000/tasks/1
+X-API-Key: dev-secret-key

@@ -10,3 +10,4 @@
 - The items endpoints now use SQLite and SQLModel instead of the earlier in-memory dictionary. Keep explaining persistence, sessions, commit, and refresh slowly.
 - The items API now has full CRUD plus pytest coverage for create/update/delete and invalid update validation.
 - The app now has Settings from pydantic-settings and protects item write endpoints with X-API-Key. Any future POST/PATCH/DELETE examples need the header unless a lesson intentionally demonstrates 401.
+- The app now has a protected task API for demo AI-style summary jobs using FastAPI BackgroundTasks and database-backed task status records.

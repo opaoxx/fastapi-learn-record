@@ -52,6 +52,12 @@
   Official overview of FastAPI security schemes. Use when comparing API keys, bearer tokens, and OAuth2.
 - [FastAPI Header Parameters](https://fastapi.tiangolo.com/tutorial/header-params/)
   Official guide to reading request headers. Use when teaching X-API-Key and other header-based metadata.
+- [FastAPI Background Tasks](https://fastapi.tiangolo.com/tutorial/background-tasks/)
+  Official guide to BackgroundTasks. Use when teaching post-response work and lightweight asynchronous patterns.
+- [FastAPI BackgroundTasks Reference](https://fastapi.tiangolo.com/reference/background/)
+  Official API reference for BackgroundTasks. Use for exact class behavior and method names.
+- [MDN 202 Accepted](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/202)
+  HTTP reference for 202 semantics. Use when explaining task submission responses.
 - [Uvicorn Documentation](https://uvicorn.dev/)
   ASGI server documentation. Use when learning what actually runs the FastAPI app locally or in production.
 
