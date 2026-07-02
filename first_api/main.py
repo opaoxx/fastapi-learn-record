@@ -23,6 +23,7 @@ class PredictionRequest(BaseModel):
         examples=["FastAPI makes backend APIs pleasant."],
     )
     mode: Literal["fast", "careful"] = "fast"
+    temperature: float = Field(default=0.2, ge=0, le=1)
 
 
 class PredictionResponse(BaseModel):
