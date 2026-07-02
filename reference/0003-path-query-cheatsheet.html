@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FastAPI Path and Query Parameters Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0003</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0003-path-and-query-parameters.html">回到第 3 课</a>
+        <a href="./0002-request-body-pydantic-cheatsheet.html">上一张速查</a>
+        <a href="./0004-response-errors-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0003</p>
+      <h1>路径参数和查询参数速查</h1>
+      <p class="lead">路径参数定位一个资源，查询参数筛选一批资源。</p>
+    </header>
+
+    <h2>路径参数</h2>
+    <pre><code>@app.get("/items/{item_id}")
+def read_item(item_id: int):
+    return {"item_id": item_id}</code></pre>
+    <p><code>/items/2</code> 中的 <code>2</code> 会进入 <code>item_id</code>。</p>
+
+    <h2>查询参数</h2>
+    <pre><code>@app.get("/items")
+def list_items(category: str | None = None):
+    ...</code></pre>
+    <p><code>/items?category=book</code> 中的 <code>book</code> 会进入 <code>category</code>。</p>
+
+    <h2>判断规则</h2>
+    <ul>
+      <li>出现在路径模板里的函数参数是路径参数。</li>
+      <li>没有出现在路径模板里的简单类型参数通常是查询参数。</li>
+      <li>Pydantic 模型参数通常来自请求体。</li>
+    </ul>
+
+    <h2>常见校验</h2>
+    <pre><code>item_id: Annotated[int, Path(ge=1)]
+q: Annotated[str | None, Query(max_length=40)] = None
+max_price: Annotated[float | None, Query(ge=0)] = None</code></pre>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/path-params/">FastAPI Path Parameters</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/query-params/">FastAPI Query Parameters</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0003-path-and-query-parameters.html">回到第 3 课</a>
+        <a href="./0004-response-errors-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

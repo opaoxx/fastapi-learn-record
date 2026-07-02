@@ -1,0 +1,22 @@
+### Lesson 0003: path parameter
+GET http://127.0.0.1:8000/items/2
+
+### Lesson 0003: query parameters
+GET http://127.0.0.1:8000/items?category=book&max_price=50&in_stock=true
+
+### Lesson 0003: invalid path parameter
+GET http://127.0.0.1:8000/items/0
+
+### Lesson 0004: create an item
+POST http://127.0.0.1:8000/items
+Content-Type: application/json
+
+{
+  "name": "FastAPI Interview Pack",
+  "category": "course",
+  "price": 49.9,
+  "in_stock": true
+}
+
+### Lesson 0004: resource not found
+GET http://127.0.0.1:8000/items/999

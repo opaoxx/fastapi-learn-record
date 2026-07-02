@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0003 - Path and Query Parameters</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0003</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0002-request-body-pydantic.html">上一课</a>
+        <a href="./0004-response-models-and-errors.html">下一课</a>
+        <a href="../reference/0003-path-query-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0003</p>
+      <h1>路径参数和查询参数：让 URL 会表达意图</h1>
+      <p class="lead">本节学习 FastAPI 最常用的两类 URL 参数：路径参数负责定位一个资源，查询参数负责筛选一批资源。理解它们，你就能读懂大多数 REST 风格接口。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解路径参数和查询参数在 URL 中的位置与职责。</li>
+        <li>能写出 <code>GET /items/{item_id}</code> 这种“按 ID 查单个资源”的接口。</li>
+        <li>能写出 <code>GET /items?category=book&amp;max_price=50</code> 这种“按条件筛选列表”的接口。</li>
+        <li>理解 FastAPI 如何根据函数参数名、类型注解和默认值判断参数来源。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 背景知识：URL 不是随便写的字符串</h2>
+      <p>后端接口的 URL 应该表达“你要操作什么资源”。例如：</p>
+      <pre><code>GET /items/2
+GET /items?category=book&amp;max_price=50&amp;in_stock=true</code></pre>
+      <p>第一行里的 <code>2</code> 是路径的一部分，表示要找 ID 为 2 的商品。第二行里的 <code>category</code>、<code>max_price</code>、<code>in_stock</code> 在问号后面，表示对商品列表进行筛选。</p>
+      <div class="callout">
+        <p><strong>一句话区分：</strong>路径参数用于“找哪一个”，查询参数用于“怎么筛选”。</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. 路径参数：定位一个具体资源</h2>
+      <p>FastAPI 用花括号声明路径参数：</p>
+      <pre><code>@app.get("/items/{item_id}", response_model=Item)
+def read_item(
+    item_id: Annotated[int, Path(ge=1, description="The numeric ID of the item.")]
+) -&gt; Item:
+    return get_item_or_404(item_id)</code></pre>
+      <p>这里有三层含义：</p>
+      <ol>
+        <li><code>"/items/{item_id}"</code> 声明 URL 里有一个动态片段。</li>
+        <li><code>item_id: int</code> 要求 FastAPI 把 URL 字符串转换成整数。</li>
+        <li><code>Path(ge=1)</code> 给路径参数增加规则：ID 必须大于等于 1。</li>
+      </ol>
+      <p>所以访问 <code>/items/2</code> 会得到 ID 为 2 的商品；访问 <code>/items/abc</code> 会失败，因为 <code>abc</code> 不能转换成整数；访问 <code>/items/0</code> 也会失败，因为不满足 <code>ge=1</code>。</p>
+    </section>
+
+    <section>
+      <h2>3. 查询参数：筛选一批资源</h2>
+      <p>查询参数在 URL 的问号后面，用 <code>&amp;</code> 连接多个条件：</p>
+      <pre><code>GET /items?q=python&amp;category=book&amp;max_price=50&amp;in_stock=true</code></pre>
+      <p>对应代码是：</p>
+      <pre><code>@app.get("/items", response_model=list[Item])
+def list_items(
+    q: Annotated[str | None, Query(max_length=40)] = None,
+    category: ItemCategory | None = None,
+    max_price: Annotated[float | None, Query(ge=0)] = None,
+    in_stock: bool | None = None,
+) -&gt; list[Item]:
+    ...</code></pre>
+      <p>这些参数没有出现在路径模板 <code>"/items"</code> 里，所以 FastAPI 会把它们当成查询参数。默认值是 <code>None</code>，表示这个筛选条件可以不传。</p>
+    </section>
+
+    <section>
+      <h2>4. FastAPI 的判断规则</h2>
+      <p>先记住这个入门规则，后面会越来越自然：</p>
+      <ul>
+        <li>函数参数名出现在路径里，例如 <code>{item_id}</code>，它就是路径参数。</li>
+        <li>函数参数是简单类型，并且没有出现在路径里，它通常就是查询参数。</li>
+        <li>函数参数是 Pydantic 模型，并且用于 <code>POST</code> 这类请求，它通常来自请求体。</li>
+      </ul>
+      <p>因此 <code>read_item(item_id: int)</code> 从路径拿 ID；<code>list_items(category=...)</code> 从问号后面拿筛选条件；上一课的 <code>predict(payload: PredictionRequest)</code> 从 JSON 请求体拿数据。</p>
+    </section>
+
+    <section>
+      <h2>5. 实验一：按 ID 查询</h2>
+      <p>打开 <code>http://127.0.0.1:8000/docs</code>，测试：</p>
+      <pre><code>GET /items/1
+GET /items/2
+GET /items/0
+GET /items/abc</code></pre>
+      <p>前两个应该成功，后两个应该返回 <code>422</code>。这里的 <code>422</code> 来自参数校验：URL 能被路由匹配，但参数类型或范围不符合声明。</p>
+    </section>
+
+    <section>
+      <h2>6. 实验二：筛选列表</h2>
+      <p>测试这些地址：</p>
+      <pre><code>GET /items
+GET /items?category=book
+GET /items?max_price=20
+GET /items?in_stock=false
+GET /items?q=python</code></pre>
+      <p>你会看到返回列表逐渐变少，因为每个查询参数都在增加一个筛选条件。这个模式以后会出现在搜索页、商品页、日志页、模型任务列表等很多后端接口里。</p>
+    </section>
+
+    <section class="practice">
+      <h2>7. 课堂练习</h2>
+      <p>请你在 <code>/docs</code> 里找出下面请求各自返回几个商品：</p>
+      <pre><code>GET /items?category=course
+GET /items?category=tool&amp;in_stock=false
+GET /items?max_price=0
+GET /items?q=api</code></pre>
+      <p>完成标准：你能说出每个查询参数具体过滤了哪个字段。</p>
+    </section>
+
+    <section class="checkpoint">
+      <h2>8. 小测：先回忆再展开</h2>
+      <details>
+        <summary>1. <code>/items/{item_id}</code> 中的 <code>{item_id}</code> 是什么？</summary>
+        <p class="answer">它是路径参数，用来从 URL 路径中捕获一个动态值。</p>
+      </details>
+      <details>
+        <summary>2. <code>/items?category=book</code> 中的 <code>category</code> 是什么？</summary>
+        <p class="answer">它是查询参数，用来筛选或修饰这次列表查询。</p>
+      </details>
+      <details>
+        <summary>3. 查询参数为什么常常有默认值？</summary>
+        <p class="answer">因为筛选条件通常是可选的，不传时接口应该返回更宽泛的结果。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>9. 本节总结</h2>
+      <p>路径参数定位资源，查询参数筛选资源。FastAPI 通过路径模板、函数参数名、类型注解和默认值来决定从哪里取数据。掌握这一节，你已经能写出常见的“详情接口”和“列表筛选接口”。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/path-params/">FastAPI Path Parameters</a>、<a href="https://fastapi.tiangolo.com/tutorial/query-params/">FastAPI Query Parameters</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0002-request-body-pydantic.html">上一课：请求体与 Pydantic</a>
+        <a href="./0004-response-models-and-errors.html">下一课：响应模型和错误处理</a>
+        <a href="../reference/0003-path-query-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

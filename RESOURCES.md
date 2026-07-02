@@ -8,6 +8,8 @@
   Official first endpoint explanation. Use for the mental model of app instance, path operation decorator, and path operation function.
 - [FastAPI Path Parameters](https://fastapi.tiangolo.com/tutorial/path-params/)
   Official guide to dynamic URL segments. Use when moving from fixed routes to item-specific routes.
+- [FastAPI Query Parameters](https://fastapi.tiangolo.com/tutorial/query-params/)
+  Official guide to query parameters and defaults. Use when teaching list filtering and search-like endpoints.
 - [FastAPI Request Body](https://fastapi.tiangolo.com/tutorial/body/)
   Official guide to receiving JSON request bodies with Pydantic models. Use for POST endpoints and AI-service inputs.
 - [FastAPI Body - Fields](https://fastapi.tiangolo.com/tutorial/body-fields/)
@@ -18,6 +20,8 @@
   Official Pydantic field concept guide. Use for explaining Field, defaults, constraints, and schema metadata.
 - [FastAPI Response Model](https://fastapi.tiangolo.com/tutorial/response-model/)
   Official guide to response validation and filtering. Use when designing API contracts for frontend and AI-service consumers.
+- [FastAPI Handling Errors](https://fastapi.tiangolo.com/tutorial/handling-errors/)
+  Official guide to HTTPException and error responses. Use when teaching 404 and business-level API errors.
 - [Uvicorn Documentation](https://uvicorn.dev/)
   ASGI server documentation. Use when learning what actually runs the FastAPI app locally or in production.
 

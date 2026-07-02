@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FastAPI Response Models and Errors Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0004</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0004-response-models-and-errors.html">回到第 4 课</a>
+        <a href="./0003-path-query-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0004</p>
+      <h1>响应模型、状态码和错误速查</h1>
+      <p class="lead">请求模型管输入，响应模型管输出，状态码管结果语义。</p>
+    </header>
+
+    <h2>响应模型</h2>
+    <pre><code>@app.get("/items/{item_id}", response_model=Item)
+def read_item(item_id: int) -&gt; Item:
+    return item</code></pre>
+
+    <h2>创建资源</h2>
+    <pre><code>@app.post("/items", response_model=Item, status_code=status.HTTP_201_CREATED)
+def create_item(payload: ItemCreate) -&gt; Item:
+    ...</code></pre>
+
+    <h2>主动返回 404</h2>
+    <pre><code>raise HTTPException(
+    status_code=status.HTTP_404_NOT_FOUND,
+    detail="Item was not found.",
+)</code></pre>
+
+    <h2>常见状态码</h2>
+    <ul>
+      <li><code>200</code>: 请求成功。</li>
+      <li><code>201</code>: 创建成功。</li>
+      <li><code>404</code>: 资源不存在。</li>
+      <li><code>422</code>: 参数或请求体校验失败。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/response-model/">FastAPI Response Model</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/handling-errors/">FastAPI Handling Errors</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0004-response-models-and-errors.html">回到第 4 课</a>
+        <a href="./0003-path-query-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>
