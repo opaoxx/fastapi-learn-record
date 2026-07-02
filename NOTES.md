@@ -11,3 +11,5 @@
 - The items API now has full CRUD plus pytest coverage for create/update/delete and invalid update validation.
 - The app now has Settings from pydantic-settings and protects item write endpoints with X-API-Key. Any future POST/PATCH/DELETE examples need the header unless a lesson intentionally demonstrates 401.
 - The app now has a protected task API for demo AI-style summary jobs using FastAPI BackgroundTasks and database-backed task status records.
+- The app now accepts protected UTF-8 `.txt` uploads and can create summary tasks from uploaded file content.
+- The app now has CORS middleware for local browser frontends and serves a small static frontend at `/app/` for uploading a text file and creating a summary task.

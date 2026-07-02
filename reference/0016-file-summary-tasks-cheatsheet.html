@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>File Summary Tasks Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0016</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0016-file-summary-tasks.html">回到第 16 课</a>
+        <a href="./0015-uploadfile-cheatsheet.html">上一张速查</a>
+        <a href="./0017-cors-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0016</p>
+      <h1>文件摘要任务速查</h1>
+      <p class="lead">上传文件拿 file_id，创建任务拿 task_id，查询任务拿 result。</p>
+    </header>
+
+    <h2>工作流</h2>
+    <pre><code>POST /files/text
+POST /tasks/files/{file_id}/summary
+GET /tasks/{task_id}</code></pre>
+
+    <h2>任务来源</h2>
+    <pre><code>source_file_id=uploaded_file.id</code></pre>
+
+    <h2>状态码</h2>
+    <ul>
+      <li><code>201</code>: 文件上传成功。</li>
+      <li><code>202</code>: 文件摘要任务已接收。</li>
+      <li><code>401</code>: 缺少或错误 API Key。</li>
+      <li><code>404</code>: 文件或任务不存在。</li>
+      <li><code>422</code>: 文件类型、编码或请求参数不合法。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/request-files/">FastAPI Request Files</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/background-tasks/">FastAPI Background Tasks</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0016-file-summary-tasks.html">回到第 16 课</a>
+        <a href="./0015-uploadfile-cheatsheet.html">上一张速查</a>
+        <a href="./0017-cors-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0017 - CORS and Browser Frontends</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0017</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0016-file-summary-tasks.html">上一课</a>
+        <a href="./0018-static-frontend-fetch.html">下一课</a>
+        <a href="../reference/0017-cors-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0017</p>
+      <h1>CORS：为什么浏览器前端会被后端“拦住”</h1>
+      <p class="lead">这一节不急着写页面，先把浏览器安全模型讲清楚：同源、跨源、预检请求、允许来源，以及 FastAPI 的 CORSMiddleware。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解浏览器里的 <code>origin</code> 是什么。</li>
+        <li>解释为什么前端调用后端时会出现 CORS 错误。</li>
+        <li>看懂 <code>OPTIONS</code> 预检请求。</li>
+        <li>给 FastAPI 添加 <code>CORSMiddleware</code>。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 先建立问题场景</h2>
+      <p>后端 API 单独运行时，你可以在 <code>/docs</code> 里调用接口，也可以用 PyCharm 的 HTTP Client 调用接口。可是当前端页面在浏览器里运行时，情况会变复杂。</p>
+      <p>假设：</p>
+      <pre><code>前端页面：http://127.0.0.1:5500
+后端 API：http://127.0.0.1:8000</code></pre>
+      <p>虽然它们都在本机，但端口不同，所以浏览器认为它们是两个不同的来源。浏览器会先问后端：“这个前端能不能访问你？”这个机制就是 CORS。</p>
+    </section>
+
+    <section>
+      <h2>2. Origin 到底是什么</h2>
+      <p><code>origin</code> 由三部分组成：</p>
+      <ul>
+        <li>协议：<code>http</code> 或 <code>https</code>。</li>
+        <li>域名或主机：例如 <code>localhost</code>、<code>127.0.0.1</code>、<code>example.com</code>。</li>
+        <li>端口：例如 <code>8000</code>、<code>5500</code>。</li>
+      </ul>
+      <p>三者只要有一个不同，就是不同源。下面这些互相都不完全相同：</p>
+      <pre><code>http://localhost:8000
+http://127.0.0.1:8000
+http://127.0.0.1:5500
+https://127.0.0.1:8000</code></pre>
+      <p>这不是 FastAPI 故意刁难你，而是浏览器为了保护用户做的安全限制。</p>
+    </section>
+
+    <section>
+      <h2>3. 为什么 API 客户端能调用，浏览器却不行</h2>
+      <p>CORS 是浏览器执行的限制。也就是说，服务器本身并不神秘地“拒绝 Python 请求”，而是浏览器在保护网页环境。</p>
+      <div class="two-col">
+        <div class="callout">
+          <strong>PyCharm HTTP Client</strong>
+          <p>它不是浏览器，不执行浏览器同源策略，所以通常不会遇到 CORS 拦截。</p>
+        </div>
+        <div class="callout">
+          <strong>浏览器 fetch</strong>
+          <p>它运行在网页里，必须遵守浏览器安全模型。跨源调用要看后端是否明确允许。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>4. 预检请求：浏览器先发 OPTIONS</h2>
+      <p>当前项目的写接口需要 <code>X-API-Key</code>。这种自定义请求头会让浏览器先发送一个 <code>OPTIONS</code> 请求，询问后端：</p>
+      <pre><code>Origin: http://127.0.0.1:5500
+Access-Control-Request-Method: POST
+Access-Control-Request-Headers: X-API-Key</code></pre>
+      <p>如果后端响应里包含合适的 CORS 头，浏览器才会继续发送真正的 <code>POST</code> 请求。</p>
+    </section>
+
+    <section>
+      <h2>5. FastAPI 中间件位置</h2>
+      <p>中间件可以理解为包在路由外面的一层处理逻辑。请求进入应用时，先经过中间件，再到具体路由；响应离开应用时，也会经过中间件。</p>
+      <pre><code>浏览器请求
+  -> CORSMiddleware
+  -> APIRouter 路由函数
+  -> CORSMiddleware 给响应补 CORS 头
+  -> 浏览器响应</code></pre>
+      <p>所以 CORS 不适合写在某一个路由函数里，它是整个应用层面的浏览器访问策略。</p>
+    </section>
+
+    <section>
+      <h2>6. 本节新增代码</h2>
+      <pre><code>from fastapi.middleware.cors import CORSMiddleware
+
+allowed_origins = [
+    "http://127.0.0.1:5500",
+    "http://localhost:5500",
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)</code></pre>
+      <p><code>allow_origins</code> 是白名单，表示哪些前端来源可以访问后端。<code>allow_methods</code> 允许请求方法，<code>allow_headers</code> 允许请求头。因为我们有 <code>X-API-Key</code>，所以请求头也要放行。</p>
+    </section>
+
+    <section>
+      <h2>7. 为什么不直接写 *</h2>
+      <p><code>*</code> 表示允许任意来源，学习阶段看起来省事，但真实项目通常不这么做。你的后端不应该让任意网站都能从浏览器直接调用。</p>
+      <p>尤其当接口需要登录态、Authorization 头、Cookie、API Key 或其他敏感能力时，推荐明确列出允许的前端地址。</p>
+    </section>
+
+    <section class="practice">
+      <h2>8. 课堂练习</h2>
+      <p>用 HTTP Client 或测试代码观察一次预检请求：</p>
+      <pre><code>OPTIONS /files/text
+Origin: http://127.0.0.1:5500
+Access-Control-Request-Method: POST
+Access-Control-Request-Headers: X-API-Key</code></pre>
+      <p>你应该看到响应中包含 <code>access-control-allow-origin</code>，并且值是 <code>http://127.0.0.1:5500</code>。</p>
+    </section>
+
+    <section class="checkpoint">
+      <h2>9. 小测：先回忆再展开</h2>
+      <details>
+        <summary>1. 为什么 <code>127.0.0.1:5500</code> 和 <code>127.0.0.1:8000</code> 不同源？</summary>
+        <p class="answer">因为端口不同。origin 由协议、主机和端口共同决定。</p>
+      </details>
+      <details>
+        <summary>2. CORS 是谁主要执行的限制？</summary>
+        <p class="answer">浏览器。它会根据后端返回的 CORS 响应头决定是否允许网页 JavaScript 读取响应。</p>
+      </details>
+      <details>
+        <summary>3. 为什么 <code>X-API-Key</code> 会牵出预检请求？</summary>
+        <p class="answer">因为它是自定义请求头，浏览器会先用 OPTIONS 询问后端是否允许这个跨源请求头。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>10. 本节总结</h2>
+      <p>本节把后端从“只能被 API 工具舒服调用”推进到“可以被浏览器前端安全调用”。CORS 不是业务逻辑，而是浏览器和后端之间的访问许可协议。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/cors/">FastAPI CORS</a>、<a href="https://fastapi.tiangolo.com/tutorial/middleware/">FastAPI Middleware</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0016-file-summary-tasks.html">上一课：上传文件创建摘要任务</a>
+        <a href="./0018-static-frontend-fetch.html">下一课：静态前端调用 API</a>
+        <a href="../reference/0017-cors-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UploadFile Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0015</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0015-uploadfile-text-files.html">回到第 15 课</a>
+        <a href="./0014-task-status-api-cheatsheet.html">上一张速查</a>
+        <a href="./0016-file-summary-tasks-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0015</p>
+      <h1>UploadFile 速查</h1>
+      <p class="lead">文件上传来自 multipart/form-data，用 UploadFile 接收。</p>
+    </header>
+
+    <h2>接口参数</h2>
+    <pre><code>async def upload_text_file(
+    file: Annotated[UploadFile, File()],
+):
+    raw_content = await file.read()</code></pre>
+
+    <h2>常用属性</h2>
+    <ul>
+      <li><code>file.filename</code>: 上传文件名。</li>
+      <li><code>file.content_type</code>: 内容类型。</li>
+      <li><code>await file.read()</code>: 读取文件字节。</li>
+    </ul>
+
+    <h2>校验</h2>
+    <ul>
+      <li>扩展名：只收 <code>.txt</code>。</li>
+      <li>大小：限制最大字节数。</li>
+      <li>编码：要求 UTF-8。</li>
+      <li>鉴权：上传接口需要 <code>X-API-Key</code>。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/request-files/">FastAPI Request Files</a>、
+      <a href="https://fastapi.tiangolo.com/reference/uploadfile/">FastAPI UploadFile Reference</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0015-uploadfile-text-files.html">回到第 15 课</a>
+        <a href="./0016-file-summary-tasks-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

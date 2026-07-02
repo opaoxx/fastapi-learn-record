@@ -4,7 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, st
 from sqlmodel import Session, select
 
 from ..database import get_session
-from ..schemas import SummaryRequest, SummaryTask, SummaryTaskRead
+from ..schemas import SummaryRequest, SummaryTask, SummaryTaskRead, UploadedTextFile
 from ..security import require_api_key
 from ..task_worker import process_summary_task
 
@@ -25,6 +25,33 @@ def create_summary_task(
     task = SummaryTask(
         text=payload.text,
         text_length=len(payload.text),
+        status="queued",
+    )
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+
+    background_tasks.add_task(process_summary_task, task.id)
+    return task
+
+
+@router.post("/files/{file_id}/summary", response_model=SummaryTaskRead, status_code=status.HTTP_202_ACCEPTED)
+def create_file_summary_task(
+    file_id: Annotated[int, Path(ge=1)],
+    background_tasks: BackgroundTasks,
+    session: Annotated[Session, Depends(get_session)],
+) -> SummaryTask:
+    uploaded_file = session.get(UploadedTextFile, file_id)
+    if uploaded_file is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"File {file_id} was not found.",
+        )
+
+    task = SummaryTask(
+        text=uploaded_file.content,
+        text_length=len(uploaded_file.content),
+        source_file_id=uploaded_file.id,
         status="queued",
     )
     session.add(task)

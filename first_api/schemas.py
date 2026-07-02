@@ -49,6 +49,7 @@ class SummaryTask(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     text: str
     text_length: int
+    source_file_id: int | None = Field(default=None, index=True)
     status: str = Field(default="queued", index=True)
     result: str | None = None
     error: str | None = None
@@ -57,9 +58,27 @@ class SummaryTask(SQLModel, table=True):
 class SummaryTaskRead(SQLModel):
     id: int
     text_length: int
+    source_file_id: int | None = None
     status: str
     result: str | None = None
     error: str | None = None
+
+
+class UploadedTextFile(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    filename: str
+    content_type: str
+    size_bytes: int
+    content: str
+    preview: str
+
+
+class UploadedTextFileRead(SQLModel):
+    id: int
+    filename: str
+    content_type: str
+    size_bytes: int
+    preview: str
 
 
 ItemCategory = Literal["book", "course", "tool"]

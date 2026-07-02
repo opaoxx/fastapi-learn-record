@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0018 - Static Frontend and Fetch</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0018</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0017-cors-browser-frontend.html">上一课</a>
+        <a href="../reference/0018-static-frontend-fetch-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0018</p>
+      <h1>静态前端调用 API：从按钮到文件摘要任务</h1>
+      <p class="lead">这一节做一个很小但完整的浏览器页面：选择文本文件，点击按钮，页面用 fetch 调用 FastAPI，最后显示任务结果。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解静态文件和 API 路由的区别。</li>
+        <li>用 <code>StaticFiles</code> 把前端页面挂到 <code>/app/</code>。</li>
+        <li>看懂浏览器里的 <code>fetch</code>、<code>FormData</code> 和请求头。</li>
+        <li>完成“页面 -> 上传接口 -> 任务接口 -> 查询接口”的调用链。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 什么是静态文件</h2>
+      <p>静态文件是服务器直接发送给浏览器的文件，例如 HTML、CSS、JavaScript、图片。它们和 API 路由不一样：</p>
+      <div class="two-col">
+        <div class="callout">
+          <strong>API 路由</strong>
+          <p>执行 Python 函数，读取数据库，返回 JSON。</p>
+        </div>
+        <div class="callout">
+          <strong>静态文件</strong>
+          <p>服务器直接把文件内容发给浏览器，浏览器负责渲染和运行 JavaScript。</p>
+        </div>
+      </div>
+      <p>本节新增的页面放在 <code>first_api/frontend/index.html</code>。</p>
+    </section>
+
+    <section>
+      <h2>2. 挂载静态前端</h2>
+      <pre><code>from fastapi.staticfiles import StaticFiles
+
+frontend_dir = Path(__file__).parent / "frontend"
+
+app.mount(
+    "/app",
+    StaticFiles(directory=frontend_dir, html=True),
+    name="frontend",
+)</code></pre>
+      <p><code>mount</code> 的意思是：把一个独立的小应用挂到某个路径下面。这里所有以 <code>/app</code> 开头的请求都交给静态文件服务处理。</p>
+      <p>启动服务后访问：</p>
+      <pre><code>http://127.0.0.1:8000/app/</code></pre>
+    </section>
+
+    <section>
+      <h2>3. 页面调用链</h2>
+      <p>这个前端页面没有引入框架，只用浏览器原生能力：</p>
+      <pre><code>用户选择 .txt 文件
+  -> JS 创建 FormData
+  -> fetch POST /files/text
+  -> fetch POST /tasks/files/{file_id}/summary
+  -> fetch GET /tasks/{task_id}
+  -> 页面显示 JSON</code></pre>
+      <p>这条链路非常重要。以后你把摘要函数换成真实 LLM，或者把文本文件换成 PDF、图片、音频，本质还是这种“输入、提交任务、查询结果”的结构。</p>
+    </section>
+
+    <section>
+      <h2>4. FormData：浏览器里的 multipart/form-data</h2>
+      <pre><code>const formData = new FormData();
+formData.append("file", file);
+
+await fetch("/files/text", {
+  method: "POST",
+  headers: {"X-API-Key": apiKey},
+  body: formData,
+});</code></pre>
+      <p><code>FormData</code> 会帮浏览器构造 <code>multipart/form-data</code> 请求。这里的字段名必须叫 <code>file</code>，因为后端函数参数也叫 <code>file</code>。</p>
+      <p>注意：使用 <code>FormData</code> 上传文件时，不要手写 <code>Content-Type</code>。浏览器会自动补上包含 boundary 的正确值。</p>
+    </section>
+
+    <section>
+      <h2>5. fetch：浏览器里的 HTTP 客户端</h2>
+      <pre><code>const taskResponse = await fetch(`/tasks/files/${uploaded.id}/summary`, {
+  method: "POST",
+  headers: {"X-API-Key": apiKey},
+});</code></pre>
+      <p><code>fetch</code> 返回的是 Response 对象，不会因为 404 或 422 自动抛异常。所以页面里封装了一个 <code>parseJsonResponse</code>，先读 JSON，再检查 <code>response.ok</code>。</p>
+      <pre><code>async function parseJsonResponse(response) {
+  const body = await response.json().catch(() =&gt; ({}));
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}: ${JSON.stringify(body)}`);
+  }
+  return body;
+}</code></pre>
+    </section>
+
+    <section>
+      <h2>6. 同源页面为什么还讲 CORS</h2>
+      <p>本节页面运行在 <code>http://127.0.0.1:8000/app/</code>，API 也在 <code>http://127.0.0.1:8000</code>，所以它是同源调用，不会触发跨源限制。</p>
+      <p>但真实开发里，你很可能用 Vite、React、Vue 或独立静态服务器跑前端，例如 <code>http://127.0.0.1:5500</code>。那时就会回到第 17 课的 CORS 问题。</p>
+    </section>
+
+    <section>
+      <h2>7. 运行实验</h2>
+      <ol>
+        <li>启动服务：<code>fastapi dev first_api/main.py</code></li>
+        <li>打开 <code>http://127.0.0.1:8000/app/</code></li>
+        <li>选择一个 UTF-8 <code>.txt</code> 文件。</li>
+        <li>确认 API Key 是 <code>dev-secret-key</code>。</li>
+        <li>点击“上传并生成摘要”。</li>
+      </ol>
+      <p>成功时，你会看到上传文件信息和摘要任务信息。失败时，页面会显示后端返回的状态码和错误内容。</p>
+    </section>
+
+    <section class="practice">
+      <h2>8. 课堂练习</h2>
+      <p>请你完成三个小改动：</p>
+      <ol>
+        <li>把 API Key 输入框故意改错，观察 <code>401</code>。</li>
+        <li>上传一个 <code>.md</code> 文件，观察 <code>422</code>。</li>
+        <li>上传一个正常 <code>.txt</code> 文件，找到响应里的 <code>source_file_id</code>。</li>
+      </ol>
+    </section>
+
+    <section class="checkpoint">
+      <h2>9. 小测：先回忆再展开</h2>
+      <details>
+        <summary>1. <code>StaticFiles</code> 和 <code>APIRouter</code> 的职责有什么不同？</summary>
+        <p class="answer"><code>StaticFiles</code> 负责发送现成文件，<code>APIRouter</code> 负责把请求交给 Python 路由函数处理。</p>
+      </details>
+      <details>
+        <summary>2. 上传文件时为什么用 <code>FormData</code>？</summary>
+        <p class="answer">因为浏览器用它构造 multipart/form-data 请求，正好对应 FastAPI 的 UploadFile。</p>
+      </details>
+      <details>
+        <summary>3. <code>fetch</code> 遇到 422 会自动抛异常吗？</summary>
+        <p class="answer">不会。需要检查 <code>response.ok</code> 或状态码，再决定是否抛出错误。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>10. 本节总结</h2>
+      <p>本节把后端项目变成了一个可以给别人演示的最小全栈闭环：FastAPI 提供 API，静态页面提供交互，浏览器用 fetch 把两者连起来。这是作品集项目非常重要的一步。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/static-files/">FastAPI Static Files</a>、<a href="https://fastapi.tiangolo.com/tutorial/cors/">FastAPI CORS</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0017-cors-browser-frontend.html">上一课：CORS 与浏览器前端</a>
+        <a href="../reference/0018-static-frontend-fetch-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

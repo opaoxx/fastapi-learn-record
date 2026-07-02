@@ -1,0 +1,8 @@
+### CORS preflight request for a separate local frontend
+OPTIONS http://127.0.0.1:8000/files/text
+Origin: http://127.0.0.1:5500
+Access-Control-Request-Method: POST
+Access-Control-Request-Headers: X-API-Key
+
+### Open the static frontend in a browser
+# http://127.0.0.1:8000/app/

@@ -58,6 +58,18 @@
   Official API reference for BackgroundTasks. Use for exact class behavior and method names.
 - [MDN 202 Accepted](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/202)
   HTTP reference for 202 semantics. Use when explaining task submission responses.
+- [FastAPI Request Files](https://fastapi.tiangolo.com/tutorial/request-files/)
+  Official guide to File, bytes, and UploadFile. Use when teaching file upload endpoints.
+- [FastAPI Request Forms and Files](https://fastapi.tiangolo.com/tutorial/request-forms-and-files/)
+  Official guide to receiving files and form data together. Use when teaching multipart/form-data.
+- [FastAPI UploadFile Reference](https://fastapi.tiangolo.com/reference/uploadfile/)
+  Official UploadFile class reference. Use when explaining filename, content_type, and async read.
+- [FastAPI CORS](https://fastapi.tiangolo.com/tutorial/cors/)
+  Official guide to Cross-Origin Resource Sharing. Use when teaching browser frontends, origins, preflight requests, and CORSMiddleware.
+- [FastAPI Middleware](https://fastapi.tiangolo.com/tutorial/middleware/)
+  Official guide to middleware. Use when explaining application-wide request/response processing such as CORS.
+- [FastAPI Static Files](https://fastapi.tiangolo.com/tutorial/static-files/)
+  Official guide to StaticFiles and mounted static applications. Use when teaching simple frontend pages served by FastAPI.
 - [Uvicorn Documentation](https://uvicorn.dev/)
   ASGI server documentation. Use when learning what actually runs the FastAPI app locally or in production.
 

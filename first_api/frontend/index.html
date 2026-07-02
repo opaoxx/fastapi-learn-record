@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>First API Workbench</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #f7f4ee;
+      --ink: #1f2933;
+      --muted: #617080;
+      --line: #d7d0c4;
+      --panel: #ffffff;
+      --accent: #256f6c;
+      --accent-dark: #154f4c;
+      --warn: #9a5b00;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
+      line-height: 1.6;
+    }
+
+    main {
+      width: min(920px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 40px 0 56px;
+    }
+
+    header {
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 24px;
+      padding-bottom: 20px;
+    }
+
+    h1 {
+      font-size: clamp(2rem, 5vw, 3rem);
+      line-height: 1.15;
+      margin: 0 0 10px;
+    }
+
+    h2 {
+      font-size: 1.15rem;
+      margin: 0 0 12px;
+    }
+
+    p {
+      margin: 0 0 14px;
+    }
+
+    label {
+      color: var(--muted);
+      display: block;
+      font-size: 0.92rem;
+      font-weight: 700;
+      margin: 14px 0 6px;
+    }
+
+    input,
+    button {
+      font: inherit;
+    }
+
+    input[type="text"],
+    input[type="file"] {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--ink);
+      padding: 10px;
+      width: 100%;
+    }
+
+    button {
+      align-items: center;
+      background: var(--accent);
+      border: 0;
+      border-radius: 6px;
+      color: #fff;
+      cursor: pointer;
+      display: inline-flex;
+      font-weight: 700;
+      gap: 8px;
+      justify-content: center;
+      margin-top: 14px;
+      min-height: 42px;
+      padding: 10px 14px;
+    }
+
+    button:hover {
+      background: var(--accent-dark);
+    }
+
+    button:disabled {
+      background: #98aaa8;
+      cursor: not-allowed;
+    }
+
+    .layout {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+    }
+
+    .status {
+      border-left: 5px solid var(--warn);
+    }
+
+    pre {
+      background: #111827;
+      border-radius: 8px;
+      color: #f8fafc;
+      min-height: 220px;
+      overflow-x: auto;
+      padding: 16px;
+      white-space: pre-wrap;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="muted">First FastAPI API</p>
+      <h1>文件摘要工作台</h1>
+      <p>上传 UTF-8 文本文件，创建摘要任务，再读取任务结果。这个页面是给第 18 课使用的最小前端。</p>
+    </header>
+
+    <div class="layout">
+      <section class="panel">
+        <h2>输入</h2>
+        <label for="api-key">X-API-Key</label>
+        <input id="api-key" type="text" value="dev-secret-key" autocomplete="off">
+
+        <label for="text-file">选择 .txt 文件</label>
+        <input id="text-file" type="file" accept=".txt,text/plain">
+
+        <button id="run-button" type="button">上传并生成摘要</button>
+        <p class="muted">运行服务后访问 <code>/app/</code>，这个页面会用浏览器的 <code>fetch</code> 调用后端。</p>
+      </section>
+
+      <section class="panel status">
+        <h2>响应</h2>
+        <pre id="output">等待操作...</pre>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    const runButton = document.querySelector("#run-button");
+    const output = document.querySelector("#output");
+
+    function show(value) {
+      output.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+    }
+
+    async function parseJsonResponse(response) {
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(`${response.status} ${response.statusText}: ${JSON.stringify(body)}`);
+      }
+      return body;
+    }
+
+    runButton.addEventListener("click", async () => {
+      const apiKey = document.querySelector("#api-key").value.trim();
+      const fileInput = document.querySelector("#text-file");
+      const file = fileInput.files[0];
+
+      if (!file) {
+        show("请先选择一个 .txt 文件。");
+        return;
+      }
+
+      runButton.disabled = true;
+      show("上传文件中...");
+
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const uploadResponse = await fetch("/files/text", {
+          method: "POST",
+          headers: {"X-API-Key": apiKey},
+          body: formData,
+        });
+        const uploaded = await parseJsonResponse(uploadResponse);
+
+        show({step: "uploaded", uploaded});
+
+        const taskResponse = await fetch(`/tasks/files/${uploaded.id}/summary`, {
+          method: "POST",
+          headers: {"X-API-Key": apiKey},
+        });
+        const createdTask = await parseJsonResponse(taskResponse);
+
+        const resultResponse = await fetch(`/tasks/${createdTask.id}`, {
+          headers: {"X-API-Key": apiKey},
+        });
+        const task = await parseJsonResponse(resultResponse);
+
+        show({uploaded, task});
+      } catch (error) {
+        show(error.message);
+      } finally {
+        runButton.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

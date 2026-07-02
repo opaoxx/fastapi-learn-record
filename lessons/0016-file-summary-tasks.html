@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0016 - File Summary Tasks</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0016</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0015-uploadfile-text-files.html">上一课</a>
+        <a href="./0017-cors-browser-frontend.html">下一课</a>
+        <a href="../reference/0016-file-summary-tasks-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0016</p>
+      <h1>上传文件创建摘要任务：文件型 AI 服务入口</h1>
+      <p class="lead">这一节把第 15 课的文件上传和第 13/14 课的后台任务合起来：先上传文本文件，再基于文件内容创建摘要任务。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解“上传文件”和“处理文件”为什么通常拆成两个接口。</li>
+        <li>看懂 <code>POST /tasks/files/{file_id}/summary</code>。</li>
+        <li>理解 <code>source_file_id</code> 如何把任务和文件关联起来。</li>
+        <li>建立文件型 AI 服务的基本工作流。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 为什么拆成两步</h2>
+      <p>你可能会问：为什么不上传文件时立刻处理？真实项目里，拆成两步更灵活：</p>
+      <ul>
+        <li>一个文件可能被多次处理，例如摘要、分类、关键词提取。</li>
+        <li>上传成功和处理成功是两件事，错误原因也不同。</li>
+        <li>处理可能很慢，适合放到后台任务。</li>
+        <li>前端可以先展示“文件已上传”，再展示“任务处理中”。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>2. 文件摘要接口</h2>
+      <pre><code>@router.post("/files/{file_id}/summary", response_model=SummaryTaskRead, status_code=202)
+def create_file_summary_task(
+    file_id: Annotated[int, Path(ge=1)],
+    background_tasks: BackgroundTasks,
+    session: Annotated[Session, Depends(get_session)],
+) -&gt; SummaryTask:
+    uploaded_file = session.get(UploadedTextFile, file_id)
+    if uploaded_file is None:
+        raise HTTPException(status_code=404, detail=f"File {file_id} was not found.")
+    ...</code></pre>
+      <p>它先根据 <code>file_id</code> 找上传文件。如果文件不存在，就返回 <code>404</code>。如果存在，就用文件内容创建摘要任务。</p>
+    </section>
+
+    <section>
+      <h2>3. source_file_id 的作用</h2>
+      <pre><code>task = SummaryTask(
+    text=uploaded_file.content,
+    text_length=len(uploaded_file.content),
+    source_file_id=uploaded_file.id,
+    status="queued",
+)</code></pre>
+      <p><code>source_file_id</code> 表示这个任务来自哪个上传文件。以后你看到任务结果时，就能追溯输入来源。</p>
+      <p>这也是后端常见的关联关系：任务属于某个文件，评论属于某篇文章，订单属于某个用户。</p>
+    </section>
+
+    <section>
+      <h2>4. 完整工作流</h2>
+      <pre><code>POST /files/text
+  -> 得到 file_id
+
+POST /tasks/files/{file_id}/summary
+  -> 得到 task_id
+
+GET /tasks/{task_id}
+  -> 查看 status 和 result</code></pre>
+      <p>这就是文件型 AI 服务的最小闭环。把 demo 摘要函数替换成真实模型调用后，它就可以变成文档摘要 API 的雏形。</p>
+    </section>
+
+    <section>
+      <h2>5. 实验：上传后创建任务</h2>
+      <p>先上传文本文件：</p>
+      <pre><code>POST /files/text
+X-API-Key: dev-secret-key
+file = notes.txt</code></pre>
+      <p>拿到响应里的 <code>id</code> 后，创建摘要任务：</p>
+      <pre><code>POST /tasks/files/{file_id}/summary
+X-API-Key: dev-secret-key</code></pre>
+      <p>最后查询任务：</p>
+      <pre><code>GET /tasks/{task_id}
+X-API-Key: dev-secret-key</code></pre>
+    </section>
+
+    <section>
+      <h2>6. 和 VLM / 文档 AI 的关系</h2>
+      <p>当前只处理文本文件，但结构可以扩展：</p>
+      <ul>
+        <li>图片上传后创建 VLM 描述任务。</li>
+        <li>PDF 上传后创建解析和摘要任务。</li>
+        <li>音频上传后创建转写任务。</li>
+        <li>表格上传后创建数据分析任务。</li>
+      </ul>
+      <p>核心思想一样：文件进入系统，任务处理文件，状态接口返回结果。</p>
+    </section>
+
+    <section class="practice">
+      <h2>7. 课堂练习</h2>
+      <p>请你完成：</p>
+      <ol>
+        <li>上传一个 <code>.txt</code> 文件。</li>
+        <li>基于它创建摘要任务。</li>
+        <li>查询任务结果，并指出 <code>source_file_id</code> 是哪个文件。</li>
+      </ol>
+    </section>
+
+    <section class="checkpoint">
+      <h2>8. 小测：先回忆再展开</h2>
+      <details>
+        <summary>1. 为什么上传和处理常拆成两个接口？</summary>
+        <p class="answer">因为文件保存和文件处理是两个不同阶段，拆开后更容易复用、排错和异步执行。</p>
+      </details>
+      <details>
+        <summary>2. <code>source_file_id</code> 表示什么？</summary>
+        <p class="answer">它表示任务来源于哪个上传文件，方便追踪输入和结果。</p>
+      </details>
+      <details>
+        <summary>3. 文件不存在时为什么返回 <code>404</code>？</summary>
+        <p class="answer">因为 <code>file_id</code> 合法，但数据库里没有对应文件资源。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>9. 本节总结</h2>
+      <p>本节完成了文件型 AI 服务的最小闭环：上传文本文件，创建文件摘要任务，查询任务结果。后续可以把存储从 SQLite 换成对象存储，把 demo 摘要函数换成真实大模型。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/request-files/">FastAPI Request Files</a>、<a href="https://fastapi.tiangolo.com/tutorial/background-tasks/">FastAPI Background Tasks</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0015-uploadfile-text-files.html">上一课：文件上传 UploadFile</a>
+        <a href="./0017-cors-browser-frontend.html">下一课：CORS 与浏览器前端</a>
+        <a href="../reference/0016-file-summary-tasks-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

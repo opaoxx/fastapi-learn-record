@@ -15,6 +15,7 @@ engine = create_engine(
 
 def create_db_and_tables() -> None:
     SQLModel.metadata.create_all(engine)
+    migrate_runtime_schema()
     with Session(engine) as session:
         seed_items(session)
 
@@ -37,3 +38,13 @@ def seed_items(session: Session) -> None:
         ]
     )
     session.commit()
+
+
+def migrate_runtime_schema() -> None:
+    with engine.begin() as connection:
+        summary_task_columns = {
+            row[1]
+            for row in connection.exec_driver_sql("PRAGMA table_info(summarytask)").all()
+        }
+        if summary_task_columns and "source_file_id" not in summary_task_columns:
+            connection.exec_driver_sql("ALTER TABLE summarytask ADD COLUMN source_file_id INTEGER")

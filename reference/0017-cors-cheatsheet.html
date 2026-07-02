@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CORS Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0017</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0017-cors-browser-frontend.html">回到第 17 课</a>
+        <a href="./0016-file-summary-tasks-cheatsheet.html">上一张速查</a>
+        <a href="./0018-static-frontend-fetch-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0017</p>
+      <h1>CORS 速查</h1>
+      <p class="lead">CORS 是浏览器跨源访问 API 时的许可机制。</p>
+    </header>
+
+    <h2>Origin</h2>
+    <pre><code>origin = protocol + host + port</code></pre>
+    <ul>
+      <li><code>http://127.0.0.1:8000</code> 和 <code>http://127.0.0.1:5500</code> 不同源。</li>
+      <li><code>http://localhost:8000</code> 和 <code>http://127.0.0.1:8000</code> 不同源。</li>
+    </ul>
+
+    <h2>FastAPI 配置</h2>
+    <pre><code>from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://127.0.0.1:5500"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)</code></pre>
+
+    <h2>预检请求</h2>
+    <pre><code>OPTIONS /files/text
+Origin: http://127.0.0.1:5500
+Access-Control-Request-Method: POST
+Access-Control-Request-Headers: X-API-Key</code></pre>
+
+    <h2>常见误区</h2>
+    <ul>
+      <li>CORS 错误主要发生在浏览器里，不是所有 HTTP 客户端都会遇到。</li>
+      <li>端口不同就是不同源。</li>
+      <li>自定义请求头通常会触发预检请求。</li>
+      <li>真实项目不要随意允许所有来源。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/cors/">FastAPI CORS</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/middleware/">FastAPI Middleware</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0017-cors-browser-frontend.html">回到第 17 课</a>
+        <a href="./0016-file-summary-tasks-cheatsheet.html">上一张速查</a>
+        <a href="./0018-static-frontend-fetch-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

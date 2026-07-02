@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Static Frontend Fetch Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0018</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0018-static-frontend-fetch.html">回到第 18 课</a>
+        <a href="./0017-cors-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0018</p>
+      <h1>静态前端调用 API 速查</h1>
+      <p class="lead">页面负责收集输入，fetch 负责调用 API，后端负责处理和返回 JSON。</p>
+    </header>
+
+    <h2>挂载静态页</h2>
+    <pre><code>app.mount("/app", StaticFiles(directory=frontend_dir, html=True), name="frontend")</code></pre>
+
+    <h2>上传文件</h2>
+    <pre><code>const formData = new FormData();
+formData.append("file", file);
+
+await fetch("/files/text", {
+  method: "POST",
+  headers: {"X-API-Key": apiKey},
+  body: formData,
+});</code></pre>
+
+    <h2>调用任务</h2>
+    <pre><code>POST /tasks/files/{file_id}/summary
+GET /tasks/{task_id}</code></pre>
+
+    <h2>关键提醒</h2>
+    <ul>
+      <li><code>FormData</code> 上传文件时不要手写 <code>Content-Type</code>。</li>
+      <li><code>fetch</code> 遇到 4xx/5xx 不会自动抛异常。</li>
+      <li>同源页面不触发 CORS，独立前端开发服务器通常会触发 CORS。</li>
+      <li>浏览器页面调用受保护接口时，要带上 <code>X-API-Key</code>。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/static-files/">FastAPI Static Files</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/cors/">FastAPI CORS</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0018-static-frontend-fetch.html">回到第 18 课</a>
+        <a href="./0017-cors-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>
