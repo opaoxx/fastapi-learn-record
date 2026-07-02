@@ -37,6 +37,40 @@ header {
   padding-bottom: 24px;
 }
 
+.course-nav {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  justify-content: space-between;
+  margin-bottom: 28px;
+  padding-bottom: 14px;
+}
+
+.course-nav.bottom {
+  border-bottom: 0;
+  border-top: 1px solid var(--line);
+  margin: 40px 0 0;
+  padding: 18px 0 0;
+}
+
+.course-nav .nav-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.course-nav .nav-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.course-nav a {
+  white-space: nowrap;
+}
+
 .eyebrow {
   color: var(--accent-2);
   font-size: 0.92rem;
@@ -171,6 +205,30 @@ summary {
   display: grid;
   gap: 16px;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.course-list {
+  display: grid;
+  gap: 14px;
+  margin: 18px 0 28px;
+}
+
+.course-item {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.course-item h3 {
+  margin-top: 0;
+}
+
+.course-item .links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 8px;
 }
 
 .small {
