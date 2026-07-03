@@ -32,6 +32,15 @@ class PredictionResponse(BaseModel):
     text_length: int
 
 
+class ErrorDetail(BaseModel):
+    error_code: str
+    message: str
+
+
+class ErrorResponse(BaseModel):
+    detail: ErrorDetail
+
+
 TaskStatus = Literal["queued", "running", "completed", "failed"]
 
 

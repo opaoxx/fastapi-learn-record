@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0022 - Task Failure Status</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0022</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0021-ai-client-errors.html">上一课</a>
+        <a href="../reference/0022-task-failure-status-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0022</p>
+      <h1>任务失败状态：异步任务不靠 HTTP 状态码表达最终结果</h1>
+      <p class="lead">后台任务的响应早就返回了，所以模型失败时，不能再改 HTTP 响应。正确做法是把失败写进任务记录。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解同步接口错误和后台任务错误的区别。</li>
+        <li>看懂 <code>run_summary_task</code> 如何把异常写成 <code>failed</code>。</li>
+        <li>理解 <code>status</code>、<code>result</code>、<code>error</code> 三个字段的关系。</li>
+        <li>能测试后台任务失败路径。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 为什么不能返回 503</h2>
+      <p>第 21 课的 <code>/predict</code> 是同步接口：请求进来，模型运行，马上返回结果或错误。所以模型失败时可以直接返回 <code>503</code>。</p>
+      <p>但后台任务不同：</p>
+      <pre><code>POST /tasks/summaries
+  -> 202 Accepted 已经返回给前端
+  -> 后台函数才开始运行
+  -> 模型此时失败</code></pre>
+      <p>HTTP 响应已经发出去了，后端不能穿越时间把刚才的 <code>202</code> 改成 <code>503</code>。所以异步任务要把最终结果写进任务状态。</p>
+    </section>
+
+    <section>
+      <h2>2. 任务状态字段</h2>
+      <pre><code>status: queued | running | completed | failed
+result: str | None
+error: str | None</code></pre>
+      <p>正常完成时：</p>
+      <pre><code>{
+  "status": "completed",
+  "result": "summary text",
+  "error": null
+}</code></pre>
+      <p>失败时：</p>
+      <pre><code>{
+  "status": "failed",
+  "result": null,
+  "error": "summary_model_timeout: The summary model timed out."
+}</code></pre>
+    </section>
+
+    <section>
+      <h2>3. run_summary_task 的失败处理</h2>
+      <pre><code>try:
+    task.status = "running"
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+
+    task.result = ai_client.summarize(task.text)
+    task.status = "completed"
+    task.error = None
+except AIClientError as exc:
+    task.status = "failed"
+    task.error = f"{exc.error_code}: {exc.message}"
+except Exception:
+    task.status = "failed"
+    task.error = "unexpected_task_error: The summary task failed unexpectedly."
+finally:
+    session.add(task)
+    session.commit()</code></pre>
+      <p>这里有一个重要习惯：已知的 AI 客户端错误给出稳定错误码；未知异常给出保守的通用错误，不把内部堆栈暴露给调用方。</p>
+    </section>
+
+    <section>
+      <h2>4. 状态流转图</h2>
+      <pre><code>queued
+  -> running
+    -> completed
+    -> failed</code></pre>
+      <p><code>queued</code> 表示任务已经被接收；<code>running</code> 表示后台函数正在处理；<code>completed</code> 表示有结果；<code>failed</code> 表示处理失败，调用方应该看 <code>error</code> 字段。</p>
+    </section>
+
+    <section>
+      <h2>5. 测试失败路径</h2>
+      <pre><code>class FailingSummaryClient:
+    def summarize(self, text: str) -&gt; str:
+        raise AIClientError(
+            message="The summary model timed out.",
+            error_code="summary_model_timeout",
+        )
+
+run_summary_task(
+    session=session,
+    task_id=task.id,
+    ai_client=FailingSummaryClient(),
+)</code></pre>
+      <p>这个测试绕过真实后台调度，直接调用服务函数。它验证的是业务结果：任务最终变成 <code>failed</code>，并且写入稳定错误信息。</p>
+    </section>
+
+    <section>
+      <h2>6. 前端应该怎么处理</h2>
+      <p>前端查询任务详情时，可以根据 <code>status</code> 分支：</p>
+      <ul>
+        <li><code>queued</code> 或 <code>running</code>：显示“处理中”。</li>
+        <li><code>completed</code>：显示 <code>result</code>。</li>
+        <li><code>failed</code>：显示失败提示，并可允许用户重试。</li>
+      </ul>
+      <p>这就是异步任务 API 的核心：提交接口只表示“任务已接收”，查询接口才表示“任务最终结果”。</p>
+    </section>
+
+    <section class="practice">
+      <h2>7. 课堂练习</h2>
+      <p>使用 <code>POST /tasks/summaries</code> 创建一个文本中包含 <code>simulate-ai-failure</code> 的任务，然后查询任务详情，观察 <code>status</code> 和 <code>error</code>。</p>
+      <pre><code>{
+  "text": "This summary task will simulate-ai-failure after it is accepted."
+}</code></pre>
+    </section>
+
+    <section class="checkpoint">
+      <h2>8. 小测：先回忆再展开</h2>
+      <details>
+        <summary>1. 为什么后台任务失败后不能把 202 改成 503？</summary>
+        <p class="answer">因为 HTTP 响应已经发送给客户端，后台处理发生在响应之后。</p>
+      </details>
+      <details>
+        <summary>2. 任务失败时应该看哪个字段？</summary>
+        <p class="answer">看 <code>status</code> 是否为 <code>failed</code>，再看 <code>error</code> 里的错误说明。</p>
+      </details>
+      <details>
+        <summary>3. 为什么未知异常不直接返回原始内容？</summary>
+        <p class="answer">因为原始内容可能不稳定或泄露内部细节，通用错误更适合作为对外契约。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>9. 本节总结</h2>
+      <p>本节补齐了异步任务失败路径：同步接口失败用 HTTP 状态码表达，异步任务失败用任务记录表达。这个区分在 AI 后端项目里非常关键。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/background-tasks/">FastAPI Background Tasks</a>、<a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/202">MDN 202 Accepted</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0021-ai-client-errors.html">上一课：AI 客户端错误响应</a>
+        <a href="../reference/0022-task-failure-status-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

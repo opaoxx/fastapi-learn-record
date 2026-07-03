@@ -1,7 +1,7 @@
 from sqlmodel import Session, select
 
 from ..schemas import SummaryTask, UploadedTextFile
-from .ai_clients import DemoAIClient
+from .ai_clients import AIClientError, DemoAIClient
 
 
 def create_summary_task(
@@ -54,9 +54,12 @@ def run_summary_task(session: Session, task_id: int, ai_client: DemoAIClient) ->
         task.result = ai_client.summarize(task.text)
         task.status = "completed"
         task.error = None
-    except Exception as exc:
+    except AIClientError as exc:
         task.status = "failed"
-        task.error = str(exc)
+        task.error = f"{exc.error_code}: {exc.message}"
+    except Exception:
+        task.status = "failed"
+        task.error = "unexpected_task_error: The summary task failed unexpectedly."
     finally:
         session.add(task)
         session.commit()

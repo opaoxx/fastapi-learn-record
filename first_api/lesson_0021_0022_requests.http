@@ -1,0 +1,22 @@
+### Synchronous AI client failure returns a stable 503 error
+POST http://127.0.0.1:8000/predict
+Content-Type: application/json
+
+{
+  "text": "Please simulate-ai-failure for this prediction request.",
+  "mode": "fast",
+  "temperature": 0.2
+}
+
+### Background task accepts work first, then stores failed status
+POST http://127.0.0.1:8000/tasks/summaries
+Content-Type: application/json
+X-API-Key: dev-secret-key
+
+{
+  "text": "This summary task will simulate-ai-failure after it has already been accepted."
+}
+
+### Query the created task with the id returned above
+GET http://127.0.0.1:8000/tasks/1
+X-API-Key: dev-secret-key

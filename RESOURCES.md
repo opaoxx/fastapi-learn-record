@@ -58,6 +58,8 @@
   Official API reference for BackgroundTasks. Use for exact class behavior and method names.
 - [MDN 202 Accepted](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/202)
   HTTP reference for 202 semantics. Use when explaining task submission responses.
+- [MDN 503 Service Unavailable](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/503)
+  HTTP reference for temporary service unavailability. Use when explaining model-client outages, timeouts, and retryable AI-service failures.
 - [FastAPI Request Files](https://fastapi.tiangolo.com/tutorial/request-files/)
   Official guide to File, bytes, and UploadFile. Use when teaching file upload endpoints.
 - [FastAPI Request Forms and Files](https://fastapi.tiangolo.com/tutorial/request-forms-and-files/)

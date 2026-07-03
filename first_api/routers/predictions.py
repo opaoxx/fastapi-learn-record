@@ -1,20 +1,34 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from ..schemas import PredictionRequest, PredictionResponse
-from ..services.ai_clients import DemoAIClient, get_ai_client
+from ..schemas import ErrorResponse, PredictionRequest, PredictionResponse
+from ..services.ai_clients import AIClientError, DemoAIClient, get_ai_client
 
 
 router = APIRouter(tags=["predictions"])
 
 
-@router.post("/predict", response_model=PredictionResponse)
+@router.post(
+    "/predict",
+    response_model=PredictionResponse,
+    responses={status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ErrorResponse}},
+)
 def predict(
     payload: PredictionRequest,
     ai_client: Annotated[DemoAIClient, Depends(get_ai_client)],
 ) -> PredictionResponse:
-    prediction = ai_client.predict_sentiment(payload.text, payload.mode)
+    try:
+        prediction = ai_client.predict_sentiment(payload.text, payload.mode)
+    except AIClientError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error_code": exc.error_code,
+                "message": exc.message,
+            },
+        ) from exc
+
     return PredictionResponse(
         label=prediction.label,
         score=prediction.score,

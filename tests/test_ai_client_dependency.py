@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 from first_api.main import app
-from first_api.services.ai_clients import PredictionResult, get_ai_client
+from first_api.services.ai_clients import AIClientError, PredictionResult, get_ai_client
 
 
 class FixedAIClient:
@@ -18,6 +18,21 @@ class FixedAIClient:
 
 def override_ai_client() -> FixedAIClient:
     return FixedAIClient()
+
+
+class FailingAIClient:
+    def predict_sentiment(self, text: str, mode: str) -> PredictionResult:
+        raise AIClientError(
+            message="The test AI client is unavailable.",
+            error_code="test_ai_unavailable",
+        )
+
+    def summarize(self, text: str) -> str:
+        return "unreachable"
+
+
+def override_failing_ai_client() -> FailingAIClient:
+    return FailingAIClient()
 
 
 def test_predict_uses_overridable_ai_client_dependency() -> None:
@@ -39,3 +54,27 @@ def test_predict_uses_overridable_ai_client_dependency() -> None:
     assert response.json()["label"] == "positive"
     assert response.json()["score"] == 0.99
     assert response.json()["source"] == "fixed-test-client"
+
+
+def test_predict_returns_stable_error_when_ai_client_fails() -> None:
+    app.dependency_overrides[get_ai_client] = override_failing_ai_client
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/predict",
+                json={
+                    "text": "This sentence triggers a controlled AI client failure.",
+                    "mode": "fast",
+                    "temperature": 0.2,
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": {
+            "error_code": "test_ai_unavailable",
+            "message": "The test AI client is unavailable.",
+        }
+    }

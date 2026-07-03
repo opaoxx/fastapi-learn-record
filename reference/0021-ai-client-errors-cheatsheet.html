@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Client Errors Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0021</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0021-ai-client-errors.html">回到第 21 课</a>
+        <a href="./0020-ai-client-dependency-cheatsheet.html">上一张速查</a>
+        <a href="./0022-task-failure-status-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0021</p>
+      <h1>AI 客户端错误速查</h1>
+      <p class="lead">内部异常用 AIClientError，对外响应用 HTTPException。</p>
+    </header>
+
+    <h2>自定义异常</h2>
+    <pre><code>raise AIClientError(
+    message="The AI service is unavailable.",
+    error_code="ai_client_unavailable",
+)</code></pre>
+
+    <h2>错误响应</h2>
+    <pre><code>{
+  "detail": {
+    "error_code": "ai_client_unavailable",
+    "message": "The AI service is unavailable."
+  }
+}</code></pre>
+
+    <h2>状态码选择</h2>
+    <ul>
+      <li><code>422</code>: 请求参数不合法。</li>
+      <li><code>401</code>: 鉴权失败。</li>
+      <li><code>404</code>: 资源不存在。</li>
+      <li><code>503</code>: 模型或外部服务暂时不可用。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/handling-errors/">FastAPI Handling Errors</a>、
+      <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/503">MDN 503 Service Unavailable</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0021-ai-client-errors.html">回到第 21 课</a>
+        <a href="./0020-ai-client-dependency-cheatsheet.html">上一张速查</a>
+        <a href="./0022-task-failure-status-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Task Failure Status Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0022</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0022-task-failure-status.html">回到第 22 课</a>
+        <a href="./0021-ai-client-errors-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0022</p>
+      <h1>任务失败状态速查</h1>
+      <p class="lead">后台任务的最终结果写在任务记录里，而不是写在提交接口的 HTTP 状态码里。</p>
+    </header>
+
+    <h2>状态流转</h2>
+    <pre><code>queued -> running -> completed
+queued -> running -> failed</code></pre>
+
+    <h2>失败响应形状</h2>
+    <pre><code>{
+  "status": "failed",
+  "result": null,
+  "error": "summary_model_timeout: The summary model timed out."
+}</code></pre>
+
+    <h2>处理规则</h2>
+    <ul>
+      <li>提交任务成功：<code>202 Accepted</code>。</li>
+      <li>任务还没完成：查询接口返回 <code>queued</code> 或 <code>running</code>。</li>
+      <li>任务完成：查询接口返回 <code>completed</code> 和 <code>result</code>。</li>
+      <li>任务失败：查询接口返回 <code>failed</code> 和 <code>error</code>。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/background-tasks/">FastAPI Background Tasks</a>、
+      <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/202">MDN 202 Accepted</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0022-task-failure-status.html">回到第 22 课</a>
+        <a href="./0021-ai-client-errors-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

@@ -79,3 +79,12 @@ The `services/` package keeps business logic out of route handlers:
 - `services/ai_clients.py` contains `DemoAIClient`, a replaceable model-like client used by `/predict` and background summary tasks.
 
 The `/predict` endpoint receives its AI client with `Depends(get_ai_client)`, so tests can replace it through `app.dependency_overrides`.
+
+## AI errors
+
+Known model-client failures use `AIClientError`.
+
+- Synchronous prediction failures return `503 Service Unavailable` with a structured `detail.error_code` and `detail.message`.
+- Background summary failures are stored on the task record as `status="failed"` and `error="error_code: message"` because the initial `202 Accepted` response has already been sent.
+
+For learning, sending text that contains `simulate-ai-failure` makes the demo AI client raise a controlled error.
