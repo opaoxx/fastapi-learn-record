@@ -21,23 +21,24 @@
     <header>
       <p class="eyebrow">Lesson 0026</p>
       <h1>count 查询：当前页长度不等于总记录数</h1>
-      <p class="lead">列表响应里的 <code>count</code> 不是 <code>len(items)</code>。它表示数据库中符合当前筛选条件的总数，需要单独查询。</p>
+      <p class="lead">响应信封里最容易误解的字段是 <code>count</code>。它不是 <code>len(items)</code>，而是“当前筛选条件下，数据库里一共有多少条记录”。</p>
     </header>
 
     <section>
       <h2>0. 本节学习目标</h2>
       <ul>
-        <li>理解 <code>len(items)</code> 和 <code>count</code> 的区别。</li>
-        <li>看懂 <code>select(func.count())</code>。</li>
-        <li>理解 count 查询为什么要复用筛选条件。</li>
-        <li>能解释 count 对前端分页控件的意义。</li>
+        <li>理解 <code>items.length</code> 和 <code>count</code> 的语义差异。</li>
+        <li>看懂为什么分页接口通常需要两条查询：数据查询和计数查询。</li>
+        <li>掌握 <code>select(func.count()).select_from(...)</code> 的作用。</li>
+        <li>理解 count 查询为什么必须复用筛选条件，但不能使用分页截取。</li>
+        <li>能解释 count 如何支撑前端分页按钮和总数提示。</li>
       </ul>
     </section>
 
     <section>
-      <h2>1. 一个容易混淆的问题</h2>
-      <p>如果请求：</p>
-      <pre><code>GET /tasks?limit=1&offset=0</code></pre>
+      <h2>1. 背景：为什么 <code>len(items)</code> 不够</h2>
+      <p>假设任务表里有 18 个 completed 任务，请求：</p>
+      <pre><code>GET /tasks?status=completed&amp;limit=1&amp;offset=0</code></pre>
       <p>响应可能是：</p>
       <pre><code>{
   "items": [{"id": 40, "status": "completed"}],
@@ -45,84 +46,151 @@
   "limit": 1,
   "offset": 0
 }</code></pre>
-      <p>这里 <code>items.length</code> 是 1，因为当前页只拿了 1 条；<code>count</code> 是 18，因为数据库里符合条件的任务总共有 18 条。</p>
+      <p>这里 <code>items.length</code> 是 1，因为当前页只拿了 1 条；<code>count</code> 是 18，因为符合筛选条件的记录总共有 18 条。</p>
+      <p>如果把 <code>count</code> 写成 <code>len(items)</code>，前端会误以为总共只有 1 条，于是不会显示下一页。</p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 核心概念：当前页数量和总结果数量是两个问题</h2>
+      <p>数据查询回答的问题是：</p>
+      <pre><code>这一页应该显示哪些任务？</code></pre>
+      <p>计数查询回答的问题是：</p>
+      <pre><code>当前筛选条件下一共有多少任务？</code></pre>
+      <p>这两个问题相关，但不是同一个问题。因此它们通常需要两条查询。</p>
     </section>
 
     <section>
-      <h2>2. 两个查询</h2>
-      <p>为了返回这种响应，service 里其实做了两个查询：</p>
+      <h2>3. 代码精读一：两条查询从同一个表出发</h2>
       <pre><code>statement = select(SummaryTask).order_by(SummaryTask.id.desc())
 count_statement = select(func.count()).select_from(SummaryTask)</code></pre>
-      <ul>
-        <li><code>statement</code>：查当前页的任务记录。</li>
-        <li><code>count_statement</code>：查符合条件的总数。</li>
-      </ul>
+      <p><code>statement</code> 查询真实任务记录，后面会加排序、筛选、分页。</p>
+      <p><code>count_statement</code> 查询数量，不需要返回每一行任务，所以它选择的是 <code>func.count()</code>。SQLAlchemy 的 <code>func</code> 用来生成 SQL 函数表达式，<code>func.count()</code> 对应数据库里的 <code>COUNT(...)</code>。</p>
+      <p><code>select_from(SummaryTask)</code> 明确告诉 SQLAlchemy：这个计数来自 <code>SummaryTask</code> 表。</p>
     </section>
 
     <section>
-      <h2>3. count 也要带筛选条件</h2>
+      <h2>4. 为什么 count 查询也要带筛选条件</h2>
       <pre><code>if task_status is not None:
     statement = statement.where(SummaryTask.status == task_status)
     count_statement = count_statement.where(SummaryTask.status == task_status)</code></pre>
-      <p>如果请求 <code>/tasks?status=failed</code>，那么 <code>count</code> 应该表示 failed 任务总数，而不是全部任务总数。所以 page 查询和 count 查询必须使用同样的筛选条件。</p>
+      <p>如果请求是：</p>
+      <pre><code>GET /tasks?status=failed&amp;limit=10&amp;offset=0</code></pre>
+      <p>那么 <code>count</code> 应该表示 failed 任务总数，而不是全部任务总数。否则前端会显示一个错误的总数。</p>
+      <p>这条规则可以概括为：<strong>items 查询和 count 查询必须共享同一套筛选条件。</strong></p>
     </section>
 
     <section>
-      <h2>4. 分页只作用于 items</h2>
+      <h2>5. 为什么 count 查询不能加 offset 和 limit</h2>
       <pre><code>statement = statement.offset(offset).limit(limit)
 items = list(session.exec(statement))
 count = session.exec(count_statement).one()</code></pre>
-      <p><code>offset()</code> 和 <code>limit()</code> 只用于当前页查询，不用于 count 查询。如果 count 也加了 limit，那么总数就不准了。</p>
+      <p><code>offset()</code> 和 <code>limit()</code> 只用于当前页数据查询。如果把它们加到 <code>count_statement</code> 上，计数就会变成“当前页最多几条”，而不是“总共几条”。</p>
+      <p>所以规则是：</p>
+      <pre><code>筛选条件 -> items 查询和 count 查询都要用
+排序      -> items 查询需要，count 查询通常不需要
+分页      -> 只用于 items 查询，不用于 count 查询</code></pre>
     </section>
 
     <section>
-      <h2>5. 返回响应信封</h2>
+      <h2>6. session.exec(...).one() 表示什么</h2>
+      <pre><code>count = session.exec(count_statement).one()</code></pre>
+      <p>计数查询不会返回一组任务，而是返回一个数字。<code>.one()</code> 表示我们期望这条查询正好有一个结果。</p>
+      <p>对 <code>COUNT</code> 来说，这个预期是合理的：无论表里有没有数据，数据库都会返回一个计数值，例如 0、3、18。</p>
+    </section>
+
+    <section>
+      <h2>7. 返回响应信封</h2>
       <pre><code>return SummaryTaskListResponse(
     items=items,
     count=count,
     limit=limit,
     offset=offset,
 )</code></pre>
-      <p>这里 service 返回的是 Pydantic 响应模型，不是裸字典。这样字段名和字段类型都更清楚，FastAPI 文档也能自动展示。</p>
+      <p>这里 service 返回的是 Pydantic 响应模型，而不是随手拼一个字典。好处是字段结构清楚、类型明确，也能和 FastAPI 的 <code>response_model</code> 保持一致。</p>
+      <p>这就是从数据库查询到 API 契约的最后一步：把数据查询的结果和计数查询的结果组装成一个稳定响应。</p>
     </section>
 
     <section>
-      <h2>6. 测试 count</h2>
-      <pre><code>completed = client.get("/tasks?status=completed&limit=100")
-failed = client.get("/tasks?status=failed&limit=100")
+      <h2>8. 前端如何使用 count</h2>
+      <pre><code>const hasPrevious = page.offset &gt; 0;
+const hasNext = page.offset + page.items.length &lt; page.count;</code></pre>
+      <p>如果 <code>hasNext</code> 为真，说明当前页后面还有数据，前端可以启用“下一页”。如果 <code>offset</code> 大于 0，说明不是第一页，前端可以启用“上一页”。</p>
+      <p>没有 <code>count</code>，前端只能猜。猜出来的分页体验通常会出错。</p>
+    </section>
+
+    <section>
+      <h2>9. 测试 count 的正确性</h2>
+      <pre><code>completed = client.get("/tasks?status=completed&amp;limit=100")
+failed = client.get("/tasks?status=failed&amp;limit=100")
 
 assert completed.json()["count"] == len(completed.json()["items"])
 assert failed.json()["count"] == len(failed.json()["items"])</code></pre>
-      <p>测试里用 <code>limit=100</code> 是为了让本页能装下全部测试数据。这样可以直接比较 <code>count</code> 和 <code>len(items)</code>，确认 count 没有混入其他状态。</p>
+      <p>测试里用 <code>limit=100</code> 是为了让当前页容纳全部测试数据。这样在测试数据规模可控的情况下，<code>count</code> 应该等于 <code>len(items)</code>。</p>
+      <p>更重要的是，它验证了 count 没有混入其他状态。例如 failed 的 count 不应该把 completed 任务也算进去。</p>
+    </section>
+
+    <section>
+      <h2>10. 常见错误与诊断</h2>
+      <div class="two-col">
+        <div class="callout">
+          <h3>错误一：count 等于 len(items)</h3>
+          <p>这只能表示当前页长度，不能表示总数。分页时尤其错误。</p>
+        </div>
+        <div class="callout">
+          <h3>错误二：count 忘记筛选条件</h3>
+          <p><code>status=failed</code> 时，count 必须只数 failed 任务。</p>
+        </div>
+        <div class="callout">
+          <h3>错误三：count 也加 limit</h3>
+          <p>这样数出来的是当前页，不是总结果集。</p>
+        </div>
+        <div class="callout">
+          <h3>错误四：把 count 查询写到前端</h3>
+          <p>前端不应该自己反复请求推断总数。总数应由后端统一计算。</p>
+        </div>
+      </div>
     </section>
 
     <section class="practice">
-      <h2>7. 课堂练习</h2>
-      <p>请求：</p>
-      <pre><code>GET /tasks?status=completed&limit=1&offset=0</code></pre>
-      <p>观察 <code>items.length</code> 和 <code>count</code>。如果 <code>count</code> 大于 1，说明当前筛选条件下还有下一页。</p>
+      <h2>11. 课堂实验</h2>
+      <p>先创建多个任务，然后请求：</p>
+      <pre><code>GET /tasks?limit=1&amp;offset=0
+X-API-Key: dev-secret-key</code></pre>
+      <p>观察：</p>
+      <ol>
+        <li><code>items.length</code> 是否为 1。</li>
+        <li><code>count</code> 是否可能大于 1。</li>
+        <li>如果 <code>offset + items.length &lt; count</code>，是否说明还有下一页。</li>
+      </ol>
+      <p>再请求：</p>
+      <pre><code>GET /tasks?status=failed&amp;limit=1&amp;offset=0</code></pre>
+      <p>思考：这个响应里的 <code>count</code> 应该表示全部任务总数，还是 failed 任务总数？</p>
     </section>
 
     <section class="checkpoint">
-      <h2>8. 小测：先回忆再展开</h2>
+      <h2>12. 小测：先回忆再展开</h2>
       <details>
         <summary>1. 为什么 <code>count</code> 不能直接等于 <code>len(items)</code>？</summary>
-        <p class="answer">因为 <code>items</code> 只是当前页，<code>count</code> 是符合筛选条件的总数。</p>
+        <p class="answer">因为 <code>items</code> 是当前页记录，<code>count</code> 是当前筛选条件下的总记录数。</p>
       </details>
       <details>
-        <summary>2. count 查询为什么不能加 <code>limit</code>？</summary>
-        <p class="answer">因为加了 <code>limit</code> 后只能数当前页，不能表示总记录数。</p>
+        <summary>2. count 查询为什么要复用 status 筛选？</summary>
+        <p class="answer">因为总数必须对应当前筛选条件，筛选 failed 时就只能统计 failed 任务。</p>
       </details>
       <details>
-        <summary>3. status 筛选为什么要同时作用于 count 查询？</summary>
-        <p class="answer">因为 <code>count</code> 必须表示当前筛选条件下的总数。</p>
+        <summary>3. count 查询为什么不能加 <code>offset</code> 和 <code>limit</code>？</summary>
+        <p class="answer">因为分页截取只属于当前页数据查询，加到 count 上会让总数变成当前页数量。</p>
+      </details>
+      <details>
+        <summary>4. <code>func.count()</code> 在这里解决什么问题？</summary>
+        <p class="answer">它生成数据库计数函数，让数据库直接返回符合条件的记录数量。</p>
       </details>
     </section>
 
     <section>
-      <h2>9. 本节总结</h2>
-      <p>本节补上了分页接口最容易漏掉的 count 查询。现在 <code>GET /tasks</code> 能同时告诉前端：当前页有哪些任务，以及当前筛选条件下一共有多少任务。</p>
-      <p>推荐主资源：<a href="https://sqlmodel.tiangolo.com/tutorial/fastapi/limit-and-offset/">SQLModel Limit and Offset</a>、<a href="https://docs.sqlalchemy.org/en/latest/core/functions.html">SQLAlchemy SQL Functions</a>。</p>
+      <h2>13. 本节总结</h2>
+      <p>本节补上了分页接口最容易漏掉的一块：总数查询。现在你应该能清楚区分两个问题：当前页有哪些任务，以及当前筛选条件下一共有多少任务。前者由 <code>items</code> 表达，后者由 <code>count</code> 表达。</p>
+      <p>推荐主资源：<a href="https://sqlmodel.tiangolo.com/tutorial/fastapi/limit-and-offset/">SQLModel Limit and Offset</a>、<a href="https://docs.sqlalchemy.org/en/latest/core/functions.html">SQLAlchemy SQL Functions</a>、<a href="https://fastapi.tiangolo.com/tutorial/response-model/">FastAPI Response Model</a>。</p>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

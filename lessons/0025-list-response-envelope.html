@@ -21,38 +21,40 @@
     <header>
       <p class="eyebrow">Lesson 0025</p>
       <h1>列表响应信封：不只返回数组，还返回分页元数据</h1>
-      <p class="lead">上一节的 <code>GET /tasks</code> 已经能分页和筛选，但前端还不知道总共有多少条。本节把列表响应从数组升级成响应信封。</p>
+      <p class="lead">分页和筛选让后端可以只返回一部分任务，但前端还需要知道“这部分数据处在整个结果集的什么位置”。响应信封就是为这件事服务的 API 契约。</p>
     </header>
 
     <section>
       <h2>0. 本节学习目标</h2>
       <ul>
-        <li>理解为什么列表接口常返回对象，而不是裸数组。</li>
-        <li>看懂 <code>SummaryTaskListResponse</code> 响应模型。</li>
-        <li>理解 <code>items</code>、<code>count</code>、<code>limit</code>、<code>offset</code> 的职责。</li>
-        <li>理解 API 合约升级为什么要同步更新测试和文档。</li>
+        <li>理解为什么很多列表接口返回对象，而不是裸数组。</li>
+        <li>掌握 <code>items</code>、<code>count</code>、<code>limit</code>、<code>offset</code> 的职责分工。</li>
+        <li>看懂 <code>SummaryTaskListResponse</code> 如何把列表响应建模成 Pydantic 契约。</li>
+        <li>理解响应形状变化为什么是 API 破坏性变更。</li>
+        <li>能解释前端分页按钮为什么需要响应元数据。</li>
       </ul>
     </section>
 
     <section>
-      <h2>1. 裸数组有什么问题</h2>
-      <p>原来的任务列表响应长这样：</p>
+      <h2>1. 背景：裸数组只能表达“有什么”，不能表达“在哪里”</h2>
+      <p>裸数组响应长这样：</p>
       <pre><code>[
   {"id": 3, "status": "completed"},
   {"id": 2, "status": "completed"}
 ]</code></pre>
-      <p>它能展示任务，但前端不知道：</p>
+      <p>它能告诉前端当前拿到了哪些任务，却不能回答这些问题：</p>
       <ul>
-        <li>总共有多少条符合条件的任务。</li>
-        <li>当前使用的 <code>limit</code> 是多少。</li>
-        <li>当前页从哪个 <code>offset</code> 开始。</li>
-        <li>后面是否还可能有下一页。</li>
+        <li>符合当前筛选条件的任务一共有多少条？</li>
+        <li>这一页从第几条开始？</li>
+        <li>服务端实际接受的 <code>limit</code> 是多少？</li>
+        <li>还有没有下一页？</li>
       </ul>
-      <p>所以真实项目的列表接口经常会返回一个对象，把数据和分页元信息包起来。</p>
+      <p>如果前端只展示静态列表，裸数组勉强够用；如果前端要做任务历史、分页按钮、总数提示、状态筛选，它就不够了。</p>
     </section>
 
-    <section>
-      <h2>2. 新响应形状</h2>
+    <section class="callout">
+      <h2>2. 核心概念：响应信封把数据和元数据放在一起</h2>
+      <p>新的响应形状：</p>
       <pre><code>{
   "items": [
     {"id": 3, "status": "completed"},
@@ -62,21 +64,41 @@
   "limit": 2,
   "offset": 0
 }</code></pre>
-      <p>这个外层对象就像一个信封：<code>items</code> 是信里的任务列表，其他字段是这封信的说明信息。</p>
+      <p>这里可以分成两类字段：</p>
+      <ul>
+        <li><code>items</code> 是业务数据：当前页的任务记录。</li>
+        <li><code>count</code>、<code>limit</code>、<code>offset</code> 是元数据：描述当前页和整个结果集的关系。</li>
+      </ul>
+      <p>“信封”这个说法的意思是：真正的信件内容是 <code>items</code>，信封上的地址、页码、总数等说明信息则帮助调用方正确使用这批数据。</p>
     </section>
 
     <section>
-      <h2>3. 响应模型</h2>
+      <h2>3. 为什么不用响应头放这些信息</h2>
+      <p>有些 API 会把分页元数据放到 HTTP 响应头里。但对初学项目和许多业务 API 来说，放在 JSON body 里更直观：</p>
+      <ul>
+        <li>Swagger UI 和前端调试工具里更容易看到。</li>
+        <li>前端只解析一次 JSON 就能拿到数据和元数据。</li>
+        <li>Pydantic 模型可以直接描述整个响应结构。</li>
+      </ul>
+      <p>所以本课程选择 body envelope。重点不是“世界上只有这一种做法”，而是让 API 契约清晰、可测试、可文档化。</p>
+    </section>
+
+    <section>
+      <h2>4. 代码精读一：响应模型不是装饰品</h2>
       <pre><code>class SummaryTaskListResponse(BaseModel):
     items: list[SummaryTaskRead]
     count: int
     limit: int
     offset: int</code></pre>
-      <p><code>SummaryTaskRead</code> 仍然负责单个任务长什么样；<code>SummaryTaskListResponse</code> 负责整个列表响应长什么样。这样单项模型和列表模型分工清楚。</p>
+      <p>FastAPI 的 <code>response_model</code> 会参与文档生成、响应转换和过滤。这个模型一旦声明，就表示后端对调用方承诺：任务列表响应会有这些字段，并且字段类型应符合声明。</p>
+      <p><code>SummaryTaskRead</code> 负责单个任务的形状；<code>SummaryTaskListResponse</code> 负责列表整体的形状。这样模型层次更清楚：</p>
+      <pre><code>SummaryTaskRead          -> 一条任务
+list[SummaryTaskRead]    -> 当前页任务数组
+SummaryTaskListResponse  -> 当前页 + 分页元数据</code></pre>
     </section>
 
     <section>
-      <h2>4. router 的变化</h2>
+      <h2>5. 代码精读二：router 的合约变化</h2>
       <pre><code>@router.get("", response_model=SummaryTaskListResponse)
 def list_summary_tasks(...) -&gt; SummaryTaskListResponse:
     return list_summary_task_records(
@@ -85,59 +107,113 @@ def list_summary_tasks(...) -&gt; SummaryTaskListResponse:
         offset=offset,
         limit=limit,
     )</code></pre>
-      <p>注意 <code>response_model</code> 不再是 <code>list[SummaryTaskRead]</code>。这代表 API 合约发生了变化，调用方也要从 <code>response[0]</code> 改成 <code>response.items[0]</code>。</p>
+      <p>旧合约是：</p>
+      <pre><code>response_model=list[SummaryTaskRead]</code></pre>
+      <p>新合约是：</p>
+      <pre><code>response_model=SummaryTaskListResponse</code></pre>
+      <p>这个变化会直接影响调用方。前端原来可能写：</p>
+      <pre><code>renderTasks(response);</code></pre>
+      <p>现在必须写：</p>
+      <pre><code>renderTasks(response.items);</code></pre>
+      <p>这就是为什么响应模型不是后端内部实现细节，而是前后端共享契约。</p>
     </section>
 
     <section>
-      <h2>5. 前端如何使用</h2>
-      <pre><code>const page = await fetch("/tasks?limit=10&offset=0").then(r =&gt; r.json());
+      <h2>6. 前端如何从信封构建分页 UI</h2>
+      <pre><code>const page = await fetch("/tasks?limit=10&amp;offset=0").then(r =&gt; r.json());
 
 renderTasks(page.items);
-renderPagination({
-  count: page.count,
-  limit: page.limit,
-  offset: page.offset,
-});</code></pre>
-      <p>如果 <code>offset + items.length &lt; count</code>，前端就可以显示“下一页”。如果 <code>offset</code> 大于 0，就可以显示“上一页”。</p>
+renderMeta(`显示 ${page.items.length} 条，共 ${page.count} 条`);
+
+const hasPrevious = page.offset &gt; 0;
+const hasNext = page.offset + page.items.length &lt; page.count;</code></pre>
+      <p>这里 <code>items</code> 决定渲染几行任务；<code>count</code> 决定总数提示；<code>offset</code> 和 <code>limit</code> 决定上一页、下一页按钮。</p>
+      <p>第 27 课已经把这个思想落实到静态前端页面中：任务历史区域读取 <code>page.items</code>，同时显示 <code>count</code>、<code>limit</code> 和 <code>offset</code>。</p>
     </section>
 
     <section>
-      <h2>6. 为什么这是破坏性变更</h2>
-      <p>对后端来说，这只是换了一个响应模型。但对已经接入这个接口的前端来说，这是破坏性变更，因为 JSON 结构变了。</p>
-      <p>学习项目里可以直接升级；真实项目里通常要考虑版本号、兼容期或新接口路径，例如 <code>/tasks/v2</code>。</p>
+      <h2>7. 为什么这是破坏性变更</h2>
+      <p>对后端来说，从裸数组改成信封对象可能只是几行代码。但对调用方来说，JSON 结构变了，这就是破坏性变更。</p>
+      <p>破坏性变更的判断标准不是“后端改得多不多”，而是“调用方原来的代码是否还能工作”。如果前端还在写 <code>response[0]</code>，它会失败；因为现在第一条任务在 <code>response.items[0]</code>。</p>
+      <p>真实项目中常见处理方式包括：</p>
+      <ul>
+        <li>提前沟通并同步升级前端。</li>
+        <li>提供兼容期。</li>
+        <li>使用新路径，例如 <code>/tasks/v2</code>。</li>
+        <li>用测试和 OpenAPI 文档明确新契约。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>8. 测试为什么必须跟着改</h2>
+      <pre><code>response = client.get("/tasks?limit=2", headers=API_KEY_HEADERS)
+page = response.json()
+
+assert set(page.keys()) == {"items", "count", "limit", "offset"}
+assert len(page["items"]) &lt;= 2
+assert page["limit"] == 2</code></pre>
+      <p>测试在这里不是只验证“接口能跑”。它在守 API 契约：响应必须是信封对象，而不是裸数组；任务记录必须在 <code>items</code> 里；元数据必须存在。</p>
+    </section>
+
+    <section>
+      <h2>9. 常见错误与诊断</h2>
+      <div class="two-col">
+        <div class="callout">
+          <h3>错误一：前端仍按数组读取</h3>
+          <p>旧代码 <code>response[0]</code> 会失效。新结构要读 <code>response.items[0]</code>。</p>
+        </div>
+        <div class="callout">
+          <h3>错误二：信封字段命名随意</h3>
+          <p>字段名应该稳定。<code>items/count/limit/offset</code> 简短清楚，适合长期维护。</p>
+        </div>
+        <div class="callout">
+          <h3>错误三：count 含义不清</h3>
+          <p><code>count</code> 应表示当前筛选条件下的总数，不是当前页长度。</p>
+        </div>
+        <div class="callout">
+          <h3>错误四：只改代码不改文档</h3>
+          <p>响应结构是对外契约，课程、速查、README 和测试都应同步。</p>
+        </div>
+      </div>
     </section>
 
     <section class="practice">
-      <h2>7. 课堂练习</h2>
+      <h2>10. 课堂实验</h2>
       <p>请求：</p>
-      <pre><code>GET /tasks?limit=1&offset=0</code></pre>
-      <p>回答三个问题：</p>
+      <pre><code>GET /tasks?limit=1&amp;offset=0
+X-API-Key: dev-secret-key</code></pre>
+      <p>回答：</p>
       <ol>
-        <li><code>items</code> 里有几条？</li>
+        <li><code>items</code> 是数组还是对象？</li>
         <li><code>count</code> 是否可能大于 <code>items.length</code>？</li>
-        <li>下一页的 <code>offset</code> 应该是多少？</li>
+        <li>如果要渲染第一条任务，应该读取 <code>page[0]</code> 还是 <code>page.items[0]</code>？</li>
+        <li>如果 <code>offset + items.length &lt; count</code>，前端应该允许点击下一页吗？</li>
       </ol>
     </section>
 
     <section class="checkpoint">
-      <h2>8. 小测：先回忆再展开</h2>
+      <h2>11. 小测：先回忆再展开</h2>
       <details>
-        <summary>1. <code>items</code> 表示什么？</summary>
-        <p class="answer">表示当前页实际返回的任务记录列表。</p>
+        <summary>1. 为什么列表接口常返回对象而不是裸数组？</summary>
+        <p class="answer">因为对象可以同时承载当前页数据和分页元数据，裸数组只能表达当前有哪些项。</p>
       </details>
       <details>
-        <summary>2. <code>count</code> 表示什么？</summary>
-        <p class="answer">表示符合当前筛选条件的总记录数。</p>
+        <summary>2. <code>items</code> 和 <code>count</code> 的职责有什么不同？</summary>
+        <p class="answer"><code>items</code> 是当前页记录，<code>count</code> 是当前筛选条件下的总记录数。</p>
       </details>
       <details>
-        <summary>3. 为什么响应结构变化要更新测试？</summary>
-        <p class="answer">因为测试是 API 合约的守门员，响应 JSON 结构变了，断言也必须跟着变。</p>
+        <summary>3. 为什么响应信封升级属于破坏性变更？</summary>
+        <p class="answer">因为 JSON 结构变了，旧调用方如果仍按数组读取就会失败。</p>
+      </details>
+      <details>
+        <summary>4. <code>response_model</code> 在这里的意义是什么？</summary>
+        <p class="answer">它声明并文档化响应契约，让 FastAPI 按模型处理输出数据。</p>
       </details>
     </section>
 
     <section>
-      <h2>9. 本节总结</h2>
-      <p>本节把任务列表响应升级为响应信封。它让前端不仅能展示当前页任务，还能构建分页控件和任务历史页。</p>
+      <h2>12. 本节总结</h2>
+      <p>本节真正讲的是 API 契约设计。裸数组适合非常简单的列表；一旦列表需要分页、筛选、总数、上一页、下一页，就应该用响应信封把业务数据和元数据一起返回。</p>
       <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/response-model/">FastAPI Response Model</a>、<a href="https://fastapi.tiangolo.com/tutorial/query-params/">FastAPI Query Parameters</a>。</p>
     </section>
 

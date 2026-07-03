@@ -21,7 +21,7 @@
     <header>
       <p class="eyebrow">Reference 0025</p>
       <h1>列表响应信封速查</h1>
-      <p class="lead">列表数据放 items，分页元数据放外层字段。</p>
+      <p class="lead">裸数组只表达当前有什么；响应信封表达当前页在整个结果集里的位置。</p>
     </header>
 
     <h2>响应模型</h2>
@@ -41,10 +41,25 @@
 
     <h2>字段含义</h2>
     <ul>
-      <li><code>items</code>: 当前页数据。</li>
-      <li><code>count</code>: 当前筛选条件下的总数。</li>
-      <li><code>limit</code>: 当前页最多返回多少条。</li>
-      <li><code>offset</code>: 当前页跳过了多少条。</li>
+      <li><code>items</code>：当前页业务数据。</li>
+      <li><code>count</code>：当前筛选条件下的总记录数。</li>
+      <li><code>limit</code>：本次最多返回多少条。</li>
+      <li><code>offset</code>：本次跳过多少条。</li>
+    </ul>
+
+    <h2>调用方变化</h2>
+    <pre><code># 旧：裸数组
+response[0]
+
+# 新：响应信封
+response["items"][0]</code></pre>
+
+    <h2>常见坑</h2>
+    <ul>
+      <li>前端仍按数组读取响应。</li>
+      <li>把 <code>count</code> 当成当前页长度。</li>
+      <li>只改后端，不改测试、文档和前端调用方。</li>
+      <li>字段名不稳定，导致调用方难维护。</li>
     </ul>
 
     <footer>

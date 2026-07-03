@@ -21,51 +21,100 @@
     <header>
       <p class="eyebrow">Lesson 0022</p>
       <h1>任务失败状态：异步任务不靠 HTTP 状态码表达最终结果</h1>
-      <p class="lead">后台任务的响应早就返回了，所以模型失败时，不能再改 HTTP 响应。正确做法是把失败写进任务记录。</p>
+      <p class="lead">同步接口可以直接用 HTTP 状态码表达本次请求成功或失败；后台任务不一样。它先返回 <code>202 Accepted</code>，真正的模型调用发生在响应之后，所以最终结果必须写入任务记录。</p>
     </header>
 
     <section>
       <h2>0. 本节学习目标</h2>
       <ul>
-        <li>理解同步接口错误和后台任务错误的区别。</li>
-        <li>看懂 <code>run_summary_task</code> 如何把异常写成 <code>failed</code>。</li>
-        <li>理解 <code>status</code>、<code>result</code>、<code>error</code> 三个字段的关系。</li>
-        <li>能测试后台任务失败路径。</li>
+        <li>区分“请求被接收”和“任务处理成功”这两个概念。</li>
+        <li>理解为什么后台任务失败后不能再把 <code>202</code> 改成 <code>503</code>。</li>
+        <li>掌握 <code>queued</code>、<code>running</code>、<code>completed</code>、<code>failed</code> 的状态机含义。</li>
+        <li>看懂 <code>run_summary_task</code> 如何把异常转换为稳定的任务状态。</li>
+        <li>能为 AI 服务任务设计“可查询、可重试、可解释”的失败结果。</li>
       </ul>
     </section>
 
     <section>
-      <h2>1. 为什么不能返回 503</h2>
-      <p>第 21 课的 <code>/predict</code> 是同步接口：请求进来，模型运行，马上返回结果或错误。所以模型失败时可以直接返回 <code>503</code>。</p>
-      <p>但后台任务不同：</p>
+      <h2>1. 背景：同步错误和异步错误不是一回事</h2>
+      <p>第 21 课的 <code>/predict</code> 是同步接口。客户端发请求，服务端立刻调用模型，然后马上返回预测结果。如果模型不可用，服务端还能在同一个 HTTP 响应里返回 <code>503 Service Unavailable</code>。</p>
+      <p>摘要任务接口的语义不同。<code>POST /tasks/summaries</code> 的职责不是“现在就给我摘要”，而是“请接收这个任务，稍后我来查结果”。这也是为什么它返回 <code>202 Accepted</code>。</p>
+      <p>MDN 对 202 的解释很关键：它表示请求已被接受处理，但处理尚未完成，而且结果之后可能成功也可能失败。FastAPI 的 BackgroundTasks 文档也强调，它适合在响应返回后继续执行一些客户端不必等待的工作。</p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 核心概念：202 是接收证明，不是成功证明</h2>
+      <p><strong>200 OK</strong> 通常表示这次请求已经完成，并且响应体就是结果。</p>
+      <p><strong>202 Accepted</strong> 表示服务端已经接收请求，但后续处理还没结束。它更像“排队凭证”或“任务回执”。客户端拿到 202 后，不能假设任务最终一定成功。</p>
+      <p>所以异步任务 API 通常拆成两个接口：</p>
       <pre><code>POST /tasks/summaries
-  -> 202 Accepted 已经返回给前端
-  -> 后台函数才开始运行
-  -> 模型此时失败</code></pre>
-      <p>HTTP 响应已经发出去了，后端不能穿越时间把刚才的 <code>202</code> 改成 <code>503</code>。所以异步任务要把最终结果写进任务状态。</p>
+  -> 返回 202 + task_id
+
+GET /tasks/{task_id}
+  -> 返回 queued/running/completed/failed + result/error</code></pre>
+      <p>这就是“提交”和“查询”的分离。这个分离一旦理解清楚，后面的任务历史、分页、筛选都会变得自然。</p>
     </section>
 
     <section>
-      <h2>2. 任务状态字段</h2>
+      <h2>3. 运行机制：失败发生在响应之后</h2>
+      <p>一次摘要任务从提交到失败，大致经历这条时间线：</p>
+      <ol>
+        <li>客户端提交 <code>POST /tasks/summaries</code>。</li>
+        <li>FastAPI 校验 API Key 和请求体。</li>
+        <li>服务端在数据库里创建任务，初始状态为 <code>queued</code>。</li>
+        <li>路由调用 <code>background_tasks.add_task(...)</code> 登记后台函数。</li>
+        <li>服务端返回 <code>202 Accepted</code> 和任务 ID。</li>
+        <li>HTTP 响应已经到达客户端。</li>
+        <li>后台函数才真正调用 <code>ai_client.summarize(...)</code>。</li>
+        <li>如果 AI 客户端失败，后台函数把任务改成 <code>failed</code>，并写入 <code>error</code>。</li>
+      </ol>
+      <p>第 6 步是分界线。过了这一步，原始 HTTP 响应已经结束，后端不能再改变它。能改变的是数据库里的任务记录。</p>
+    </section>
+
+    <section>
+      <h2>4. 任务记录的状态模型</h2>
       <pre><code>status: queued | running | completed | failed
 result: str | None
 error: str | None</code></pre>
+      <p>这三个字段共同表达任务最终状态：</p>
+      <ul>
+        <li><code>status</code> 是任务处于哪个阶段。</li>
+        <li><code>result</code> 是成功时给用户看的摘要。</li>
+        <li><code>error</code> 是失败时给用户或前端看的错误说明。</li>
+      </ul>
       <p>正常完成时：</p>
       <pre><code>{
   "status": "completed",
   "result": "summary text",
   "error": null
 }</code></pre>
-      <p>失败时：</p>
+      <p>处理失败时：</p>
       <pre><code>{
   "status": "failed",
   "result": null,
   "error": "summary_model_timeout: The summary model timed out."
 }</code></pre>
+      <p>注意：不要让 <code>completed</code> 同时带着 <code>error</code>，也不要让 <code>failed</code> 同时带着一个看起来成功的 <code>result</code>。状态字段和结果字段要保持语义一致。</p>
     </section>
 
     <section>
-      <h2>3. run_summary_task 的失败处理</h2>
+      <h2>5. 状态机：不要把状态当普通字符串</h2>
+      <p>状态字段看起来只是字符串，但从系统设计角度，它是一个小状态机：</p>
+      <pre><code>queued
+  -> running
+    -> completed
+    -> failed</code></pre>
+      <ul>
+        <li><code>queued</code>：任务已经被接收，等待后台处理。</li>
+        <li><code>running</code>：后台函数已经开始处理。</li>
+        <li><code>completed</code>：任务成功结束，可以读取 <code>result</code>。</li>
+        <li><code>failed</code>：任务失败结束，应该读取 <code>error</code>。</li>
+      </ul>
+      <p>状态机的价值是让前端和用户知道“现在该做什么”。例如 <code>running</code> 可以显示加载中，<code>failed</code> 可以显示重试按钮，<code>completed</code> 可以展示结果。</p>
+    </section>
+
+    <section>
+      <h2>6. 代码精读：run_summary_task 如何处理失败</h2>
       <pre><code>try:
     task.status = "running"
     session.add(task)
@@ -84,20 +133,46 @@ except Exception:
 finally:
     session.add(task)
     session.commit()</code></pre>
-      <p>这里有一个重要习惯：已知的 AI 客户端错误给出稳定错误码；未知异常给出保守的通用错误，不把内部堆栈暴露给调用方。</p>
+      <p>这段代码有四个重点：</p>
+      <ol>
+        <li>先把状态改成 <code>running</code> 并提交，让查询接口能看见任务已开始。</li>
+        <li>模型调用成功时写入 <code>result</code>，状态改成 <code>completed</code>。</li>
+        <li>已知 AI 客户端错误转成稳定错误码，方便前端和测试判断。</li>
+        <li>未知异常只暴露通用错误，不把内部堆栈或敏感细节写入对外字段。</li>
+      </ol>
+      <p><code>finally</code> 里的提交很重要：不管成功还是失败，任务最终状态都要落库。否则客户端会一直看到 <code>running</code>，像任务卡死了一样。</p>
     </section>
 
     <section>
-      <h2>4. 状态流转图</h2>
-      <pre><code>queued
-  -> running
-    -> completed
-    -> failed</code></pre>
-      <p><code>queued</code> 表示任务已经被接收；<code>running</code> 表示后台函数正在处理；<code>completed</code> 表示有结果；<code>failed</code> 表示处理失败，调用方应该看 <code>error</code> 字段。</p>
+      <h2>7. 为什么要区分已知错误和未知错误</h2>
+      <p>AI 服务里常见失败包括超时、限流、上游服务不可用、输入过长、模型拒绝处理等。这些属于“预期内失败”，应该有稳定错误码。例如：</p>
+      <pre><code>summary_model_timeout
+summary_provider_unavailable
+summary_input_too_long</code></pre>
+      <p>未知异常则不同。它可能是代码 bug、数据库问题、序列化问题，甚至是你暂时没想到的情况。对外直接暴露原始异常不稳定，也可能泄露内部实现。更稳的做法是写入通用错误：</p>
+      <pre><code>unexpected_task_error: The summary task failed unexpectedly.</code></pre>
+      <p>这不是隐藏问题，而是区分“外部契约”和“内部排障”。外部契约要稳定，内部日志可以更详细。</p>
     </section>
 
     <section>
-      <h2>5. 测试失败路径</h2>
+      <h2>8. 前端应该如何消费任务状态</h2>
+      <p>前端查询任务详情或任务历史时，可以按状态分支：</p>
+      <pre><code>if (task.status === "queued" || task.status === "running") {
+  showLoading(task);
+}
+
+if (task.status === "completed") {
+  showResult(task.result);
+}
+
+if (task.status === "failed") {
+  showError(task.error);
+}</code></pre>
+      <p>这段伪代码背后的原则是：前端不要猜测任务是否完成，而要相信后端任务记录。任务状态就是前后端共享的协议。</p>
+    </section>
+
+    <section>
+      <h2>9. 测试失败路径为什么要绕过真实后台调度</h2>
       <pre><code>class FailingSummaryClient:
     def summarize(self, text: str) -&gt; str:
         raise AIClientError(
@@ -110,47 +185,76 @@ run_summary_task(
     task_id=task.id,
     ai_client=FailingSummaryClient(),
 )</code></pre>
-      <p>这个测试绕过真实后台调度，直接调用服务函数。它验证的是业务结果：任务最终变成 <code>failed</code>，并且写入稳定错误信息。</p>
+      <p>这个测试没有真的等待 BackgroundTasks 调度，而是直接调用 service 函数。原因是我们要验证业务规则：只要摘要客户端失败，任务就必须变成 <code>failed</code>，并写入稳定错误信息。</p>
+      <p>测试越靠近规则，越不容易被时间、调度、线程这类因素干扰。以后如果引入 Celery 或 Redis 队列，这条业务规则仍然应该成立。</p>
     </section>
 
     <section>
-      <h2>6. 前端应该怎么处理</h2>
-      <p>前端查询任务详情时，可以根据 <code>status</code> 分支：</p>
-      <ul>
-        <li><code>queued</code> 或 <code>running</code>：显示“处理中”。</li>
-        <li><code>completed</code>：显示 <code>result</code>。</li>
-        <li><code>failed</code>：显示失败提示，并可允许用户重试。</li>
-      </ul>
-      <p>这就是异步任务 API 的核心：提交接口只表示“任务已接收”，查询接口才表示“任务最终结果”。</p>
+      <h2>10. 常见错误与诊断</h2>
+      <div class="two-col">
+        <div class="callout">
+          <h3>错误一：把 202 当成功结果</h3>
+          <p>202 只表示任务被接收。要看最终结果，必须查询任务详情。</p>
+        </div>
+        <div class="callout">
+          <h3>错误二：失败后不 commit</h3>
+          <p>如果异常分支没有提交，数据库里仍然可能是旧状态，前端会误以为任务还在运行。</p>
+        </div>
+        <div class="callout">
+          <h3>错误三：把异常原文直接暴露</h3>
+          <p>原始异常可能不稳定或包含内部信息。对外字段应使用稳定错误码和可读消息。</p>
+        </div>
+        <div class="callout">
+          <h3>错误四：状态和字段冲突</h3>
+          <p><code>failed</code> 应该配 <code>error</code>，<code>completed</code> 应该配 <code>result</code>。不要让语义混乱。</p>
+        </div>
+      </div>
     </section>
 
     <section class="practice">
-      <h2>7. 课堂练习</h2>
-      <p>使用 <code>POST /tasks/summaries</code> 创建一个文本中包含 <code>simulate-ai-failure</code> 的任务，然后查询任务详情，观察 <code>status</code> 和 <code>error</code>。</p>
-      <pre><code>{
+      <h2>11. 课堂实验</h2>
+      <p>创建一个会触发失败的任务：</p>
+      <pre><code>POST /tasks/summaries
+X-API-Key: dev-secret-key
+Content-Type: application/json
+
+{
   "text": "This summary task will simulate-ai-failure after it is accepted."
 }</code></pre>
+      <p>然后查询任务详情：</p>
+      <pre><code>GET /tasks/{task_id}
+X-API-Key: dev-secret-key</code></pre>
+      <p>观察三件事：</p>
+      <ol>
+        <li>提交接口返回的是 <code>202</code>，不是 <code>503</code>。</li>
+        <li>任务详情最终应该出现 <code>"status": "failed"</code>。</li>
+        <li><code>error</code> 字段应该包含稳定错误码，而不是一整段 Python 堆栈。</li>
+      </ol>
     </section>
 
     <section class="checkpoint">
-      <h2>8. 小测：先回忆再展开</h2>
+      <h2>12. 小测：先回忆再展开</h2>
       <details>
         <summary>1. 为什么后台任务失败后不能把 202 改成 503？</summary>
-        <p class="answer">因为 HTTP 响应已经发送给客户端，后台处理发生在响应之后。</p>
+        <p class="answer">因为 202 响应已经发送给客户端，后台处理发生在响应之后，后端只能更新任务记录。</p>
       </details>
       <details>
-        <summary>2. 任务失败时应该看哪个字段？</summary>
-        <p class="answer">看 <code>status</code> 是否为 <code>failed</code>，再看 <code>error</code> 里的错误说明。</p>
+        <summary>2. 任务失败时前端应该看哪个字段？</summary>
+        <p class="answer">先看 <code>status</code> 是否为 <code>failed</code>，再读取 <code>error</code> 中的错误说明。</p>
       </details>
       <details>
-        <summary>3. 为什么未知异常不直接返回原始内容？</summary>
-        <p class="answer">因为原始内容可能不稳定或泄露内部细节，通用错误更适合作为对外契约。</p>
+        <summary>3. 为什么要给已知 AI 错误稳定错误码？</summary>
+        <p class="answer">稳定错误码方便前端展示、测试断言、日志检索和后续重试策略设计。</p>
+      </details>
+      <details>
+        <summary>4. <code>finally</code> 中提交任务状态解决了什么问题？</summary>
+        <p class="answer">它确保成功或失败的最终状态都会落库，避免客户端一直看到旧状态。</p>
       </details>
     </section>
 
     <section>
-      <h2>9. 本节总结</h2>
-      <p>本节补齐了异步任务失败路径：同步接口失败用 HTTP 状态码表达，异步任务失败用任务记录表达。这个区分在 AI 后端项目里非常关键。</p>
+      <h2>13. 本节总结</h2>
+      <p>本节的核心不是“多加一个 failed 字符串”，而是理解异步 API 的基本契约：提交接口表示任务被接收，查询接口表达最终结果。AI 服务越接近真实世界，越需要这种状态模型，因为外部模型调用天然可能慢、失败、限流或超时。</p>
       <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/background-tasks/">FastAPI Background Tasks</a>、<a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/202">MDN 202 Accepted</a>。</p>
     </section>
 

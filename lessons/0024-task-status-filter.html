@@ -20,108 +20,194 @@
 
     <header>
       <p class="eyebrow">Lesson 0024</p>
-      <h1>任务状态筛选：只看 queued、completed 或 failed</h1>
-      <p class="lead">前端任务历史页通常需要“全部、处理中、成功、失败”这些筛选按钮。本节给 <code>GET /tasks</code> 增加 <code>status</code> 查询参数。</p>
+      <h1>任务状态筛选：只看 queued、running、completed 或 failed</h1>
+      <p class="lead">分页解决“列表太长”的问题，筛选解决“我只关心其中一类”的问题。任务历史页如果不能筛选失败任务，用户就很难定位问题。</p>
     </header>
 
     <section>
       <h2>0. 本节学习目标</h2>
       <ul>
-        <li>理解状态筛选为什么属于查询参数。</li>
-        <li>用 <code>TaskStatus</code> 限制合法状态值。</li>
-        <li>看懂 SQLModel 的 <code>where()</code> 条件查询。</li>
-        <li>理解筛选和分页如何组合。</li>
+        <li>理解状态筛选为什么属于列表查询条件。</li>
+        <li>理解 <code>Literal</code> 如何把普通字符串升级为有限枚举。</li>
+        <li>看懂 <code>Query(alias="status")</code> 解决了什么命名问题。</li>
+        <li>掌握筛选、排序、分页的组合顺序。</li>
+        <li>知道为什么非法状态应该返回 422，而不是空列表。</li>
       </ul>
     </section>
 
     <section>
-      <h2>1. 筛选不是路径参数</h2>
-      <p>任务列表的资源路径仍然是 <code>/tasks</code>。状态只是“怎么查看这个列表”的条件，所以适合放在查询参数里：</p>
+      <h2>1. 背景：任务历史不只是“列出来”</h2>
+      <p>当任务数量变多后，用户通常不会只想看全部任务。他可能会问：</p>
+      <ul>
+        <li>哪些任务失败了？</li>
+        <li>哪些任务还在处理中？</li>
+        <li>最近成功的摘要有哪些？</li>
+      </ul>
+      <p>这些问题都指向同一个资源集合 <code>/tasks</code>，只是观察角度不同。因此我们不需要新建 <code>/failed-tasks</code>、<code>/completed-tasks</code> 这些路径，而是在列表接口上增加筛选条件。</p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 核心概念：筛选是集合视图，不是新资源</h2>
+      <p>推荐写法：</p>
       <pre><code>GET /tasks?status=completed
 GET /tasks?status=failed
-GET /tasks?status=queued</code></pre>
-      <p>这和前面学过的搜索、分类、分页一样，都是列表视图的查询条件。</p>
+GET /tasks?status=running</code></pre>
+      <p>这里 <code>/tasks</code> 仍然表示任务集合，<code>status</code> 表示从集合里挑哪一部分。</p>
+      <p>路径参数更适合定位单个资源，比如 <code>/tasks/12</code>。查询参数更适合描述列表视图，比如分页、筛选、排序、搜索。</p>
     </section>
 
     <section>
-      <h2>2. 用 Literal 限制状态</h2>
+      <h2>3. 用 Literal 限制合法状态</h2>
       <pre><code>TaskStatus = Literal["queued", "running", "completed", "failed"]</code></pre>
-      <p>路由参数写成：</p>
+      <p>这行代码把 <code>TaskStatus</code> 定义成一个有限集合。它不是任意字符串，只允许四个值。</p>
+      <p>这对 API 很重要。没有限制时，<code>/tasks?status=complete</code>、<code>/tasks?status=done</code>、<code>/tasks?status=success</code> 都可能悄悄进入业务逻辑。用了 <code>Literal</code> 后，非法值会在请求解析阶段被拒绝。</p>
+    </section>
+
+    <section>
+      <h2>4. 代码精读一：对外叫 status，对内叫 task_status</h2>
       <pre><code>task_status: Annotated[
     TaskStatus | None,
     Query(alias="status"),
 ] = None</code></pre>
-      <p><code>None</code> 表示不筛选，也就是返回所有状态。传了 <code>status</code> 时，只允许四个合法值。比如 <code>/tasks?status=unknown</code> 会自动返回 422。</p>
+      <p>为什么不直接把 Python 变量命名为 <code>status</code>？因为路由文件里通常还会从 FastAPI 导入 <code>status</code> 模块，例如 <code>status.HTTP_202_ACCEPTED</code>。如果参数也叫 <code>status</code>，读代码时容易混乱。</p>
+      <p><code>Query(alias="status")</code> 让外部 URL 仍然保持简洁：</p>
+      <pre><code>GET /tasks?status=failed</code></pre>
+      <p>但 Python 函数内部使用更明确的变量名：</p>
+      <pre><code>task_status == "failed"</code></pre>
     </section>
 
     <section>
-      <h2>3. 为什么 Python 变量叫 task_status</h2>
-      <p>代码里已经从 FastAPI 导入了 <code>status</code> 模块，用来写 <code>status.HTTP_202_ACCEPTED</code>。如果参数也叫 <code>status</code>，读代码时容易混乱。</p>
-      <p>所以我们在 Python 里叫 <code>task_status</code>，但对外 URL 仍然叫 <code>status</code>：</p>
-      <pre><code>Query(alias="status")</code></pre>
+      <h2>5. 为什么 <code>TaskStatus | None</code> 很重要</h2>
+      <p><code>None</code> 表示客户端没有传 <code>status</code>，也就是“不筛选”。如果没有 <code>None</code>，这个参数就会变成必填，<code>GET /tasks</code> 反而不能查看全部任务。</p>
+      <p>因此这段类型表达的是：</p>
+      <pre><code>status 不传 -> 返回全部任务
+status=completed -> 只返回 completed
+status=failed -> 只返回 failed
+status=unknown -> 422 校验错误</code></pre>
+      <p>这比在 service 里手写一堆字符串判断更清楚，也更容易被 OpenAPI 文档展示出来。</p>
     </section>
 
     <section>
-      <h2>4. service 中拼接 where 条件</h2>
+      <h2>6. 代码精读二：where 条件只在需要时添加</h2>
       <pre><code>statement = select(SummaryTask).order_by(SummaryTask.id.desc())
+
 if task_status is not None:
     statement = statement.where(SummaryTask.status == task_status)
+
 statement = statement.offset(offset).limit(limit)</code></pre>
-      <p>如果没有传状态，就不加 <code>where</code>；如果传了状态，就只返回这个状态的任务。最后仍然继续分页。</p>
-    </section>
-
-    <section>
-      <h2>5. 筛选和分页组合</h2>
-      <pre><code>GET /tasks?status=completed&limit=10&offset=0
-GET /tasks?status=failed&limit=10&offset=10</code></pre>
-      <p>执行顺序可以这样理解：</p>
+      <p>这里的逻辑是动态构造查询：</p>
       <ol>
-        <li>先按状态筛选出候选任务。</li>
-        <li>再按 <code>id desc</code> 排序。</li>
-        <li>最后按 <code>offset</code> 和 <code>limit</code> 截取本页。</li>
+        <li>先构造基础查询：查任务表，并按最新任务排序。</li>
+        <li>如果传了状态，就添加 <code>where</code> 条件。</li>
+        <li>最后应用分页。</li>
       </ol>
+      <p>为什么最后才分页？因为你想要的是“失败任务里的第一页”，而不是“全部任务第一页里刚好失败的那几条”。顺序应该是：筛选 -> 排序 -> 分页。</p>
     </section>
 
     <section>
-      <h2>6. 测试覆盖</h2>
-      <pre><code>completed = client.get("/tasks?status=completed&limit=10", headers=API_KEY_HEADERS)
-invalid = client.get("/tasks?status=unknown", headers=API_KEY_HEADERS)
+      <h2>7. 非法状态为什么应该是 422</h2>
+      <p>假设用户请求：</p>
+      <pre><code>GET /tasks?status=done</code></pre>
+      <p>如果返回空列表，用户可能误以为系统里没有 done 状态的任务。但真实问题是：<code>done</code> 根本不是合法状态。</p>
+      <p>所以 422 更准确。它告诉调用方：你的请求参数形状不符合 API 契约。FastAPI 会根据类型注解和 <code>Query</code> 规则自动做这件事。</p>
+    </section>
+
+    <section>
+      <h2>8. 筛选和分页组合</h2>
+      <pre><code>GET /tasks?status=completed&amp;limit=10&amp;offset=0
+GET /tasks?status=failed&amp;limit=10&amp;offset=10</code></pre>
+      <p>这两个 URL 体现了列表接口的组合能力：</p>
+      <ul>
+        <li><code>status</code> 决定看哪一类任务。</li>
+        <li><code>limit</code> 决定这一页最多几条。</li>
+        <li><code>offset</code> 决定从这类任务中的哪个位置开始。</li>
+      </ul>
+      <p>第 26 课会继续补上 <code>count</code> 查询，让前端知道“当前筛选条件下一共有多少条”。</p>
+    </section>
+
+    <section>
+      <h2>9. 测试覆盖的意义</h2>
+      <pre><code>completed = client.get(
+    "/tasks?status=completed&amp;limit=10",
+    headers=API_KEY_HEADERS,
+)
+invalid = client.get(
+    "/tasks?status=unknown",
+    headers=API_KEY_HEADERS,
+)
 
 assert completed.status_code == 200
 assert all(task["status"] == "completed" for task in completed.json()["items"])
 assert invalid.status_code == 422</code></pre>
-      <p>这个测试同时确认了两件事：合法状态能筛选，非法状态会被 FastAPI 自动拒绝。第 25 课会进一步解释为什么列表数据现在放在 <code>items</code> 字段里。</p>
+      <p>这不是为了“凑测试数量”。它守住了两个契约：</p>
+      <ul>
+        <li>合法状态必须真的筛选出对应任务。</li>
+        <li>非法状态必须被拒绝，而不是悄悄返回误导性的结果。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>10. 常见错误与诊断</h2>
+      <div class="two-col">
+        <div class="callout">
+          <h3>错误一：把筛选做成路径</h3>
+          <p><code>/tasks/failed</code> 容易和任务 ID 路径混淆。筛选更适合 <code>?status=failed</code>。</p>
+        </div>
+        <div class="callout">
+          <h3>错误二：非法状态返回空列表</h3>
+          <p>空列表表示没有数据；非法状态是请求错误，应返回 422。</p>
+        </div>
+        <div class="callout">
+          <h3>错误三：先分页再筛选</h3>
+          <p>这会变成“当前页里的失败任务”，不是“失败任务的当前页”。</p>
+        </div>
+        <div class="callout">
+          <h3>错误四：变量名遮蔽模块名</h3>
+          <p>内部用 <code>task_status</code>，外部用 <code>alias="status"</code>，更清晰。</p>
+        </div>
+      </div>
     </section>
 
     <section class="practice">
-      <h2>7. 课堂练习</h2>
-      <p>请你分别请求：</p>
+      <h2>11. 课堂实验</h2>
+      <p>分别请求：</p>
       <pre><code>GET /tasks?status=completed
 GET /tasks?status=failed
+GET /tasks?status=running
 GET /tasks?status=unknown</code></pre>
-      <p>观察前两个请求返回列表，第三个请求返回 422。然后思考：如果前端有“失败任务”按钮，它应该调用哪个 URL？</p>
+      <p>观察：</p>
+      <ol>
+        <li>前三个请求是否返回 200。</li>
+        <li>返回的 <code>items</code> 中，每条任务的 <code>status</code> 是否匹配筛选条件。</li>
+        <li>最后一个请求是否返回 422。</li>
+      </ol>
+      <p>再思考一个前端问题：如果页面上有“失败任务”按钮，它应该把任务历史请求改成哪个 URL？</p>
     </section>
 
     <section class="checkpoint">
-      <h2>8. 小测：先回忆再展开</h2>
+      <h2>12. 小测：先回忆再展开</h2>
       <details>
         <summary>1. 为什么状态筛选适合做查询参数？</summary>
-        <p class="answer">因为它是在查看同一个任务列表时附加的筛选条件。</p>
+        <p class="answer">因为它是在查看同一个任务集合时附加的列表视图条件。</p>
       </details>
       <details>
         <summary>2. <code>TaskStatus | None</code> 里的 <code>None</code> 表示什么？</summary>
-        <p class="answer">表示没有传状态筛选条件，返回所有状态的任务。</p>
+        <p class="answer">表示没有传状态筛选条件，因此返回全部状态的任务。</p>
       </details>
       <details>
-        <summary>3. 非法状态为什么会返回 422？</summary>
-        <p class="answer">因为 FastAPI 会根据 <code>Literal</code> 类型自动校验查询参数。</p>
+        <summary>3. 非法状态为什么返回 422 而不是空列表？</summary>
+        <p class="answer">因为非法状态表示请求参数不符合 API 契约，问题在请求本身，不是数据为空。</p>
+      </details>
+      <details>
+        <summary>4. 筛选、排序、分页的推荐顺序是什么？</summary>
+        <p class="answer">先筛选候选数据，再稳定排序，最后用 <code>offset</code> 和 <code>limit</code> 截取当前页。</p>
       </details>
     </section>
 
     <section>
-      <h2>9. 本节总结</h2>
-      <p>本节把任务列表接口升级为“可筛选、可分页”的列表接口。这是前端任务中心、后台管理页、日志系统和 AI 作业历史都需要的基础能力。</p>
-      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/query-params/">FastAPI Query Parameters</a>、<a href="https://sqlmodel.tiangolo.com/tutorial/fastapi/limit-and-offset/">SQLModel Limit and Offset</a>。</p>
+      <h2>13. 本节总结</h2>
+      <p>本节让任务列表具备了“按状态查看”的能力。更重要的是，你学到了列表接口设计中的一个基本判断：路径定位资源，查询参数描述视图。状态筛选、分页、搜索、排序都属于集合视图的条件。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/query-params/">FastAPI Query Parameters</a>、<a href="https://fastapi.tiangolo.com/tutorial/query-params-str-validations/">FastAPI Query Validations</a>、<a href="https://sqlmodel.tiangolo.com/tutorial/fastapi/limit-and-offset/">SQLModel Limit and Offset</a>。</p>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

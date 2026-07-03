@@ -21,113 +21,184 @@
     <header>
       <p class="eyebrow">Lesson 0023</p>
       <h1>任务列表分页：用 limit 和 offset 控制返回数量</h1>
-      <p class="lead">任务越来越多时，接口不能一次把所有历史记录都返回。分页让列表接口更快、更稳定，也更适合前端页面展示。</p>
+      <p class="lead">任务历史会不断增长。分页的本质不是“少返回几条”这么简单，而是在数据库、网络、前端渲染和用户体验之间建立一个可控边界。</p>
     </header>
 
     <section>
       <h2>0. 本节学习目标</h2>
       <ul>
-        <li>理解为什么列表接口需要分页。</li>
-        <li>掌握 <code>limit</code> 和 <code>offset</code> 的含义。</li>
-        <li>看懂 FastAPI 如何用 <code>Query</code> 校验分页参数。</li>
-        <li>看懂 SQLModel 的 <code>offset()</code> 和 <code>limit()</code>。</li>
+        <li>理解列表接口为什么必须限制返回规模。</li>
+        <li>掌握 <code>limit</code> 与 <code>offset</code> 的数学含义和 URL 表达。</li>
+        <li>理解 FastAPI 如何用 <code>Query</code> 在进入业务函数前拒绝非法分页参数。</li>
+        <li>看懂 SQLModel 查询中 <code>order_by</code>、<code>offset</code>、<code>limit</code> 的组合。</li>
+        <li>理解为什么分页必须配合稳定排序。</li>
       </ul>
     </section>
 
     <section>
-      <h2>1. 为什么不能一次返回所有任务</h2>
-      <p>学习项目里可能只有几个任务，但真实系统中，任务表可能很快变成几千、几万条。一次返回所有记录会带来三个问题：</p>
+      <h2>1. 背景：列表接口最怕“无限制”</h2>
+      <p>学习项目里可能只有几个任务，所以全量返回暂时没问题。但真实系统里的任务表、日志表、订单表、文件表会快速增长。如果列表接口没有分页，调用方可能一次拉走几万条数据。</p>
+      <p>这会同时伤到三层：</p>
       <ul>
-        <li>数据库查询变慢。</li>
-        <li>网络响应变大。</li>
-        <li>前端渲染变卡。</li>
+        <li>数据库层：查询结果集过大，占用更多 CPU、内存和磁盘 IO。</li>
+        <li>网络层：响应体变大，传输变慢，移动网络下尤其明显。</li>
+        <li>前端层：浏览器要解析大量 JSON，还要渲染大量 DOM，页面会卡。</li>
       </ul>
-      <p>所以列表接口通常要支持分页，让客户端按页读取。</p>
+      <p>分页就是给列表接口加上“每次只看一小段”的规则。它不是高级功能，而是后端 API 的基本卫生习惯。</p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 核心概念：limit 是窗口大小，offset 是窗口起点</h2>
+      <p>请求：</p>
+      <pre><code>GET /tasks?limit=20&amp;offset=40</code></pre>
+      <p>可以理解成：在排序后的任务序列里，跳过前 40 条，然后最多拿 20 条。</p>
+      <pre><code>offset=0,  limit=20  -> 第 1 页
+offset=20, limit=20  -> 第 2 页
+offset=40, limit=20  -> 第 3 页</code></pre>
+      <p>如果把任务列表想成一条长队，<code>offset</code> 是从队头跳过多少个人，<code>limit</code> 是接下来允许进入视野的人数。</p>
     </section>
 
     <section>
-      <h2>2. limit 和 offset</h2>
-      <pre><code>GET /tasks?limit=20&offset=0</code></pre>
-      <ul>
-        <li><code>limit</code>：这次最多返回多少条。</li>
-        <li><code>offset</code>：跳过前面多少条。</li>
-      </ul>
-      <p>如果每页 20 条：</p>
-      <pre><code>第 1 页: offset=0,  limit=20
-第 2 页: offset=20, limit=20
-第 3 页: offset=40, limit=20</code></pre>
+      <h2>3. 查询参数为什么适合表达分页</h2>
+      <p>路径 <code>/tasks</code> 表达“任务集合”这个资源。分页不改变资源是谁，只改变“以什么视角查看集合”。所以它适合放在查询参数里：</p>
+      <pre><code>GET /tasks?limit=10&amp;offset=0
+GET /tasks?limit=10&amp;offset=10</code></pre>
+      <p>这和搜索、排序、状态筛选属于同一类问题：它们都是集合视图的条件，而不是新的资源路径。</p>
     </section>
 
     <section>
-      <h2>3. router 接收查询参数</h2>
-      <pre><code>@router.get("", response_model=list[SummaryTaskRead])
+      <h2>4. 代码精读一：router 层只负责 HTTP 参数</h2>
+      <pre><code>@router.get("", response_model=SummaryTaskListResponse)
 def list_summary_tasks(
     session: Annotated[Session, Depends(get_session)],
     task_status: Annotated[TaskStatus | None, Query(alias="status")] = None,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
-) -&gt; list[SummaryTask]:
+) -&gt; SummaryTaskListResponse:
     return list_summary_task_records(
         session=session,
         task_status=task_status,
         offset=offset,
         limit=limit,
     )</code></pre>
-      <p>这里的 <code>Query(ge=0)</code> 表示 <code>offset</code> 不能小于 0。<code>Query(ge=1, le=100)</code> 表示 <code>limit</code> 至少 1，最多 100。</p>
+      <p>这里有三层意思：</p>
+      <ol>
+        <li><code>offset</code> 和 <code>limit</code> 是查询参数，不是请求体。</li>
+        <li><code>Query(ge=0)</code> 让负数 <code>offset</code> 在进入业务逻辑前就被拒绝。</li>
+        <li><code>Query(ge=1, le=100)</code> 给 <code>limit</code> 设置下限和上限，防止调用方请求 0 条或 100000 条。</li>
+      </ol>
+      <p>FastAPI 官方文档把这类参数称为 query parameters。它们出现在 URL 的 <code>?</code> 后面，并且可以有默认值和校验规则。</p>
     </section>
 
     <section>
-      <h2>4. service 执行数据库分页</h2>
+      <h2>5. 为什么要限制 limit 的最大值</h2>
+      <p>很多初学者会问：既然客户端想要更多数据，为什么不允许 <code>limit=10000</code>？</p>
+      <p>原因是后端 API 要保护系统边界。服务端不是只服务一个请求，而是同时服务很多用户。如果一个请求拿走太多资源，其他请求也会变慢。<code>le=100</code> 这样的上限是一种服务端保护。</p>
+      <p>这也是 API 设计中的重要原则：客户端可以提出偏好，但服务端必须保留资源控制权。</p>
+    </section>
+
+    <section>
+      <h2>6. 代码精读二：service 层构造数据库查询</h2>
       <pre><code>statement = select(SummaryTask).order_by(SummaryTask.id.desc())
 statement = statement.offset(offset).limit(limit)
-return list(session.exec(statement))</code></pre>
-      <p><code>order_by(SummaryTask.id.desc())</code> 让最新任务排在前面。没有稳定排序时，分页容易出现重复或漏项，因为数据库不保证默认顺序。</p>
+items = list(session.exec(statement))</code></pre>
+      <p><code>select(SummaryTask)</code> 表示查询任务表中的任务记录。<code>order_by(SummaryTask.id.desc())</code> 表示最新任务排在前面。然后 <code>offset()</code> 和 <code>limit()</code> 截取其中一段。</p>
+      <p>SQLModel 的分页教程也使用了 <code>offset</code> 和 <code>limit</code> 的组合。它们最终会转成数据库可以理解的 SQL 片段。</p>
     </section>
 
     <section>
-      <h2>5. 为什么分页逻辑放 service</h2>
-      <p>router 负责把 HTTP 查询参数变成 Python 参数；service 负责构造数据库查询。这样以后要把分页规则复用到别的接口，或者改成游标分页时，router 不需要知道太多数据库细节。</p>
+      <h2>7. 为什么分页前必须有稳定排序</h2>
+      <p>如果没有 <code>order_by</code>，数据库不承诺每次返回顺序都一样。你第一页拿到 A、B、C，第二页可能因为默认顺序变化又看到 B，或者漏掉 D。</p>
+      <p>分页的数学前提是：先有一个稳定序列，再从序列里切片。我们的稳定序列是：</p>
+      <pre><code>按 id 从大到小排列的 SummaryTask 列表</code></pre>
+      <p>这让“第一页是最新任务”这个用户体验也更自然。</p>
     </section>
 
     <section>
-      <h2>6. 常见错误</h2>
+      <h2>8. offset 分页的局限</h2>
+      <p><code>limit + offset</code> 很适合入门和中小规模列表，但它不是万能方案。它有两个常见限制：</p>
       <ul>
-        <li><code>/tasks?limit=0</code>：返回 422，因为 limit 至少是 1。</li>
-        <li><code>/tasks?offset=-1</code>：返回 422，因为 offset 不能为负数。</li>
-        <li><code>/tasks?limit=10000</code>：返回 422，因为服务端限制最多 100。</li>
+        <li>数据量很大时，跳过很多行可能变慢。</li>
+        <li>翻页过程中如果有新任务插入，用户可能看到重复或错位。</li>
       </ul>
-      <p>这就是 Pydantic/FastAPI 自动校验的价值：错误请求不会进入业务函数。</p>
+      <p>真实大规模系统常用游标分页，比如“从某个 id 之后继续取”。但对当前课程来说，先学会 <code>limit + offset</code> 是最合适的，因为它直观、容易测试，也正好服务前端分页控件。</p>
+    </section>
+
+    <section>
+      <h2>9. 和响应信封的关系</h2>
+      <p>本课聚焦“怎么取当前页”。第 25 课会解释为什么响应形状要变成：</p>
+      <pre><code>{
+  "items": [...],
+  "count": 18,
+  "limit": 20,
+  "offset": 0
+}</code></pre>
+      <p>先记住一句话：<code>limit</code> 和 <code>offset</code> 决定当前页有哪些 <code>items</code>；<code>count</code> 则帮助前端知道总共有多少条。</p>
+    </section>
+
+    <section>
+      <h2>10. 常见错误与诊断</h2>
+      <div class="two-col">
+        <div class="callout">
+          <h3>错误一：limit 允许无限大</h3>
+          <p>这会让一个请求消耗过多资源。用 <code>Query(le=100)</code> 设置上限。</p>
+        </div>
+        <div class="callout">
+          <h3>错误二：offset 允许负数</h3>
+          <p>负数没有清晰业务含义。用 <code>Query(ge=0)</code> 拒绝。</p>
+        </div>
+        <div class="callout">
+          <h3>错误三：没有排序就分页</h3>
+          <p>数据库默认顺序不可靠，分页可能重复或漏项。</p>
+        </div>
+        <div class="callout">
+          <h3>错误四：把分页逻辑写满 router</h3>
+          <p>router 应接收 HTTP 参数，数据库查询细节更适合放 service。</p>
+        </div>
+      </div>
     </section>
 
     <section class="practice">
-      <h2>7. 课堂练习</h2>
+      <h2>11. 课堂实验</h2>
       <p>先创建 3 个摘要任务，然后分别请求：</p>
-      <pre><code>GET /tasks?limit=1&offset=0
-GET /tasks?limit=1&offset=1
-GET /tasks?limit=1&offset=2</code></pre>
-      <p>观察每次响应里 <code>items[0].id</code> 是否不同，以及它们是否按从新到旧排列。第 25 课会详细讲为什么列表数据放在 <code>items</code> 里。</p>
+      <pre><code>GET /tasks?limit=1&amp;offset=0
+GET /tasks?limit=1&amp;offset=1
+GET /tasks?limit=1&amp;offset=2</code></pre>
+      <p>观察：</p>
+      <ol>
+        <li>每次 <code>items</code> 是否最多只有 1 条。</li>
+        <li>三个请求返回的任务 id 是否不同。</li>
+        <li>id 是否按从新到旧排列。</li>
+      </ol>
+      <p>再试一个非法请求：</p>
+      <pre><code>GET /tasks?limit=0&amp;offset=-1</code></pre>
+      <p>它应该返回 422，因为参数在进入 service 前就被 FastAPI 校验失败。</p>
     </section>
 
     <section class="checkpoint">
-      <h2>8. 小测：先回忆再展开</h2>
+      <h2>12. 小测：先回忆再展开</h2>
       <details>
-        <summary>1. <code>limit</code> 控制什么？</summary>
-        <p class="answer">控制这次请求最多返回多少条记录。</p>
+        <summary>1. <code>limit</code> 和 <code>offset</code> 分别控制什么？</summary>
+        <p class="answer"><code>limit</code> 控制最多返回多少条，<code>offset</code> 控制从排序后的结果里跳过多少条。</p>
       </details>
       <details>
-        <summary>2. <code>offset</code> 控制什么？</summary>
-        <p class="answer">控制查询结果从前面跳过多少条记录。</p>
+        <summary>2. 分页前为什么要排序？</summary>
+        <p class="answer">因为分页需要稳定序列；没有排序时数据库返回顺序不可靠，可能重复或漏项。</p>
       </details>
       <details>
-        <summary>3. 分页前为什么要排序？</summary>
-        <p class="answer">因为稳定排序能减少分页时重复或漏掉记录的风险。</p>
+        <summary>3. 为什么要限制 <code>limit</code> 最大值？</summary>
+        <p class="answer">为了保护数据库、网络和前端渲染资源，避免单个请求拉取过多数据。</p>
+      </details>
+      <details>
+        <summary>4. 分页参数为什么放查询参数而不是请求体？</summary>
+        <p class="answer">因为它们描述的是如何查看同一个任务集合，属于列表视图条件。</p>
       </details>
     </section>
 
     <section>
-      <h2>9. 本节总结</h2>
-      <p>本节让任务列表接口从“全量返回”升级为“可分页返回”。这是任何任务历史、日志列表、订单列表、文件列表都会用到的后端基础能力。</p>
-      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/query-params/">FastAPI Query Parameters</a>、<a href="https://sqlmodel.tiangolo.com/tutorial/fastapi/limit-and-offset/">SQLModel Limit and Offset</a>。</p>
+      <h2>13. 本节总结</h2>
+      <p>本节把任务列表从“全量返回”升级为“按窗口读取”。你需要记住的不是两个参数名，而是分页背后的边界意识：后端要控制每次查询、传输和渲染的数据规模，并用稳定排序保证分页语义清楚。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/query-params/">FastAPI Query Parameters</a>、<a href="https://fastapi.tiangolo.com/tutorial/query-params-str-validations/">FastAPI Query Validations</a>、<a href="https://sqlmodel.tiangolo.com/tutorial/fastapi/limit-and-offset/">SQLModel Limit and Offset</a>。</p>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

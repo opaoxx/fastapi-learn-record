@@ -21,38 +21,41 @@
     <header>
       <p class="eyebrow">Reference 0024</p>
       <h1>任务状态筛选速查</h1>
-      <p class="lead">用 status 查询参数只看某一种任务状态。</p>
+      <p class="lead">路径定位集合，查询参数描述集合视图。状态筛选属于查询参数。</p>
     </header>
 
-    <h2>请求</h2>
+    <h2>合法请求</h2>
     <pre><code>GET /tasks?status=queued
 GET /tasks?status=running
 GET /tasks?status=completed
 GET /tasks?status=failed</code></pre>
 
-    <h2>类型</h2>
+    <h2>状态类型</h2>
     <pre><code>TaskStatus = Literal["queued", "running", "completed", "failed"]</code></pre>
 
-    <h2>路由参数</h2>
+    <h2>对外和对内命名</h2>
     <pre><code>task_status: Annotated[
     TaskStatus | None,
     Query(alias="status"),
 ] = None</code></pre>
 
-    <h2>数据库条件</h2>
-    <pre><code>if task_status is not None:
-    statement = statement.where(SummaryTask.status == task_status)</code></pre>
+    <h2>查询顺序</h2>
+    <pre><code>statement = select(SummaryTask).order_by(SummaryTask.id.desc())
+if task_status is not None:
+    statement = statement.where(SummaryTask.status == task_status)
+statement = statement.offset(offset).limit(limit)</code></pre>
 
-    <h2>组合</h2>
-    <pre><code>GET /tasks?status=failed&limit=10&offset=0</code></pre>
-
-    <h2>响应位置</h2>
-    <pre><code>response["items"]  # 当前页任务列表
-response["count"]  # 当前筛选条件下的总数</code></pre>
+    <h2>关键判断</h2>
+    <ul>
+      <li>不传 <code>status</code>：返回全部任务。</li>
+      <li>传合法 <code>status</code>：返回该状态任务。</li>
+      <li>传非法 <code>status</code>：返回 422，不应该返回空列表。</li>
+      <li>推荐顺序：筛选 -> 排序 -> 分页。</li>
+    </ul>
 
     <footer>
       来源：<a href="https://fastapi.tiangolo.com/tutorial/query-params/">FastAPI Query Parameters</a>、
-      <a href="https://sqlmodel.tiangolo.com/tutorial/fastapi/limit-and-offset/">SQLModel Limit and Offset</a>。
+      <a href="https://fastapi.tiangolo.com/tutorial/query-params-str-validations/">FastAPI Query Validations</a>。
     </footer>
 
     <nav class="course-nav bottom" aria-label="速查表底部导航">

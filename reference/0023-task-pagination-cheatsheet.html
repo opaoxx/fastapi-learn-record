@@ -21,12 +21,13 @@
     <header>
       <p class="eyebrow">Reference 0023</p>
       <h1>任务分页速查</h1>
-      <p class="lead">limit 控制数量，offset 控制跳过多少条。</p>
+      <p class="lead">limit 是窗口大小，offset 是窗口起点。分页前必须先有稳定排序。</p>
     </header>
 
-    <h2>请求</h2>
-    <pre><code>GET /tasks?limit=20&offset=0
-GET /tasks?limit=20&offset=20</code></pre>
+    <h2>请求模式</h2>
+    <pre><code>GET /tasks?limit=20&amp;offset=0
+GET /tasks?limit=20&amp;offset=20
+GET /tasks?limit=20&amp;offset=40</code></pre>
 
     <h2>参数校验</h2>
     <pre><code>offset: Annotated[int, Query(ge=0)] = 0
@@ -34,22 +35,27 @@ limit: Annotated[int, Query(ge=1, le=100)] = 20</code></pre>
 
     <h2>数据库查询</h2>
     <pre><code>statement = select(SummaryTask).order_by(SummaryTask.id.desc())
-statement = statement.offset(offset).limit(limit)</code></pre>
+statement = statement.offset(offset).limit(limit)
+items = list(session.exec(statement))</code></pre>
 
-    <h2>响应位置</h2>
-    <pre><code>response["items"]  # 当前页任务列表
-response["limit"]  # 本次请求的页大小
-response["offset"] # 本次请求的偏移量</code></pre>
+    <h2>判断规则</h2>
+    <ul>
+      <li><code>offset=0</code> 是第一页。</li>
+      <li>下一页通常是 <code>offset + limit</code>。</li>
+      <li>上一页通常是 <code>max(offset - limit, 0)</code>。</li>
+      <li>没有稳定 <code>order_by</code>，分页可能重复或漏项。</li>
+    </ul>
 
     <h2>常见 422</h2>
     <ul>
-      <li><code>limit=0</code></li>
-      <li><code>limit=101</code></li>
-      <li><code>offset=-1</code></li>
+      <li><code>limit=0</code>：页大小不能小于 1。</li>
+      <li><code>limit=101</code>：超过服务端上限。</li>
+      <li><code>offset=-1</code>：偏移量不能为负。</li>
     </ul>
 
     <footer>
       来源：<a href="https://fastapi.tiangolo.com/tutorial/query-params/">FastAPI Query Parameters</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/query-params-str-validations/">FastAPI Query Validations</a>、
       <a href="https://sqlmodel.tiangolo.com/tutorial/fastapi/limit-and-offset/">SQLModel Limit and Offset</a>。
     </footer>
 

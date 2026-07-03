@@ -21,29 +21,39 @@
     <header>
       <p class="eyebrow">Reference 0026</p>
       <h1>count 查询速查</h1>
-      <p class="lead">items 是当前页，count 是符合筛选条件的总数。</p>
+      <p class="lead">items 回答“这一页有哪些”，count 回答“符合条件的一共有多少”。</p>
     </header>
 
-    <h2>两个查询</h2>
+    <h2>两个问题，两条查询</h2>
     <pre><code>statement = select(SummaryTask).order_by(SummaryTask.id.desc())
 count_statement = select(func.count()).select_from(SummaryTask)</code></pre>
 
-    <h2>同样的筛选条件</h2>
+    <h2>筛选条件必须一致</h2>
     <pre><code>if task_status is not None:
     statement = statement.where(SummaryTask.status == task_status)
     count_statement = count_statement.where(SummaryTask.status == task_status)</code></pre>
 
-    <h2>只有 items 查询分页</h2>
+    <h2>分页只作用于 items</h2>
     <pre><code>statement = statement.offset(offset).limit(limit)
 items = list(session.exec(statement))
 count = session.exec(count_statement).one()</code></pre>
 
-    <h2>判断下一页</h2>
-    <pre><code>has_next = offset + len(items) &lt; count</code></pre>
+    <h2>前端判断</h2>
+    <pre><code>has_previous = offset &gt; 0
+has_next = offset + len(items) &lt; count</code></pre>
+
+    <h2>规则表</h2>
+    <ul>
+      <li>筛选条件：items 查询和 count 查询都要用。</li>
+      <li>排序：items 查询需要，count 查询通常不需要。</li>
+      <li>分页：只给 items 查询，不给 count 查询。</li>
+      <li><code>len(items)</code>：当前页长度，不是总数。</li>
+    </ul>
 
     <footer>
       来源：<a href="https://sqlmodel.tiangolo.com/tutorial/fastapi/limit-and-offset/">SQLModel Limit and Offset</a>、
-      <a href="https://docs.sqlalchemy.org/en/latest/core/functions.html">SQLAlchemy SQL Functions</a>。
+      <a href="https://docs.sqlalchemy.org/en/latest/core/functions.html">SQLAlchemy SQL Functions</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/response-model/">FastAPI Response Model</a>。
     </footer>
 
     <nav class="course-nav bottom" aria-label="速查表底部导航">

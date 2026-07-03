@@ -21,26 +21,45 @@
     <header>
       <p class="eyebrow">Reference 0022</p>
       <h1>任务失败状态速查</h1>
-      <p class="lead">后台任务的最终结果写在任务记录里，而不是写在提交接口的 HTTP 状态码里。</p>
+      <p class="lead">202 表示任务被接收，不表示任务最终成功。最终结果写在任务记录里。</p>
     </header>
 
-    <h2>状态流转</h2>
-    <pre><code>queued -> running -> completed
-queued -> running -> failed</code></pre>
-
-    <h2>失败响应形状</h2>
-    <pre><code>{
-  "status": "failed",
-  "result": null,
-  "error": "summary_model_timeout: The summary model timed out."
-}</code></pre>
-
-    <h2>处理规则</h2>
+    <h2>核心心法</h2>
     <ul>
-      <li>提交任务成功：<code>202 Accepted</code>。</li>
-      <li>任务还没完成：查询接口返回 <code>queued</code> 或 <code>running</code>。</li>
-      <li>任务完成：查询接口返回 <code>completed</code> 和 <code>result</code>。</li>
-      <li>任务失败：查询接口返回 <code>failed</code> 和 <code>error</code>。</li>
+      <li>同步接口：本次 HTTP 响应可以直接表达成功或失败。</li>
+      <li>后台任务：提交响应已经发出，最终结果要通过任务状态查询。</li>
+      <li><code>failed</code> 是业务结果，不是提交接口的 HTTP 状态码。</li>
+    </ul>
+
+    <h2>状态流转</h2>
+    <pre><code>queued
+  -> running
+    -> completed
+    -> failed</code></pre>
+
+    <h2>字段组合</h2>
+    <pre><code>completed -> result 有值, error 为 null
+failed    -> result 为 null, error 有值
+queued    -> result/error 通常都为空
+running   -> result/error 通常都为空</code></pre>
+
+    <h2>失败处理骨架</h2>
+    <pre><code>except AIClientError as exc:
+    task.status = "failed"
+    task.error = f"{exc.error_code}: {exc.message}"
+except Exception:
+    task.status = "failed"
+    task.error = "unexpected_task_error: The summary task failed unexpectedly."
+finally:
+    session.add(task)
+    session.commit()</code></pre>
+
+    <h2>常见坑</h2>
+    <ul>
+      <li>把 <code>202 Accepted</code> 当作任务成功。</li>
+      <li>异常分支忘记 <code>commit()</code>，导致状态没有落库。</li>
+      <li>把 Python 原始异常直接暴露给前端。</li>
+      <li><code>failed</code> 状态还保留旧 <code>result</code>，造成语义冲突。</li>
     </ul>
 
     <footer>
