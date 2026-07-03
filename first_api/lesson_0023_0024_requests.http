@@ -1,0 +1,19 @@
+### List latest tasks, one item per page
+GET http://127.0.0.1:8000/tasks?limit=1&offset=0
+X-API-Key: dev-secret-key
+
+### Read the next page
+GET http://127.0.0.1:8000/tasks?limit=1&offset=1
+X-API-Key: dev-secret-key
+
+### Filter by completed tasks
+GET http://127.0.0.1:8000/tasks?status=completed&limit=10&offset=0
+X-API-Key: dev-secret-key
+
+### Filter by failed tasks
+GET http://127.0.0.1:8000/tasks?status=failed&limit=10&offset=0
+X-API-Key: dev-secret-key
+
+### Invalid status returns 422
+GET http://127.0.0.1:8000/tasks?status=unknown
+X-API-Key: dev-secret-key

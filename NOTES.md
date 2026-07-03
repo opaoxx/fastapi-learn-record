@@ -15,3 +15,4 @@
 - The app now has CORS middleware for local browser frontends and serves a small static frontend at `/app/` for uploading a text file and creating a summary task.
 - The app now has a small service layer under `first_api/services/`; prediction and summary logic are wrapped by `DemoAIClient`, and `/predict` receives it through `Depends(get_ai_client)`.
 - The app now has a structured `AIClientError`; `/predict` converts known AI client failures into 503 responses, while background summary tasks store failures as `status="failed"` with an `error` string.
+- `GET /tasks` now supports `status`, `offset`, and `limit` query parameters. The list is ordered by newest task id first, and invalid query values return 422.

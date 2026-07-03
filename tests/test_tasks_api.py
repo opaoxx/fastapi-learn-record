@@ -41,3 +41,45 @@ def test_missing_summary_task_returns_404() -> None:
         response = client.get("/tasks/999999", headers=API_KEY_HEADERS)
 
     assert response.status_code == 404
+
+
+def test_list_summary_tasks_supports_limit_and_offset() -> None:
+    with TestClient(app) as client:
+        for index in range(3):
+            created = client.post(
+                "/tasks/summaries",
+                headers=API_KEY_HEADERS,
+                json={
+                    "text": f"Pagination example task number {index} has enough text to be accepted."
+                },
+            )
+            assert created.status_code == 202
+
+        first_page = client.get("/tasks?limit=1&offset=0", headers=API_KEY_HEADERS)
+        second_page = client.get("/tasks?limit=1&offset=1", headers=API_KEY_HEADERS)
+
+    assert first_page.status_code == 200
+    assert second_page.status_code == 200
+    assert len(first_page.json()) == 1
+    assert len(second_page.json()) == 1
+    assert first_page.json()[0]["id"] != second_page.json()[0]["id"]
+
+
+def test_list_summary_tasks_supports_status_filter() -> None:
+    with TestClient(app) as client:
+        created = client.post(
+            "/tasks/summaries",
+            headers=API_KEY_HEADERS,
+            json={
+                "text": "This task should complete so the status filter can find completed records."
+            },
+        )
+        assert created.status_code == 202
+
+        completed = client.get("/tasks?status=completed&limit=10", headers=API_KEY_HEADERS)
+        invalid = client.get("/tasks?status=unknown", headers=API_KEY_HEADERS)
+
+    assert completed.status_code == 200
+    assert any(task["id"] == created.json()["id"] for task in completed.json())
+    assert all(task["status"] == "completed" for task in completed.json())
+    assert invalid.status_code == 422

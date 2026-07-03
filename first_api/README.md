@@ -61,6 +61,12 @@ The protected write endpoints use `FIRST_API_API_KEY`, which defaults to `dev-se
 
 The task endpoints under `/tasks` are also protected with `X-API-Key`. They demonstrate the AI-service pattern of accepting work with `202 Accepted`, processing it in the background, and letting clients query task status later.
 
+Task history supports pagination and status filtering:
+
+- `GET /tasks?limit=20&offset=0`
+- `GET /tasks?status=completed&limit=10&offset=0`
+- `GET /tasks?status=failed&limit=10&offset=0`
+
 The file endpoints under `/files` are protected with `X-API-Key`. They currently accept small UTF-8 `.txt` uploads and store metadata plus text content in SQLite for learning purposes.
 
 ## Browser frontend

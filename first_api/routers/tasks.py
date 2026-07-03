@@ -1,10 +1,10 @@
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, Query, status
 from sqlmodel import Session
 
 from ..database import get_session
-from ..schemas import SummaryRequest, SummaryTask, SummaryTaskRead, UploadedTextFile
+from ..schemas import SummaryRequest, SummaryTask, SummaryTaskRead, TaskStatus, UploadedTextFile
 from ..security import require_api_key
 from ..services.summary_tasks import (
     create_summary_task_from_file,
@@ -62,8 +62,16 @@ def create_file_summary_task(
 @router.get("", response_model=list[SummaryTaskRead])
 def list_summary_tasks(
     session: Annotated[Session, Depends(get_session)],
+    task_status: Annotated[TaskStatus | None, Query(alias="status")] = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> list[SummaryTask]:
-    return list_summary_task_records(session)
+    return list_summary_task_records(
+        session=session,
+        task_status=task_status,
+        offset=offset,
+        limit=limit,
+    )
 
 
 @router.get("/{task_id}", response_model=SummaryTaskRead)

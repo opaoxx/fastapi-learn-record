@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Task Status Filter Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0024</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0024-task-status-filter.html">回到第 24 课</a>
+        <a href="./0023-task-pagination-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0024</p>
+      <h1>任务状态筛选速查</h1>
+      <p class="lead">用 status 查询参数只看某一种任务状态。</p>
+    </header>
+
+    <h2>请求</h2>
+    <pre><code>GET /tasks?status=queued
+GET /tasks?status=running
+GET /tasks?status=completed
+GET /tasks?status=failed</code></pre>
+
+    <h2>类型</h2>
+    <pre><code>TaskStatus = Literal["queued", "running", "completed", "failed"]</code></pre>
+
+    <h2>路由参数</h2>
+    <pre><code>task_status: Annotated[
+    TaskStatus | None,
+    Query(alias="status"),
+] = None</code></pre>
+
+    <h2>数据库条件</h2>
+    <pre><code>if task_status is not None:
+    statement = statement.where(SummaryTask.status == task_status)</code></pre>
+
+    <h2>组合</h2>
+    <pre><code>GET /tasks?status=failed&limit=10&offset=0</code></pre>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/query-params/">FastAPI Query Parameters</a>、
+      <a href="https://sqlmodel.tiangolo.com/tutorial/fastapi/limit-and-offset/">SQLModel Limit and Offset</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0024-task-status-filter.html">回到第 24 课</a>
+        <a href="./0023-task-pagination-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

@@ -10,6 +10,8 @@
   Official guide to dynamic URL segments. Use when moving from fixed routes to item-specific routes.
 - [FastAPI Query Parameters](https://fastapi.tiangolo.com/tutorial/query-params/)
   Official guide to query parameters and defaults. Use when teaching list filtering and search-like endpoints.
+- [FastAPI Query Parameters and String Validations](https://fastapi.tiangolo.com/tutorial/query-params-str-validations/)
+  Official guide to `Query` validation. Use when teaching bounds such as `limit >= 1` and optional query parameters.
 - [FastAPI Request Body](https://fastapi.tiangolo.com/tutorial/body/)
   Official guide to receiving JSON request bodies with Pydantic models. Use for POST endpoints and AI-service inputs.
 - [FastAPI Body - Fields](https://fastapi.tiangolo.com/tutorial/body-fields/)
@@ -34,6 +36,8 @@
   Official guide to dependencies that clean up resources. Use when teaching database session dependencies.
 - [SQLModel Simple Hero API](https://sqlmodel.tiangolo.com/tutorial/fastapi/simple-hero-api/)
   Official SQLModel FastAPI tutorial. Use when reinforcing table models and database-backed API endpoints.
+- [SQLModel Limit and Offset](https://sqlmodel.tiangolo.com/tutorial/fastapi/limit-and-offset/)
+  Official SQLModel pagination tutorial. Use when teaching `offset()` and `limit()` on database-backed list endpoints.
 - [SQLModel Update Data with FastAPI](https://sqlmodel.tiangolo.com/tutorial/fastapi/update/)
   Official SQLModel update tutorial. Use when teaching PATCH-style partial updates and update models.
 - [SQLModel Delete Data with FastAPI](https://sqlmodel.tiangolo.com/tutorial/fastapi/delete/)

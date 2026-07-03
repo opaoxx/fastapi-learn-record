@@ -1,6 +1,6 @@
 from sqlmodel import Session, select
 
-from ..schemas import SummaryTask, UploadedTextFile
+from ..schemas import SummaryTask, TaskStatus, UploadedTextFile
 from .ai_clients import AIClientError, DemoAIClient
 
 
@@ -32,8 +32,17 @@ def create_summary_task_from_file(
     )
 
 
-def list_summary_tasks(session: Session) -> list[SummaryTask]:
-    return list(session.exec(select(SummaryTask)))
+def list_summary_tasks(
+    session: Session,
+    task_status: TaskStatus | None = None,
+    offset: int = 0,
+    limit: int = 20,
+) -> list[SummaryTask]:
+    statement = select(SummaryTask).order_by(SummaryTask.id.desc())
+    if task_status is not None:
+        statement = statement.where(SummaryTask.status == task_status)
+    statement = statement.offset(offset).limit(limit)
+    return list(session.exec(statement))
 
 
 def read_summary_task(session: Session, task_id: int) -> SummaryTask | None:
