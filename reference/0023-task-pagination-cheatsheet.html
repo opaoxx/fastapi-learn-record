@@ -36,6 +36,11 @@ limit: Annotated[int, Query(ge=1, le=100)] = 20</code></pre>
     <pre><code>statement = select(SummaryTask).order_by(SummaryTask.id.desc())
 statement = statement.offset(offset).limit(limit)</code></pre>
 
+    <h2>响应位置</h2>
+    <pre><code>response["items"]  # 当前页任务列表
+response["limit"]  # 本次请求的页大小
+response["offset"] # 本次请求的偏移量</code></pre>
+
     <h2>常见 422</h2>
     <ul>
       <li><code>limit=0</code></li>

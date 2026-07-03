@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0025 - List Response Envelope</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0025</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0024-task-status-filter.html">上一课</a>
+        <a href="./0026-count-query.html">下一课</a>
+        <a href="../reference/0025-list-response-envelope-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0025</p>
+      <h1>列表响应信封：不只返回数组，还返回分页元数据</h1>
+      <p class="lead">上一节的 <code>GET /tasks</code> 已经能分页和筛选，但前端还不知道总共有多少条。本节把列表响应从数组升级成响应信封。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解为什么列表接口常返回对象，而不是裸数组。</li>
+        <li>看懂 <code>SummaryTaskListResponse</code> 响应模型。</li>
+        <li>理解 <code>items</code>、<code>count</code>、<code>limit</code>、<code>offset</code> 的职责。</li>
+        <li>理解 API 合约升级为什么要同步更新测试和文档。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 裸数组有什么问题</h2>
+      <p>原来的任务列表响应长这样：</p>
+      <pre><code>[
+  {"id": 3, "status": "completed"},
+  {"id": 2, "status": "completed"}
+]</code></pre>
+      <p>它能展示任务，但前端不知道：</p>
+      <ul>
+        <li>总共有多少条符合条件的任务。</li>
+        <li>当前使用的 <code>limit</code> 是多少。</li>
+        <li>当前页从哪个 <code>offset</code> 开始。</li>
+        <li>后面是否还可能有下一页。</li>
+      </ul>
+      <p>所以真实项目的列表接口经常会返回一个对象，把数据和分页元信息包起来。</p>
+    </section>
+
+    <section>
+      <h2>2. 新响应形状</h2>
+      <pre><code>{
+  "items": [
+    {"id": 3, "status": "completed"},
+    {"id": 2, "status": "completed"}
+  ],
+  "count": 18,
+  "limit": 2,
+  "offset": 0
+}</code></pre>
+      <p>这个外层对象就像一个信封：<code>items</code> 是信里的任务列表，其他字段是这封信的说明信息。</p>
+    </section>
+
+    <section>
+      <h2>3. 响应模型</h2>
+      <pre><code>class SummaryTaskListResponse(BaseModel):
+    items: list[SummaryTaskRead]
+    count: int
+    limit: int
+    offset: int</code></pre>
+      <p><code>SummaryTaskRead</code> 仍然负责单个任务长什么样；<code>SummaryTaskListResponse</code> 负责整个列表响应长什么样。这样单项模型和列表模型分工清楚。</p>
+    </section>
+
+    <section>
+      <h2>4. router 的变化</h2>
+      <pre><code>@router.get("", response_model=SummaryTaskListResponse)
+def list_summary_tasks(...) -&gt; SummaryTaskListResponse:
+    return list_summary_task_records(
+        session=session,
+        task_status=task_status,
+        offset=offset,
+        limit=limit,
+    )</code></pre>
+      <p>注意 <code>response_model</code> 不再是 <code>list[SummaryTaskRead]</code>。这代表 API 合约发生了变化，调用方也要从 <code>response[0]</code> 改成 <code>response.items[0]</code>。</p>
+    </section>
+
+    <section>
+      <h2>5. 前端如何使用</h2>
+      <pre><code>const page = await fetch("/tasks?limit=10&offset=0").then(r =&gt; r.json());
+
+renderTasks(page.items);
+renderPagination({
+  count: page.count,
+  limit: page.limit,
+  offset: page.offset,
+});</code></pre>
+      <p>如果 <code>offset + items.length &lt; count</code>，前端就可以显示“下一页”。如果 <code>offset</code> 大于 0，就可以显示“上一页”。</p>
+    </section>
+
+    <section>
+      <h2>6. 为什么这是破坏性变更</h2>
+      <p>对后端来说，这只是换了一个响应模型。但对已经接入这个接口的前端来说，这是破坏性变更，因为 JSON 结构变了。</p>
+      <p>学习项目里可以直接升级；真实项目里通常要考虑版本号、兼容期或新接口路径，例如 <code>/tasks/v2</code>。</p>
+    </section>
+
+    <section class="practice">
+      <h2>7. 课堂练习</h2>
+      <p>请求：</p>
+      <pre><code>GET /tasks?limit=1&offset=0</code></pre>
+      <p>回答三个问题：</p>
+      <ol>
+        <li><code>items</code> 里有几条？</li>
+        <li><code>count</code> 是否可能大于 <code>items.length</code>？</li>
+        <li>下一页的 <code>offset</code> 应该是多少？</li>
+      </ol>
+    </section>
+
+    <section class="checkpoint">
+      <h2>8. 小测：先回忆再展开</h2>
+      <details>
+        <summary>1. <code>items</code> 表示什么？</summary>
+        <p class="answer">表示当前页实际返回的任务记录列表。</p>
+      </details>
+      <details>
+        <summary>2. <code>count</code> 表示什么？</summary>
+        <p class="answer">表示符合当前筛选条件的总记录数。</p>
+      </details>
+      <details>
+        <summary>3. 为什么响应结构变化要更新测试？</summary>
+        <p class="answer">因为测试是 API 合约的守门员，响应 JSON 结构变了，断言也必须跟着变。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>9. 本节总结</h2>
+      <p>本节把任务列表响应升级为响应信封。它让前端不仅能展示当前页任务，还能构建分页控件和任务历史页。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/response-model/">FastAPI Response Model</a>、<a href="https://fastapi.tiangolo.com/tutorial/query-params/">FastAPI Query Parameters</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0024-task-status-filter.html">上一课：任务状态筛选</a>
+        <a href="./0026-count-query.html">下一课：count 查询</a>
+        <a href="../reference/0025-list-response-envelope-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

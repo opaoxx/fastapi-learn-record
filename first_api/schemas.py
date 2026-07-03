@@ -73,6 +73,13 @@ class SummaryTaskRead(SQLModel):
     error: str | None = None
 
 
+class SummaryTaskListResponse(BaseModel):
+    items: list[SummaryTaskRead]
+    count: int
+    limit: int
+    offset: int
+
+
 class UploadedTextFile(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     filename: str

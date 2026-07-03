@@ -4,7 +4,14 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, Qu
 from sqlmodel import Session
 
 from ..database import get_session
-from ..schemas import SummaryRequest, SummaryTask, SummaryTaskRead, TaskStatus, UploadedTextFile
+from ..schemas import (
+    SummaryRequest,
+    SummaryTask,
+    SummaryTaskListResponse,
+    SummaryTaskRead,
+    TaskStatus,
+    UploadedTextFile,
+)
 from ..security import require_api_key
 from ..services.summary_tasks import (
     create_summary_task_from_file,
@@ -59,13 +66,13 @@ def create_file_summary_task(
     return task
 
 
-@router.get("", response_model=list[SummaryTaskRead])
+@router.get("", response_model=SummaryTaskListResponse)
 def list_summary_tasks(
     session: Annotated[Session, Depends(get_session)],
     task_status: Annotated[TaskStatus | None, Query(alias="status")] = None,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
-) -> list[SummaryTask]:
+) -> SummaryTaskListResponse:
     return list_summary_task_records(
         session=session,
         task_status=task_status,

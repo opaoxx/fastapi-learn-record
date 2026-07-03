@@ -105,7 +105,7 @@ return list(session.exec(statement))</code></pre>
       <pre><code>GET /tasks?limit=1&offset=0
 GET /tasks?limit=1&offset=1
 GET /tasks?limit=1&offset=2</code></pre>
-      <p>观察每次返回的任务 <code>id</code> 是否不同，以及它们是否按从新到旧排列。</p>
+      <p>观察每次响应里 <code>items[0].id</code> 是否不同，以及它们是否按从新到旧排列。第 25 课会详细讲为什么列表数据放在 <code>items</code> 里。</p>
     </section>
 
     <section class="checkpoint">

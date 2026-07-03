@@ -1,0 +1,11 @@
+### List tasks with response envelope
+GET http://127.0.0.1:8000/tasks?limit=2&offset=0
+X-API-Key: dev-secret-key
+
+### Count respects status filter
+GET http://127.0.0.1:8000/tasks?status=completed&limit=1&offset=0
+X-API-Key: dev-secret-key
+
+### Failed-task count uses the same filter
+GET http://127.0.0.1:8000/tasks?status=failed&limit=1&offset=0
+X-API-Key: dev-secret-key

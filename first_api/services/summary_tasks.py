@@ -1,6 +1,7 @@
+from sqlalchemy import func
 from sqlmodel import Session, select
 
-from ..schemas import SummaryTask, TaskStatus, UploadedTextFile
+from ..schemas import SummaryTask, SummaryTaskListResponse, TaskStatus, UploadedTextFile
 from .ai_clients import AIClientError, DemoAIClient
 
 
@@ -37,12 +38,21 @@ def list_summary_tasks(
     task_status: TaskStatus | None = None,
     offset: int = 0,
     limit: int = 20,
-) -> list[SummaryTask]:
+) -> SummaryTaskListResponse:
     statement = select(SummaryTask).order_by(SummaryTask.id.desc())
+    count_statement = select(func.count()).select_from(SummaryTask)
     if task_status is not None:
         statement = statement.where(SummaryTask.status == task_status)
+        count_statement = count_statement.where(SummaryTask.status == task_status)
     statement = statement.offset(offset).limit(limit)
-    return list(session.exec(statement))
+    items = list(session.exec(statement))
+    count = session.exec(count_statement).one()
+    return SummaryTaskListResponse(
+        items=items,
+        count=count,
+        limit=limit,
+        offset=offset,
+    )
 
 
 def read_summary_task(session: Session, task_id: int) -> SummaryTask | None:

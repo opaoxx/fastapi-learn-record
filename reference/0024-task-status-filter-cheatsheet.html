@@ -14,6 +14,7 @@
         <a href="../index.html">课程目录</a>
         <a href="../lessons/0024-task-status-filter.html">回到第 24 课</a>
         <a href="./0023-task-pagination-cheatsheet.html">上一张速查</a>
+        <a href="./0025-list-response-envelope-cheatsheet.html">下一张速查</a>
       </span>
     </nav>
 
@@ -45,6 +46,10 @@ GET /tasks?status=failed</code></pre>
     <h2>组合</h2>
     <pre><code>GET /tasks?status=failed&limit=10&offset=0</code></pre>
 
+    <h2>响应位置</h2>
+    <pre><code>response["items"]  # 当前页任务列表
+response["count"]  # 当前筛选条件下的总数</code></pre>
+
     <footer>
       来源：<a href="https://fastapi.tiangolo.com/tutorial/query-params/">FastAPI Query Parameters</a>、
       <a href="https://sqlmodel.tiangolo.com/tutorial/fastapi/limit-and-offset/">SQLModel Limit and Offset</a>。
@@ -56,6 +61,7 @@ GET /tasks?status=failed</code></pre>
         <a href="../index.html">回到课程目录</a>
         <a href="../lessons/0024-task-status-filter.html">回到第 24 课</a>
         <a href="./0023-task-pagination-cheatsheet.html">上一张速查</a>
+        <a href="./0025-list-response-envelope-cheatsheet.html">下一张速查</a>
       </span>
     </nav>
   </main>

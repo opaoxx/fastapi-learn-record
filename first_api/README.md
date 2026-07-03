@@ -67,6 +67,17 @@ Task history supports pagination and status filtering:
 - `GET /tasks?status=completed&limit=10&offset=0`
 - `GET /tasks?status=failed&limit=10&offset=0`
 
+Task list responses use an envelope:
+
+```json
+{
+  "items": [],
+  "count": 0,
+  "limit": 20,
+  "offset": 0
+}
+```
+
 The file endpoints under `/files` are protected with `X-API-Key`. They currently accept small UTF-8 `.txt` uploads and store metadata plus text content in SQLite for learning purposes.
 
 ## Browser frontend

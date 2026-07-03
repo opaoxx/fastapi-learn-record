@@ -38,6 +38,8 @@
   Official SQLModel FastAPI tutorial. Use when reinforcing table models and database-backed API endpoints.
 - [SQLModel Limit and Offset](https://sqlmodel.tiangolo.com/tutorial/fastapi/limit-and-offset/)
   Official SQLModel pagination tutorial. Use when teaching `offset()` and `limit()` on database-backed list endpoints.
+- [SQLAlchemy SQL Functions](https://docs.sqlalchemy.org/en/latest/core/functions.html)
+  Official SQLAlchemy reference for `func`. Use when teaching count queries such as `select(func.count())`.
 - [SQLModel Update Data with FastAPI](https://sqlmodel.tiangolo.com/tutorial/fastapi/update/)
   Official SQLModel update tutorial. Use when teaching PATCH-style partial updates and update models.
 - [SQLModel Delete Data with FastAPI](https://sqlmodel.tiangolo.com/tutorial/fastapi/delete/)

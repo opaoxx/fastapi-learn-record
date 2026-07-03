@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>List Response Envelope Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0025</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0025-list-response-envelope.html">回到第 25 课</a>
+        <a href="./0024-task-status-filter-cheatsheet.html">上一张速查</a>
+        <a href="./0026-count-query-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0025</p>
+      <h1>列表响应信封速查</h1>
+      <p class="lead">列表数据放 items，分页元数据放外层字段。</p>
+    </header>
+
+    <h2>响应模型</h2>
+    <pre><code>class SummaryTaskListResponse(BaseModel):
+    items: list[SummaryTaskRead]
+    count: int
+    limit: int
+    offset: int</code></pre>
+
+    <h2>响应示例</h2>
+    <pre><code>{
+  "items": [],
+  "count": 0,
+  "limit": 20,
+  "offset": 0
+}</code></pre>
+
+    <h2>字段含义</h2>
+    <ul>
+      <li><code>items</code>: 当前页数据。</li>
+      <li><code>count</code>: 当前筛选条件下的总数。</li>
+      <li><code>limit</code>: 当前页最多返回多少条。</li>
+      <li><code>offset</code>: 当前页跳过了多少条。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/response-model/">FastAPI Response Model</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/query-params/">FastAPI Query Parameters</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0025-list-response-envelope.html">回到第 25 课</a>
+        <a href="./0024-task-status-filter-cheatsheet.html">上一张速查</a>
+        <a href="./0026-count-query-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

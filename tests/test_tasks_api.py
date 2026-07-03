@@ -60,9 +60,12 @@ def test_list_summary_tasks_supports_limit_and_offset() -> None:
 
     assert first_page.status_code == 200
     assert second_page.status_code == 200
-    assert len(first_page.json()) == 1
-    assert len(second_page.json()) == 1
-    assert first_page.json()[0]["id"] != second_page.json()[0]["id"]
+    assert first_page.json()["limit"] == 1
+    assert first_page.json()["offset"] == 0
+    assert first_page.json()["count"] >= 3
+    assert len(first_page.json()["items"]) == 1
+    assert len(second_page.json()["items"]) == 1
+    assert first_page.json()["items"][0]["id"] != second_page.json()["items"][0]["id"]
 
 
 def test_list_summary_tasks_supports_status_filter() -> None:
@@ -80,6 +83,41 @@ def test_list_summary_tasks_supports_status_filter() -> None:
         invalid = client.get("/tasks?status=unknown", headers=API_KEY_HEADERS)
 
     assert completed.status_code == 200
-    assert any(task["id"] == created.json()["id"] for task in completed.json())
-    assert all(task["status"] == "completed" for task in completed.json())
+    assert completed.json()["count"] >= 1
+    assert completed.json()["limit"] == 10
+    assert completed.json()["offset"] == 0
+    assert any(task["id"] == created.json()["id"] for task in completed.json()["items"])
+    assert all(task["status"] == "completed" for task in completed.json()["items"])
     assert invalid.status_code == 422
+
+
+def test_list_summary_tasks_count_respects_status_filter() -> None:
+    with TestClient(app) as client:
+        completed_task = client.post(
+            "/tasks/summaries",
+            headers=API_KEY_HEADERS,
+            json={
+                "text": "This task should be completed and counted by the completed task filter."
+            },
+        )
+        failed_task = client.post(
+            "/tasks/summaries",
+            headers=API_KEY_HEADERS,
+            json={
+                "text": "This task should simulate-ai-failure and be counted by the failed filter."
+            },
+        )
+        assert completed_task.status_code == 202
+        assert failed_task.status_code == 202
+
+        completed = client.get("/tasks?status=completed&limit=100", headers=API_KEY_HEADERS)
+        failed = client.get("/tasks?status=failed&limit=100", headers=API_KEY_HEADERS)
+
+    assert completed.status_code == 200
+    assert failed.status_code == 200
+    assert completed.json()["count"] >= len(completed.json()["items"])
+    assert failed.json()["count"] >= len(failed.json()["items"])
+    assert all(task["status"] == "completed" for task in completed.json()["items"])
+    assert all(task["status"] == "failed" for task in failed.json()["items"])
+    assert any(task["id"] == completed_task.json()["id"] for task in completed.json()["items"])
+    assert any(task["id"] == failed_task.json()["id"] for task in failed.json()["items"])

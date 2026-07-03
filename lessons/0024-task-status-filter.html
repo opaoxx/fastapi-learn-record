@@ -13,6 +13,7 @@
       <span class="nav-links">
         <a href="../index.html">课程目录</a>
         <a href="./0023-task-list-pagination.html">上一课</a>
+        <a href="./0025-list-response-envelope.html">下一课</a>
         <a href="../reference/0024-task-status-filter-cheatsheet.html">本课速查</a>
       </span>
     </nav>
@@ -87,9 +88,9 @@ GET /tasks?status=failed&limit=10&offset=10</code></pre>
 invalid = client.get("/tasks?status=unknown", headers=API_KEY_HEADERS)
 
 assert completed.status_code == 200
-assert all(task["status"] == "completed" for task in completed.json())
+assert all(task["status"] == "completed" for task in completed.json()["items"])
 assert invalid.status_code == 422</code></pre>
-      <p>这个测试同时确认了两件事：合法状态能筛选，非法状态会被 FastAPI 自动拒绝。</p>
+      <p>这个测试同时确认了两件事：合法状态能筛选，非法状态会被 FastAPI 自动拒绝。第 25 课会进一步解释为什么列表数据现在放在 <code>items</code> 字段里。</p>
     </section>
 
     <section class="practice">
@@ -128,6 +129,7 @@ GET /tasks?status=unknown</code></pre>
       <span class="nav-links">
         <a href="../index.html">回到课程目录</a>
         <a href="./0023-task-list-pagination.html">上一课：任务列表分页</a>
+        <a href="./0025-list-response-envelope.html">下一课：列表响应信封</a>
         <a href="../reference/0024-task-status-filter-cheatsheet.html">查看本课速查</a>
       </span>
     </nav>
