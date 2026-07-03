@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prediction Observability Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0040</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0040-prediction-observability.html">回到第 40 课</a>
+        <a href="./0039-prediction-backend-switch-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0040</p>
+      <h1>Prediction Observability 速查</h1>
+      <p class="lead">用响应头和日志记录预测 backend、source、elapsed_ms 和 error_code，不改变 JSON 响应体。</p>
+    </header>
+
+    <h2>成功响应头</h2>
+    <pre><code>X-Prediction-Backend: demo
+X-Prediction-Source: demo-ai-client
+X-Prediction-Elapsed-Ms: 1.23</code></pre>
+
+    <h2>失败响应头</h2>
+    <pre><code>X-Prediction-Backend: provider
+X-Prediction-Elapsed-Ms: 10.42
+X-Prediction-Error-Code: ai_provider_http_error</code></pre>
+
+    <h2>耗时测量</h2>
+    <pre><code>started_at = perf_counter()
+elapsed_ms = (perf_counter() - started_at) * 1000</code></pre>
+
+    <h2>设置 headers</h2>
+    <pre><code>def set_prediction_headers(
+    response: Response,
+    backend: str,
+    elapsed_ms: float,
+    source: str | None = None,
+) -&gt; None:
+    response.headers["X-Prediction-Backend"] = backend
+    response.headers["X-Prediction-Elapsed-Ms"] = f"{elapsed_ms:.2f}"
+    if source is not None:
+        response.headers["X-Prediction-Source"] = source</code></pre>
+
+    <h2>成功日志</h2>
+    <pre><code>logger.info(
+    "prediction_completed",
+    extra={
+        "prediction_backend": backend,
+        "prediction_source": prediction.source,
+        "prediction_elapsed_ms": round(elapsed_ms, 2),
+    },
+)</code></pre>
+
+    <h2>失败日志</h2>
+    <pre><code>logger.warning(
+    "prediction_failed",
+    extra={
+        "prediction_backend": backend,
+        "prediction_elapsed_ms": round(elapsed_ms, 2),
+        "prediction_error_code": exc.error_code,
+    },
+)</code></pre>
+
+    <h2>测试断言</h2>
+    <pre><code>caplog.set_level(logging.INFO, logger=PREDICTIONS_LOGGER)
+
+assert response.headers["x-prediction-backend"] == "demo"
+assert float(response.headers["x-prediction-elapsed-ms"]) &gt;= 0
+
+log_record = next(
+    record for record in caplog.records
+    if record.message == "prediction_completed"
+)
+assert log_record.prediction_backend == "demo"</code></pre>
+
+    <h2>设计规则</h2>
+    <ul>
+      <li>调试元信息优先放 header 或日志，不轻易改 JSON body。</li>
+      <li>成功和失败都要记录耗时。</li>
+      <li>失败日志至少包含 backend 和 error_code。</li>
+      <li>不要把完整用户输入文本写进日志。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://docs.python.org/3/library/logging.html">Python logging</a>、
+      <a href="https://docs.python.org/3/library/time.html">Python time</a>、
+      <a href="https://fastapi.tiangolo.com/advanced/response-headers/">FastAPI Response Headers</a>、
+      <a href="https://docs.pytest.org/en/stable/how-to/logging.html">pytest Logging</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0040-prediction-observability.html">回到第 40 课</a>
+        <a href="./0039-prediction-backend-switch-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

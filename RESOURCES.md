@@ -120,6 +120,10 @@
   Official asyncio documentation for coroutines, tasks, cooperative scheduling, and `asyncio.sleep`.
 - [Python asyncio Conceptual Overview](https://docs.python.org/3/howto/a-conceptual-overview-of-asyncio.html)
   Official conceptual guide to asyncio. Use when teaching event loops and non-blocking waiting.
+- [Python logging](https://docs.python.org/3/library/logging.html)
+  Official Python logging module documentation. Use when teaching application logs, structured context with `extra`, and failure diagnostics.
+- [Python time](https://docs.python.org/3/library/time.html)
+  Official Python time module documentation. Use when teaching elapsed-time measurement with monotonic performance timers.
 - [HTTPX Timeouts](https://www.python-httpx.org/advanced/timeouts/)
   Official HTTPX guide to timeout behavior. Use when teaching external provider calls and failure boundaries.
 - [HTTPX Async Support](https://www.python-httpx.org/async/)
@@ -134,6 +138,10 @@
   Official HTTPX guide to transports and connection retries. Use when introducing cautious retry behavior for external dependencies.
 - [Uvicorn Documentation](https://uvicorn.dev/)
   ASGI server documentation. Use when learning what actually runs the FastAPI app locally or in production.
+- [FastAPI Response Headers](https://fastapi.tiangolo.com/advanced/response-headers/)
+  Official FastAPI guide to setting response headers while still using response models. Use when teaching lightweight request observability.
+- [pytest Logging](https://docs.pytest.org/en/stable/how-to/logging.html)
+  Official pytest guide to capturing and asserting logs with `caplog`.
 - [Starlette Applications](https://starlette.dev/applications/)
   Starlette documentation for application state. Use when teaching `app.state` in FastAPI.
 

@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0038 - Provider Predict Endpoint</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0038</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0037-provider-prediction-adapter.html">上一课</a>
+        <a href="./0039-prediction-backend-switch.html">下一课</a>
+        <a href="../reference/0038-provider-predict-endpoint-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0038</p>
+      <h1>Provider Predict Endpoint：把真实 provider 调用接进 FastAPI</h1>
+      <p class="lead">第 37 课我们已经有了 provider prediction adapter。本节把它接进一个新的 FastAPI endpoint：<code>POST /provider/predict</code>。重点不是多写一个接口，而是学习如何在不破坏已有 <code>/predict</code> 的前提下，把异步外部 provider 调用渐进接入项目。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解为什么新增 <code>/provider/predict</code>，而不是直接替换已有 <code>/predict</code>。</li>
+        <li>学会把 async provider adapter 接入 FastAPI async endpoint。</li>
+        <li>理解 endpoint、adapter、settings、lifespan HTTP client 的职责分工。</li>
+        <li>学会保持外部响应契约稳定：仍然返回 <code>PredictionResponse</code>。</li>
+        <li>学会用依赖覆盖和 <code>MockTransport</code> 测试 provider 路由，不访问真实网络。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 背景：为什么不直接改旧的 /predict</h2>
+      <p>当前项目已经有一个 <code>POST /predict</code>，它通过 <code>DemoAIClient</code> 做本地演示预测。现在我们有了真实 provider adapter，一个冲动做法是：直接把 <code>/predict</code> 改成调用 provider。</p>
+      <p>但这在真实项目里通常不是最稳的第一步，因为已有接口可能已经被前端、测试、文档、GitHub 读者使用。贸然替换实现，会引入几个风险：</p>
+      <ul>
+        <li>旧测试可能突然依赖外部网络。</li>
+        <li>本地学习体验可能因为 provider 不可用而变差。</li>
+        <li>同步 demo client 与异步 provider call 混在一个函数里，初学者更难理解。</li>
+        <li>如果 provider schema 还在试验中，旧接口的稳定性会被牵连。</li>
+      </ul>
+      <p>所以本节采用渐进式做法：保留 <code>/predict</code>，新增 <code>/provider/predict</code>。这样旧接口继续稳定，新接口专门用来学习和验证真实 provider 链路。</p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 核心概念：稳定契约与渐进接入</h2>
+      <p>后端演进时要区分两个问题：</p>
+      <div class="two-col">
+        <div>
+          <h3>公共 API 契约</h3>
+          <p>调用方看到的 URL、方法、请求体、响应体、状态码。例如 <code>PredictionResponse</code> 是前端和调用方能依赖的稳定 JSON。</p>
+        </div>
+        <div>
+          <h3>内部实现</h3>
+          <p>服务内部到底用 demo client、本地模型、外部 provider、缓存还是队列。内部实现可以演进，但不应随意震动公共契约。</p>
+        </div>
+      </div>
+      <p>本节的设计是：新 endpoint 使用真实 provider adapter，但仍返回同一个 <code>PredictionResponse</code>。也就是说，内部实现变真实了，外部 JSON 形状仍然稳定。</p>
+    </section>
+
+    <section>
+      <h2>3. 运行机制：/provider/predict 的完整链路</h2>
+      <pre><code>POST /provider/predict
+  -&gt; FastAPI parses PredictionRequest
+  -&gt; Depends(get_settings)
+  -&gt; Depends(get_provider_http_client)
+  -&gt; build AIClientConfig
+  -&gt; await request_provider_prediction(...)
+       -&gt; provider POST JSON
+       -&gt; validate provider response
+       -&gt; return PredictionResult
+  -&gt; map PredictionResult to PredictionResponse
+  -&gt; return stable JSON</code></pre>
+      <p>这条链路把之前很多课串起来了：Pydantic request body、settings、lifespan-managed HTTP client、dependency bridge、HTTPX async POST、provider adapter、错误映射、response model。</p>
+    </section>
+
+    <section>
+      <h2>4. 本节项目改动概览</h2>
+      <ul>
+        <li>新增配置 <code>FIRST_API_AI_PROVIDER_PREDICTION_URL</code>。</li>
+        <li>新增 <code>POST /provider/predict</code>。</li>
+        <li>复用已有 <code>PredictionRequest</code> 和 <code>PredictionResponse</code>。</li>
+        <li>复用上一课的 <code>request_provider_prediction()</code>。</li>
+        <li>新增测试：provider 成功返回时响应稳定；provider 返回非法 JSON 时映射为 503。</li>
+      </ul>
+      <p>注意：默认配置里的 provider prediction URL 是占位地址。真实运行时需要换成兼容本课程约定的 provider endpoint；自动化测试里我们用 <code>MockTransport</code> 模拟 provider，所以不会访问外网。</p>
+    </section>
+
+    <section>
+      <h2>5. 代码精读一：新增预测 URL 配置</h2>
+      <pre><code>class Settings(BaseSettings):
+    ai_provider: Literal["demo"] = "demo"
+    ai_provider_health_url: str = "https://example.com"
+    ai_provider_prediction_url: str = "https://example.com/predict"
+    ai_timeout_seconds: float = Field(default=10.0, gt=0)
+    ai_max_attempts: int = Field(default=1, ge=1, le=5)</code></pre>
+      <p>为什么 prediction URL 也放进配置？原因和 health URL 一样：请求目标是服务端基础设施配置，不应该由普通用户输入控制。这样可以避免把服务器变成“帮用户请求任意地址”的代理，也让本地、测试、生产环境能使用不同 provider。</p>
+    </section>
+
+    <section>
+      <h2>6. 代码精读二：新的 provider predict endpoint</h2>
+      <pre><code>@router.post(
+    "/provider/predict",
+    response_model=PredictionResponse,
+    responses={status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ErrorResponse}},
+)
+async def predict_with_provider(
+    payload: PredictionRequest,
+    settings: Annotated[Settings, Depends(get_settings)],
+    provider_http_client: Annotated[
+        httpx.AsyncClient,
+        Depends(get_provider_http_client),
+    ],
+) -&gt; PredictionResponse:
+    config = AIClientConfig(
+        provider=settings.ai_provider,
+        timeout_seconds=settings.ai_timeout_seconds,
+        max_attempts=settings.ai_max_attempts,
+    )
+
+    try:
+        prediction = await request_provider_prediction(
+            url=settings.ai_provider_prediction_url,
+            text=payload.text,
+            mode=payload.mode,
+            config=config,
+            client=provider_http_client,
+        )
+    except AIClientError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error_code": exc.error_code,
+                "message": exc.message,
+            },
+        ) from exc
+
+    return PredictionResponse(
+        label=prediction.label,
+        score=prediction.score,
+        source=prediction.source,
+        text_length=len(payload.text),
+    )</code></pre>
+      <p>这个 endpoint 的结构很清楚：</p>
+      <ul>
+        <li><code>payload</code> 是客户端请求体，由 FastAPI 和 Pydantic 解析校验。</li>
+        <li><code>settings</code> 提供 provider URL、timeout、provider 名称等配置。</li>
+        <li><code>provider_http_client</code> 来自 lifespan-managed HTTP client。</li>
+        <li><code>request_provider_prediction()</code> 负责真正的外部 provider 调用。</li>
+        <li>endpoint 负责把内部 <code>PredictionResult</code> 转换成公共 <code>PredictionResponse</code>。</li>
+      </ul>
+      <p>这就是瘦路由的做法：endpoint 不直接解析 provider JSON，不直接处理 HTTPX 细节，只负责把请求、依赖、service 和响应契约接起来。</p>
+    </section>
+
+    <section>
+      <h2>7. 为什么 endpoint 必须是 async def</h2>
+      <p>上一课的 provider adapter 是异步函数：</p>
+      <pre><code>prediction = await request_provider_prediction(...)</code></pre>
+      <p>因此路由函数也应该是 <code>async def</code>。这不是为了让 CPU 计算更快，而是因为外部 HTTP 请求是 I/O 等待。等待 provider 响应时，事件循环可以去处理其他请求。</p>
+      <p>如果你在同步 <code>def</code> 路由里硬塞异步调用，会遇到“coroutine 没有 await”“事件循环嵌套”“阻塞等待”等问题。设计上更清晰的做法是：provider HTTP 调用链路用 async endpoint 承接。</p>
+    </section>
+
+    <section>
+      <h2>8. 成功测试：provider 结果变成稳定响应</h2>
+      <pre><code>def test_provider_predict_endpoint_uses_provider_adapter() -&gt; None:
+    def handler(request: httpx.Request) -&gt; httpx.Response:
+        return httpx.Response(
+            status_code=200,
+            json={"label": "positive", "score": 0.873},
+            request=request,
+        )
+
+    replacement_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        trust_env=False,
+    )
+    app.dependency_overrides[get_provider_http_client] = lambda: replacement_client
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/provider/predict",
+                json={
+                    "text": "FastAPI is great and pleasant.",
+                    "mode": "careful",
+                    "temperature": 0.2,
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+        asyncio.run(replacement_client.aclose())
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "label": "positive",
+        "score": 0.87,
+        "source": "demo-provider",
+        "text_length": 30,
+    }</code></pre>
+      <p>这个测试说明：provider 返回 <code>label/score</code>，adapter 转成 <code>PredictionResult</code>，endpoint 再转成 <code>PredictionResponse</code>。调用方完全不需要知道 provider 原始 JSON 来自哪里。</p>
+    </section>
+
+    <section>
+      <h2>9. 失败测试：非法 provider JSON 变成 503</h2>
+      <pre><code>def test_provider_predict_endpoint_maps_provider_errors_to_503() -&gt; None:
+    def handler(request: httpx.Request) -&gt; httpx.Response:
+        return httpx.Response(
+            status_code=200,
+            json={"label": "confused", "score": 1.5},
+            request=request,
+        )
+
+    replacement_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        trust_env=False,
+    )
+    app.dependency_overrides[get_provider_http_client] = lambda: replacement_client
+
+    try:
+        with TestClient(app) as client:
+            response = client.post("/provider/predict", json={...})
+    finally:
+        app.dependency_overrides.clear()
+        asyncio.run(replacement_client.aclose())
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": {
+            "error_code": "ai_provider_invalid_response",
+            "message": "The AI provider returned an invalid prediction response.",
+        }
+    }</code></pre>
+      <p>这里 provider 的 HTTP 状态码是 200，但业务 JSON 不合法。adapter 会用 Pydantic 拦下它，endpoint 再把 <code>AIClientError</code> 转成稳定 503。这样前端不需要区分 HTTPX、Pydantic、provider schema 这些内部细节。</p>
+    </section>
+
+    <section class="practice">
+      <h2>10. 课堂实验</h2>
+      <p>先运行预测接口相关测试：</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests/test_ai_client_dependency.py -q</code></pre>
+      <p>预期看到：</p>
+      <pre><code>5 passed</code></pre>
+      <p>再运行全量测试：</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest -q</code></pre>
+      <p>如果你启动服务并直接访问 <code>/provider/predict</code>，默认占位 URL 可能不会返回课程约定的 provider JSON，所以更推荐先通过测试理解链路。等你有真实兼容 provider 时，再把 <code>FIRST_API_AI_PROVIDER_PREDICTION_URL</code> 改成真实地址。</p>
+    </section>
+
+    <section>
+      <h2>11. 常见错误与诊断</h2>
+      <div class="two-col">
+        <div class="callout">
+          <h3>错误一：直接替换旧 /predict</h3>
+          <p>学习阶段可以先新增 provider endpoint。等新链路稳定后，再考虑是否合并或切换默认实现。</p>
+        </div>
+        <div class="callout">
+          <h3>错误二：同步路由里调用 async provider</h3>
+          <p>外部 HTTP adapter 是 async，就用 <code>async def</code> endpoint 和 <code>await</code> 清楚承接。</p>
+        </div>
+        <div class="callout">
+          <h3>错误三：让测试访问真实 provider</h3>
+          <p>接口测试应该用 <code>MockTransport</code> 和依赖覆盖模拟 provider，保证快速稳定。</p>
+        </div>
+        <div class="callout">
+          <h3>错误四：忘记保持响应契约稳定</h3>
+          <p>即使内部改成 provider，外部仍应返回项目自己的 <code>PredictionResponse</code>。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>12. 面试视角：怎样解释渐进接入 provider</h2>
+      <blockquote>
+        <p>我不会一开始就把已有 /predict 直接替换成真实 provider 调用，而是会先新增 /provider/predict 验证 provider 链路。这个 endpoint 是 async 的，通过 Depends 获取 settings 和 lifespan-managed HTTP client，调用 provider adapter，再把内部 PredictionResult 映射成稳定的 PredictionResponse。这样旧接口不受影响，新链路也能被 MockTransport 测试覆盖。</p>
+      </blockquote>
+    </section>
+
+    <section class="checkpoint">
+      <h2>13. 小测：先回忆，再展开</h2>
+      <details>
+        <summary>1. 为什么本节新增 <code>/provider/predict</code>，而不是直接改 <code>/predict</code>？</summary>
+        <p class="answer">为了渐进接入真实 provider，避免突然改变已有接口的行为、测试稳定性和本地学习体验。</p>
+      </details>
+      <details>
+        <summary>2. <code>/provider/predict</code> 为什么要写成 <code>async def</code>？</summary>
+        <p class="answer">因为它要 <code>await</code> 异步 HTTP provider adapter，等待外部 I/O 时可以不阻塞事件循环。</p>
+      </details>
+      <details>
+        <summary>3. 为什么 endpoint 返回 <code>PredictionResponse</code>，而不是 provider 原始 JSON？</summary>
+        <p class="answer">因为外部调用方应该依赖本项目稳定 API 契约，而不是依赖某个 provider 的字段形状。</p>
+      </details>
+      <details>
+        <summary>4. 测试里为什么要覆盖 <code>get_provider_http_client</code>？</summary>
+        <p class="answer">为了让 endpoint 使用带 <code>MockTransport</code> 的测试 client，从而不访问真实外部网络。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>14. 本节总结</h2>
+      <p>本节把 provider prediction adapter 接进了 FastAPI，形成了新的 <code>POST /provider/predict</code>。它复用已有请求和响应模型，使用配置里的 provider prediction URL，通过 lifespan-managed HTTP client 发起异步 provider 请求，并把结果转换成稳定 <code>PredictionResponse</code>。</p>
+      <p>下一课建议学习：用配置开关选择预测后端。也就是让 <code>/predict</code> 在 demo provider 和真实 provider 之间切换，而不是长期保留两个相似入口。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/async/">FastAPI async / await</a>、<a href="https://fastapi.tiangolo.com/tutorial/dependencies/">FastAPI Dependencies</a>、<a href="https://fastapi.tiangolo.com/tutorial/response-model/">FastAPI Response Model</a>、<a href="https://fastapi.tiangolo.com/advanced/testing-dependencies/">FastAPI Testing Dependencies with Overrides</a>、<a href="https://www.python-httpx.org/advanced/transports/">HTTPX Transports</a>。</p>
+      <p class="small">如果你想追问，可以问我：“什么时候应该新增端点，什么时候应该直接替换旧端点？”这其实是 API 演进里特别常见的工程判断。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0037-provider-prediction-adapter.html">上一课：Provider Prediction Adapter</a>
+        <a href="./0039-prediction-backend-switch.html">下一课：Prediction Backend Switch</a>
+        <a href="../reference/0038-provider-predict-endpoint-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

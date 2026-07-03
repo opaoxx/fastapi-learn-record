@@ -10,7 +10,9 @@ class Settings(BaseSettings):
     environment: str = "development"
     api_key: str = "dev-secret-key"
     ai_provider: Literal["demo"] = "demo"
+    ai_prediction_backend: Literal["demo", "provider"] = "demo"
     ai_provider_health_url: str = "https://example.com"
+    ai_provider_prediction_url: str = "https://example.com/predict"
     ai_timeout_seconds: float = Field(default=10.0, gt=0)
     ai_max_attempts: int = Field(default=1, ge=1, le=5)
 

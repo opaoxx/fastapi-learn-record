@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0040 - Prediction Observability</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0040</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0039-prediction-backend-switch.html">上一课</a>
+        <a href="../reference/0040-prediction-observability-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0040</p>
+      <h1>Prediction Observability：给 AI 调用留下可排查的证据</h1>
+      <p class="lead">第 39 课让 <code>/predict</code> 可以在 demo 和 provider 后端之间切换。本节解决下一个真实工程问题：当预测接口变慢、失败或返回异常结果时，我们怎样知道它走了哪个后端、用了多久、失败码是什么？答案不是随手 <code>print()</code>，而是有意识地设计响应头和日志。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解可观测性和普通调试输出的区别。</li>
+        <li>学会用 <code>time.perf_counter()</code> 测量预测调用耗时。</li>
+        <li>学会用 FastAPI <code>Response</code> 设置响应头，同时保持 <code>response_model</code> 生效。</li>
+        <li>学会用 Python <code>logging</code> 记录成功和失败的结构化上下文。</li>
+        <li>学会用 pytest <code>caplog</code> 和响应头断言可观测性行为。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 背景：能调用 provider 还不够，还要能排查</h2>
+      <p>一个 AI 服务上线后，常见问题不是“完全不能运行”，而是更模糊的现象：</p>
+      <ul>
+        <li>同一个 <code>/predict</code> 有时很快，有时很慢。</li>
+        <li>本地 demo 正常，provider 环境偶发 503。</li>
+        <li>前端只看到失败，不知道是 demo 失败、provider 失败还是响应体校验失败。</li>
+        <li>测试失败时，只知道状态码不对，不知道接口走了哪条后端分支。</li>
+      </ul>
+      <p>这就是可观测性要解决的问题：让系统在运行时留下足够证据，帮助我们回答“发生了什么、在哪里发生、花了多久、为什么失败”。</p>
+      <p>本节采用低侵入策略：不修改 <code>PredictionResponse</code> 的 JSON body，只增加响应头和服务端日志。这样公共 JSON 契约保持稳定，但排查信息更丰富。</p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 核心概念：响应头给调用方，日志给服务端</h2>
+      <p>本节新增两类观察信号：</p>
+      <div class="two-col">
+        <div>
+          <h3>响应头</h3>
+          <p>跟着 HTTP 响应返回。适合让调用方或测试快速看到本次请求走了哪个 backend、source 是什么、耗时多少毫秒、错误码是什么。</p>
+        </div>
+        <div>
+          <h3>服务端日志</h3>
+          <p>留在服务端。适合线上排查、聚合检索、报警和审计。日志可以记录更多上下文，但不要写入敏感请求内容。</p>
+        </div>
+      </div>
+      <p>二者的关系不是互相替代，而是分工协作：</p>
+      <pre><code>client sees response headers
+server keeps logs
+tests assert both when needed</code></pre>
+    </section>
+
+    <section>
+      <h2>3. 为什么不把这些字段加进 JSON body</h2>
+      <p>我们当然可以把 <code>backend</code>、<code>elapsed_ms</code> 加到 <code>PredictionResponse</code> 里。但这会改变公共 JSON 契约。前面刚学过 schema evolution：响应体字段变化虽然未必一定破坏兼容性，但它会让 API 语义变复杂。</p>
+      <p>本节先把观察信息放进 header：</p>
+      <pre><code>X-Prediction-Backend: demo
+X-Prediction-Source: demo-ai-client
+X-Prediction-Elapsed-Ms: 1.23</code></pre>
+      <p>失败时还会多一个：</p>
+      <pre><code>X-Prediction-Error-Code: ai_provider_http_error</code></pre>
+      <p>这样响应体仍然是稳定的 <code>PredictionResponse</code> 或 <code>ErrorResponse</code>，调试信息则放在更轻量的位置。</p>
+    </section>
+
+    <section>
+      <h2>4. 本节项目改动概览</h2>
+      <ul>
+        <li>在 <code>routers/predictions.py</code> 中加入模块级 logger。</li>
+        <li>用 <code>perf_counter()</code> 测量 <code>/predict</code> 和 <code>/provider/predict</code> 的耗时。</li>
+        <li>成功时设置 <code>X-Prediction-Backend</code>、<code>X-Prediction-Source</code>、<code>X-Prediction-Elapsed-Ms</code>。</li>
+        <li>失败时通过 <code>HTTPException(headers=...)</code> 设置 backend、elapsed、error-code。</li>
+        <li>成功和失败都写日志：<code>prediction_completed</code> 或 <code>prediction_failed</code>。</li>
+        <li>测试断言响应头，并用 <code>caplog</code> 捕获成功日志。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>5. 代码精读一：logger 与 perf_counter</h2>
+      <pre><code>import logging
+from time import perf_counter
+
+logger = logging.getLogger(__name__)</code></pre>
+      <p><code>logging.getLogger(__name__)</code> 会创建一个以当前模块名命名的 logger，例如 <code>first_api.routers.predictions</code>。这样日志来源清楚，测试也能只捕获这个模块的日志。</p>
+      <p><code>perf_counter()</code> 适合测量短时间间隔。我们在请求处理开始时记录一次，成功或失败时再记录一次，两者相减得到耗时毫秒。</p>
+      <pre><code>started_at = perf_counter()
+elapsed_ms = (perf_counter() - started_at) * 1000</code></pre>
+    </section>
+
+    <section>
+      <h2>6. 代码精读二：统一构造可观测响应头</h2>
+      <pre><code>def build_prediction_headers(
+    backend: str,
+    elapsed_ms: float,
+    source: str | None = None,
+    error_code: str | None = None,
+) -&gt; dict[str, str]:
+    headers = {
+        "X-Prediction-Backend": backend,
+        "X-Prediction-Elapsed-Ms": f"{elapsed_ms:.2f}",
+    }
+    if source is not None:
+        headers["X-Prediction-Source"] = source
+    if error_code is not None:
+        headers["X-Prediction-Error-Code"] = error_code
+    return headers</code></pre>
+      <p>这个函数把 header 名称集中起来，避免成功路径、失败路径、<code>/predict</code> 和 <code>/provider/predict</code> 各写一遍字符串。小项目里看起来只是少几行代码；真实项目里，这能减少拼写不一致和字段含义漂移。</p>
+      <p>注意 header 值必须是字符串，所以耗时被格式化为 <code>"1.23"</code> 这种文本。</p>
+    </section>
+
+    <section>
+      <h2>7. 代码精读三：成功时设置 Response headers</h2>
+      <pre><code>def set_prediction_headers(
+    response: Response,
+    backend: str,
+    elapsed_ms: float,
+    source: str | None = None,
+) -&gt; None:
+    for name, value in build_prediction_headers(
+        backend=backend,
+        elapsed_ms=elapsed_ms,
+        source=source,
+    ).items():
+        response.headers[name] = value</code></pre>
+      <p>FastAPI 支持在 path operation function 中声明 <code>response: Response</code> 参数，然后设置响应头。即使函数返回 Pydantic 模型，<code>response_model</code> 仍会照常过滤和序列化响应体；设置的 header 会进入最终 HTTP 响应。</p>
+      <p>这就是本节的低侵入点：body 不变，header 增加。</p>
+    </section>
+
+    <section>
+      <h2>8. 代码精读四：/predict 成功路径</h2>
+      <pre><code>started_at = perf_counter()
+backend = settings.ai_prediction_backend
+
+try:
+    if backend == "provider":
+        prediction = await request_provider_prediction(...)
+    else:
+        prediction = ai_client.predict_sentiment(...)
+except AIClientError:
+    ...
+
+elapsed_ms = (perf_counter() - started_at) * 1000
+set_prediction_headers(
+    response=response,
+    backend=backend,
+    elapsed_ms=elapsed_ms,
+    source=prediction.source,
+)
+logger.info(
+    "prediction_completed",
+    extra={
+        "prediction_backend": backend,
+        "prediction_source": prediction.source,
+        "prediction_elapsed_ms": round(elapsed_ms, 2),
+    },
+)</code></pre>
+      <p>成功路径做了两件事：</p>
+      <ul>
+        <li>给调用方返回 headers，方便立刻看到本次预测走了哪个后端。</li>
+        <li>写一条 <code>prediction_completed</code> 日志，方便服务端聚合和排查。</li>
+      </ul>
+      <p><code>extra={...}</code> 会把额外字段挂到日志记录上。后面接 JSON 日志系统时，这些字段就可以变成可检索的结构化字段。</p>
+    </section>
+
+    <section>
+      <h2>9. 代码精读五：失败路径也要有证据</h2>
+      <pre><code>except AIClientError as exc:
+    elapsed_ms = (perf_counter() - started_at) * 1000
+    logger.warning(
+        "prediction_failed",
+        extra={
+            "prediction_backend": backend,
+            "prediction_elapsed_ms": round(elapsed_ms, 2),
+            "prediction_error_code": exc.error_code,
+        },
+    )
+    raise HTTPException(
+        status_code=503,
+        detail={
+            "error_code": exc.error_code,
+            "message": exc.message,
+        },
+        headers=build_prediction_headers(
+            backend=backend,
+            elapsed_ms=elapsed_ms,
+            error_code=exc.error_code,
+        ),
+    ) from exc</code></pre>
+      <p>失败时尤其需要可观测性。否则线上只看到 503，很难知道是 demo client 失败、provider HTTP 失败、provider 响应体非法，还是超时。</p>
+      <p>这里有三个层次：</p>
+      <ul>
+        <li>HTTP 状态码：客户端知道请求失败，状态是 503。</li>
+        <li>JSON detail：客户端知道稳定错误码和错误消息。</li>
+        <li>headers/logs：客户端和服务端都能看到 backend、耗时、error code。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>10. 测试精读：断言 header 和日志</h2>
+      <pre><code>def test_predict_uses_overridable_ai_client_dependency(caplog) -&gt; None:
+    caplog.set_level(logging.INFO, logger=PREDICTIONS_LOGGER)
+    ...
+    assert response.headers["x-prediction-backend"] == "demo"
+    assert response.headers["x-prediction-source"] == "fixed-test-client"
+    assert float(response.headers["x-prediction-elapsed-ms"]) &gt;= 0
+
+    log_record = next(
+        record for record in caplog.records
+        if record.message == "prediction_completed"
+    )
+    assert log_record.prediction_backend == "demo"
+    assert log_record.prediction_source == "fixed-test-client"</code></pre>
+      <p><code>caplog</code> 是 pytest 提供的日志捕获工具。它让我们不只测试 HTTP 响应，还能测试服务端是否真的写出了我们需要的日志上下文。</p>
+      <p>注意响应头在测试客户端中通常用小写读取，例如 <code>x-prediction-backend</code>。HTTP header 名称本身大小写不敏感。</p>
+    </section>
+
+    <section class="practice">
+      <h2>11. 课堂实验</h2>
+      <p>先运行预测测试：</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests/test_ai_client_dependency.py -q</code></pre>
+      <p>预期看到：</p>
+      <pre><code>7 passed</code></pre>
+      <p>启动服务后，用 PyCharm HTTP Client、curl 或浏览器工具调用 <code>POST /predict</code>，观察响应头：</p>
+      <pre><code>X-Prediction-Backend: demo
+X-Prediction-Source: demo-ai-client
+X-Prediction-Elapsed-Ms: 0.42</code></pre>
+      <p>如果把 <code>FIRST_API_AI_PREDICTION_BACKEND</code> 改成 <code>provider</code> 并配置兼容 provider，再观察 backend 和 source 的变化。</p>
+    </section>
+
+    <section>
+      <h2>12. 常见错误与诊断</h2>
+      <div class="two-col">
+        <div class="callout">
+          <h3>错误一：用 print 当日志</h3>
+          <p><code>print()</code> 难分级、难过滤、难聚合。服务端代码应优先使用 <code>logging</code>。</p>
+        </div>
+        <div class="callout">
+          <h3>错误二：只记录成功，不记录失败</h3>
+          <p>失败路径更需要上下文。至少记录 backend、elapsed_ms 和 error_code。</p>
+        </div>
+        <div class="callout">
+          <h3>错误三：把敏感文本写进日志</h3>
+          <p>预测文本可能包含隐私数据。本节只记录元信息，不记录完整输入文本。</p>
+        </div>
+        <div class="callout">
+          <h3>错误四：为了调试改响应 body</h3>
+          <p>调试信息优先放 header 或日志，避免轻易改变公共 JSON 契约。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>13. 面试视角：怎样解释预测可观测性</h2>
+      <blockquote>
+        <p>我会在预测接口中记录 backend、source、elapsed_ms 和 error_code 这类元信息。成功时通过响应头和 info 日志暴露 backend/source/耗时，失败时通过 HTTPException headers 和 warning 日志暴露 backend/耗时/错误码。这样不改变 JSON 响应契约，也能让调用方和服务端排查路径都有证据。</p>
+      </blockquote>
+    </section>
+
+    <section class="checkpoint">
+      <h2>14. 小测：先回忆，再展开</h2>
+      <details>
+        <summary>1. 为什么本节不把 <code>elapsed_ms</code> 加进 <code>PredictionResponse</code>？</summary>
+        <p class="answer">因为那会改变公共 JSON 契约；放进 header 可以提供调试信息，同时保持响应体稳定。</p>
+      </details>
+      <details>
+        <summary>2. <code>perf_counter()</code> 在这里解决什么问题？</summary>
+        <p class="answer">它用于测量一次预测调用从开始到成功或失败所花的耗时，适合短时间间隔测量。</p>
+      </details>
+      <details>
+        <summary>3. 为什么失败路径也要设置 header 和写日志？</summary>
+        <p class="answer">因为失败时更需要知道 backend、耗时和错误码，否则线上只能看到 503，很难定位原因。</p>
+      </details>
+      <details>
+        <summary>4. 为什么不要把完整预测文本写入日志？</summary>
+        <p class="answer">因为用户输入可能包含隐私或敏感信息；日志应优先记录可排查的元信息。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>15. 本节总结</h2>
+      <p>本节给预测接口加入了低侵入可观测性：响应体保持稳定，响应头提供 backend/source/elapsed/error-code，服务端日志记录成功和失败上下文。现在 <code>/predict</code> 不只是能调用 demo 或 provider，也能留下可排查证据。</p>
+      <p>下一课建议学习：把预测路由里的后端选择逻辑进一步抽到 service 层，减少 endpoint 中的分支，让 router 更薄，service 更深。</p>
+      <p>推荐主资源：<a href="https://docs.python.org/3/library/logging.html">Python logging</a>、<a href="https://docs.python.org/3/library/time.html">Python time</a>、<a href="https://fastapi.tiangolo.com/advanced/response-headers/">FastAPI Response Headers</a>、<a href="https://docs.pytest.org/en/stable/how-to/logging.html">pytest Logging</a>。</p>
+      <p class="small">如果你想继续追问，可以问我：“哪些信息适合放响应头，哪些信息只应该放日志？”这会直接影响真实服务的安全性和可维护性。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0039-prediction-backend-switch.html">上一课：Prediction Backend Switch</a>
+        <a href="../reference/0040-prediction-observability-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

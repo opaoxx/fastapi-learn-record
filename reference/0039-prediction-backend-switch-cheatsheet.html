@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prediction Backend Switch Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0039</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0039-prediction-backend-switch.html">回到第 39 课</a>
+        <a href="./0038-provider-predict-endpoint-cheatsheet.html">上一张速查</a>
+        <a href="./0040-prediction-observability-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0039</p>
+      <h1>Prediction Backend Switch 速查</h1>
+      <p class="lead">让同一个 <code>/predict</code> 根据配置选择 demo 后端或 provider 后端，同时保持公共响应契约稳定。</p>
+    </header>
+
+    <h2>配置项</h2>
+    <pre><code>FIRST_API_AI_PREDICTION_BACKEND="demo"
+# or
+FIRST_API_AI_PREDICTION_BACKEND="provider"</code></pre>
+
+    <h2>Settings 字段</h2>
+    <pre><code>ai_prediction_backend: Literal["demo", "provider"] = "demo"</code></pre>
+
+    <h2>核心链路</h2>
+    <pre><code>POST /predict
+  -&gt; if backend == "provider"
+       -&gt; await request_provider_prediction(...)
+     else
+       -&gt; ai_client.predict_sentiment(...)
+  -&gt; build_prediction_response(...)
+  -&gt; PredictionResponse</code></pre>
+
+    <h2>统一响应</h2>
+    <pre><code>def build_prediction_response(
+    prediction: PredictionResult,
+    text: str,
+) -&gt; PredictionResponse:
+    return PredictionResponse(
+        label=prediction.label,
+        score=prediction.score,
+        source=prediction.source,
+        text_length=len(text),
+    )</code></pre>
+
+    <h2>测试 provider 分支</h2>
+    <pre><code>def override_provider_settings() -&gt; Settings:
+    return Settings(ai_prediction_backend="provider")
+
+app.dependency_overrides[get_settings] = override_provider_settings
+app.dependency_overrides[get_provider_http_client] = lambda: replacement_client</code></pre>
+
+    <h2>设计规则</h2>
+    <ul>
+      <li>调用方只调用 <code>/predict</code>。</li>
+      <li>后端选择属于服务端配置，不属于用户请求参数。</li>
+      <li>demo 和 provider 都必须返回 <code>PredictionResponse</code>。</li>
+      <li>测试用依赖覆盖切换配置，不直接改真实 <code>.env</code>。</li>
+    </ul>
+
+    <h2>常见坑</h2>
+    <ul>
+      <li>让前端传 <code>backend</code> 控制内部实现。</li>
+      <li>两个分支返回不同 JSON 形状。</li>
+      <li>测试污染真实环境变量。</li>
+      <li>配置字段不限制合法值，导致拼写错误晚爆炸。</li>
+    </ul>
+
+    <h2>面试短答</h2>
+    <blockquote>
+      <p>我会让 /predict 的公共契约保持稳定，用配置项选择内部后端。默认 demo 方便本地开发，provider 模式调用外部适配器。测试时覆盖 settings 和 HTTP client 依赖，既验证 provider 分支，又不访问真实网络。</p>
+    </blockquote>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/advanced/settings/">FastAPI Settings</a>、
+      <a href="https://fastapi.tiangolo.com/async/">FastAPI async / await</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/dependencies/">FastAPI Dependencies</a>、
+      <a href="https://fastapi.tiangolo.com/advanced/testing-dependencies/">FastAPI Testing Dependencies</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/response-model/">FastAPI Response Model</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0039-prediction-backend-switch.html">回到第 39 课</a>
+        <a href="./0038-provider-predict-endpoint-cheatsheet.html">上一张速查</a>
+        <a href="./0040-prediction-observability-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>
