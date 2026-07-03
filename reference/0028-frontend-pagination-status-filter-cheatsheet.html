@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Frontend Pagination and Status Filter Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0028</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0028-frontend-pagination-status-filter.html">回到第 28 课</a>
+        <a href="./0027-frontend-task-history-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0028</p>
+      <h1>前端分页与状态筛选速查</h1>
+      <p class="lead">控件改变前端状态，前端状态生成查询参数，响应信封再更新控件。</p>
+    </header>
+
+    <h2>状态对象</h2>
+    <pre><code>const historyState = {
+  status: "",
+  limit: 5,
+  offset: 0,
+  count: 0,
+  itemsLength: 0,
+};</code></pre>
+
+    <h2>构造 URL</h2>
+    <pre><code>const params = new URLSearchParams({
+  limit: String(historyState.limit),
+  offset: String(historyState.offset),
+});
+
+if (historyState.status) {
+  params.set("status", historyState.status);
+}</code></pre>
+
+    <h2>筛选按钮</h2>
+    <pre><code>&lt;button data-status="failed" type="button"&gt;Failed&lt;/button&gt;
+
+historyState.status = button.dataset.status;
+historyState.offset = 0;</code></pre>
+
+    <h2>分页规则</h2>
+    <pre><code>previous_offset = max(offset - limit, 0)
+has_next = offset + itemsLength &lt; count
+next_offset = offset + limit</code></pre>
+
+    <h2>常见坑</h2>
+    <ul>
+      <li>筛选变化后不重置 <code>offset</code>。</li>
+      <li>手写查询字符串，导致空参数或拼接错误。</li>
+      <li>不用 <code>count</code> 判断下一页。</li>
+      <li>按钮选中态和真实请求状态不同步。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams">MDN URLSearchParams</a>、
+      <a href="https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/dataset">MDN HTMLElement.dataset</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/query-params/">FastAPI Query Parameters</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0028-frontend-pagination-status-filter.html">回到第 28 课</a>
+        <a href="./0027-frontend-task-history-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>
+

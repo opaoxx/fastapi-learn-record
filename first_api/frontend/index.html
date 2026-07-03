@@ -67,12 +67,14 @@
     }
 
     input,
+    select,
     button {
       font: inherit;
     }
 
     input[type="text"],
-    input[type="file"] {
+    input[type="file"],
+    select {
       background: #fff;
       border: 1px solid var(--line);
       border-radius: 6px;
@@ -159,6 +161,63 @@
       padding: 8px 10px;
     }
 
+    .history-controls {
+      border-top: 1px solid var(--line);
+      display: grid;
+      gap: 14px;
+      grid-template-columns: 1fr auto;
+      margin: 12px 0 16px;
+      padding-top: 14px;
+    }
+
+    .status-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .status-filter,
+    .page-button {
+      background: #fff;
+      border: 1px solid var(--line);
+      color: var(--ink);
+      margin-top: 0;
+    }
+
+    .status-filter:hover,
+    .page-button:hover {
+      background: var(--soft);
+    }
+
+    .status-filter[aria-pressed="true"] {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .page-size-control {
+      min-width: 140px;
+    }
+
+    .pager {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: space-between;
+      margin: 12px 0 0;
+    }
+
+    .pager-buttons {
+      display: flex;
+      gap: 8px;
+    }
+
+    .page-button:disabled {
+      background: #eef0ef;
+      color: #8a9499;
+    }
+
     .task-list {
       display: grid;
       gap: 10px;
@@ -215,6 +274,16 @@
       color: var(--muted);
       font-size: 0.92rem;
     }
+
+    @media (max-width: 640px) {
+      .history-controls {
+        grid-template-columns: 1fr;
+      }
+
+      .page-size-control {
+        min-width: 0;
+      }
+    }
   </style>
 </head>
 <body>
@@ -251,11 +320,41 @@
       <div class="history-head">
         <div>
           <h2 id="task-history-title">任务历史</h2>
-          <p class="muted">读取 <code>GET /tasks?limit=5&amp;offset=0</code>，把响应信封渲染成界面。</p>
+          <p class="muted">用状态筛选和分页控件构造 <code>GET /tasks</code> 查询。</p>
         </div>
         <div id="history-meta" class="history-meta">尚未加载</div>
       </div>
+
+      <div class="history-controls">
+        <div>
+          <label>状态筛选</label>
+          <div class="status-filters" role="group" aria-label="任务状态筛选">
+            <button class="status-filter" type="button" data-status="" aria-pressed="true">全部</button>
+            <button class="status-filter" type="button" data-status="queued" aria-pressed="false">Queued</button>
+            <button class="status-filter" type="button" data-status="running" aria-pressed="false">Running</button>
+            <button class="status-filter" type="button" data-status="completed" aria-pressed="false">Completed</button>
+            <button class="status-filter" type="button" data-status="failed" aria-pressed="false">Failed</button>
+          </div>
+        </div>
+
+        <div class="page-size-control">
+          <label for="history-limit">每页数量</label>
+          <select id="history-limit">
+            <option value="3">3</option>
+            <option value="5" selected>5</option>
+            <option value="10">10</option>
+          </select>
+        </div>
+      </div>
+
       <div id="task-list" class="task-list" aria-live="polite"></div>
+      <div class="pager" aria-label="任务历史分页">
+        <span id="pager-info" class="muted">等待加载</span>
+        <div class="pager-buttons">
+          <button id="history-previous" class="page-button" type="button">上一页</button>
+          <button id="history-next" class="page-button" type="button">下一页</button>
+        </div>
+      </div>
     </section>
   </main>
 
@@ -265,6 +364,19 @@
     const output = document.querySelector("#output");
     const taskList = document.querySelector("#task-list");
     const historyMeta = document.querySelector("#history-meta");
+    const pagerInfo = document.querySelector("#pager-info");
+    const previousPageButton = document.querySelector("#history-previous");
+    const nextPageButton = document.querySelector("#history-next");
+    const historyLimit = document.querySelector("#history-limit");
+    const statusFilterButtons = document.querySelectorAll(".status-filter");
+
+    const historyState = {
+      status: "",
+      limit: Number(historyLimit.value),
+      offset: 0,
+      count: 0,
+      itemsLength: 0,
+    };
 
     function show(value) {
       output.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -282,14 +394,49 @@
       return body;
     }
 
+    function buildTaskHistoryUrl() {
+      const params = new URLSearchParams({
+        limit: String(historyState.limit),
+        offset: String(historyState.offset),
+      });
+
+      if (historyState.status) {
+        params.set("status", historyState.status);
+      }
+
+      return `/tasks?${params.toString()}`;
+    }
+
+    function renderStatusFilters() {
+      for (const button of statusFilterButtons) {
+        button.setAttribute("aria-pressed", String(button.dataset.status === historyState.status));
+      }
+    }
+
+    function renderPager() {
+      const start = historyState.count === 0 ? 0 : historyState.offset + 1;
+      const end = historyState.offset + historyState.itemsLength;
+      pagerInfo.textContent = `第 ${start}-${end} 条 / 共 ${historyState.count} 条`;
+      previousPageButton.disabled = historyState.offset === 0;
+      nextPageButton.disabled = historyState.offset + historyState.itemsLength >= historyState.count;
+    }
+
     function renderTaskHistory(page) {
       taskList.replaceChildren();
-      historyMeta.textContent = `显示 ${page.items.length} 条，共 ${page.count} 条；limit=${page.limit}，offset=${page.offset}`;
+      historyState.count = page.count;
+      historyState.limit = page.limit;
+      historyState.offset = page.offset;
+      historyState.itemsLength = page.items.length;
+
+      const statusText = historyState.status || "全部";
+      historyMeta.textContent = `状态=${statusText}；limit=${page.limit}；offset=${page.offset}；本页 ${page.items.length} 条`;
+      renderStatusFilters();
+      renderPager();
 
       if (page.items.length === 0) {
         const empty = document.createElement("p");
         empty.className = "muted";
-        empty.textContent = "还没有任务。上传一个 .txt 文件后再刷新。";
+        empty.textContent = "当前条件下没有任务。可以换一个状态筛选，或上传一个 .txt 文件。";
         taskList.append(empty);
         return;
       }
@@ -338,7 +485,7 @@
       historyMeta.textContent = "加载中...";
 
       try {
-        const response = await fetch("/tasks?limit=5&offset=0", {
+        const response = await fetch(buildTaskHistoryUrl(), {
           headers: {"X-API-Key": apiKey},
         });
         const page = await parseJsonResponse(response);
@@ -356,6 +503,32 @@
     }
 
     refreshHistoryButton.addEventListener("click", loadTaskHistory);
+
+    for (const button of statusFilterButtons) {
+      button.addEventListener("click", async () => {
+        historyState.status = button.dataset.status;
+        historyState.offset = 0;
+        await loadTaskHistory();
+      });
+    }
+
+    historyLimit.addEventListener("change", async () => {
+      historyState.limit = Number(historyLimit.value);
+      historyState.offset = 0;
+      await loadTaskHistory();
+    });
+
+    previousPageButton.addEventListener("click", async () => {
+      historyState.offset = Math.max(historyState.offset - historyState.limit, 0);
+      await loadTaskHistory();
+    });
+
+    nextPageButton.addEventListener("click", async () => {
+      if (historyState.offset + historyState.itemsLength < historyState.count) {
+        historyState.offset += historyState.limit;
+        await loadTaskHistory();
+      }
+    });
 
     runButton.addEventListener("click", async () => {
       const apiKey = getApiKey();

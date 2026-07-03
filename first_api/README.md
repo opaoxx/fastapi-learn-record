@@ -96,6 +96,12 @@ GET /tasks?limit=5&offset=0
 
 It reads task rows from the response envelope's `items` field and displays `count`, `limit`, and `offset` as page metadata.
 
+The task history UI also exposes controls for:
+
+- status filters: all, queued, running, completed, failed
+- page size: 3, 5, or 10 rows
+- previous and next page navigation
+
 ## Service layer
 
 The `services/` package keeps business logic out of route handlers:

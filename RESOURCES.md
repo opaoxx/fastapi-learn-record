@@ -86,6 +86,12 @@
   Official DOM documentation for creating elements. Use when teaching dynamic UI rendering without a framework.
 - [MDN Element.append()](https://developer.mozilla.org/en-US/docs/Web/API/Element/append)
   Official DOM documentation for appending nodes and strings. Use when teaching small vanilla-JavaScript render functions.
+- [MDN URLSearchParams](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams)
+  Official Web API documentation for building and manipulating query strings. Use when teaching frontend controls that call query-parameter APIs.
+- [MDN HTMLElement.dataset](https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/dataset)
+  Official DOM documentation for reading `data-*` attributes from elements. Use when teaching filter buttons backed by data attributes.
+- [MDN Button Element](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/button)
+  Official HTML reference for buttons. Use when teaching clickable controls and explicit `type="button"` behavior.
 - [Python dataclasses](https://docs.python.org/3/library/dataclasses.html)
   Official Python standard-library documentation. Use when teaching small internal data result objects such as `PredictionResult`.
 - [Python typing](https://docs.python.org/3/library/typing.html)

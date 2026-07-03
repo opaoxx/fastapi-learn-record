@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0028 - Frontend Pagination and Status Filter</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0028</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0027-frontend-task-history.html">上一课</a>
+        <a href="../reference/0028-frontend-pagination-status-filter-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0028</p>
+      <h1>前端分页与状态筛选：让 UI 控件驱动查询参数</h1>
+      <p class="lead">第 27 课把 <code>GET /tasks</code> 渲染成任务历史。本节继续往前走：把 <code>status</code>、<code>limit</code>、<code>offset</code> 变成真实控件，让用户通过按钮和下拉框控制后端查询。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解“查询参数是前后端共享的状态语言”。</li>
+        <li>掌握前端如何用一个 <code>historyState</code> 对象管理 <code>status</code>、<code>limit</code>、<code>offset</code>。</li>
+        <li>看懂 <code>URLSearchParams</code> 如何安全构造查询字符串。</li>
+        <li>理解状态筛选为什么要重置 <code>offset</code>。</li>
+        <li>能解释上一页、下一页按钮为什么需要 <code>count</code> 和 <code>items.length</code>。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 背景：用户不应该手写 URL</h2>
+      <p>第 23 到 26 课已经把任务列表接口设计成了这样：</p>
+      <pre><code>GET /tasks?status=failed&amp;limit=5&amp;offset=10</code></pre>
+      <p>对开发者来说，这个 URL 很清楚；但普通用户不应该手写它。用户更自然的操作是：</p>
+      <ul>
+        <li>点“Failed”按钮，只看失败任务。</li>
+        <li>选择“每页 10 条”。</li>
+        <li>点“下一页”。</li>
+        <li>点“上一页”。</li>
+      </ul>
+      <p>本节就是把这些界面动作翻译成查询参数。换句话说，前端控件不是装饰，它们是 API 查询状态的可视化入口。</p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 核心概念：查询参数是前后端共享的状态语言</h2>
+      <p>后端已经认识这些参数：</p>
+      <pre><code>status: queued | running | completed | failed | 不传
+limit: 1 到 100 之间的整数
+offset: 大于等于 0 的整数</code></pre>
+      <p>前端需要维护同样的状态：</p>
+      <pre><code>const historyState = {
+  status: "",
+  limit: 5,
+  offset: 0,
+  count: 0,
+  itemsLength: 0,
+};</code></pre>
+      <p>这里的 <code>status/limit/offset</code> 是发给后端的查询状态；<code>count/itemsLength</code> 是后端响应后，前端用来判断分页按钮的派生状态。</p>
+    </section>
+
+    <section>
+      <h2>3. 运行机制：点击筛选按钮之后发生了什么</h2>
+      <ol>
+        <li>用户点击 <code>Failed</code> 按钮。</li>
+        <li>前端从按钮的 <code>data-status</code> 读取值 <code>failed</code>。</li>
+        <li>前端把 <code>historyState.status</code> 改成 <code>failed</code>。</li>
+        <li>前端把 <code>historyState.offset</code> 重置为 <code>0</code>。</li>
+        <li><code>buildTaskHistoryUrl()</code> 生成 <code>/tasks?limit=5&amp;offset=0&amp;status=failed</code>。</li>
+        <li>浏览器用 <code>fetch</code> 请求后端。</li>
+        <li>FastAPI 校验查询参数并查询数据库。</li>
+        <li>前端收到响应信封，渲染任务列表、元信息和分页按钮。</li>
+      </ol>
+      <p>这条链路的重点是：按钮本身不直接“筛选 DOM”。它改变查询状态，再由后端返回真实数据。</p>
+    </section>
+
+    <section>
+      <h2>4. 官方资料中的关键点</h2>
+      <p>MDN 的 <code>URLSearchParams</code> 是专门处理 URL 查询字符串的 Web API。它可以设置、删除、迭代参数，并生成适合放进 URL 的查询字符串。</p>
+      <p>MDN 的 <code>dataset</code> 允许 JavaScript 读取 HTML 元素上的 <code>data-*</code> 自定义属性。例如 <code>data-status="failed"</code> 会变成 <code>button.dataset.status</code>。</p>
+      <p>FastAPI 的查询参数文档说明：查询参数不是路径的固定部分，它们可以有默认值、可选值、类型转换和校验规则。我们的前端控件最终就是在给这些后端参数赋值。</p>
+    </section>
+
+    <section>
+      <h2>5. 代码精读一：HTML 控件如何表达查询状态</h2>
+      <pre><code>&lt;div class="status-filters" role="group" aria-label="任务状态筛选"&gt;
+  &lt;button class="status-filter" type="button" data-status="" aria-pressed="true"&gt;全部&lt;/button&gt;
+  &lt;button class="status-filter" type="button" data-status="queued" aria-pressed="false"&gt;Queued&lt;/button&gt;
+  &lt;button class="status-filter" type="button" data-status="running" aria-pressed="false"&gt;Running&lt;/button&gt;
+  &lt;button class="status-filter" type="button" data-status="completed" aria-pressed="false"&gt;Completed&lt;/button&gt;
+  &lt;button class="status-filter" type="button" data-status="failed" aria-pressed="false"&gt;Failed&lt;/button&gt;
+&lt;/div&gt;</code></pre>
+      <p>每个按钮都用 <code>data-status</code> 保存它代表的后端状态。<code>全部</code> 的值是空字符串，意思是不传 <code>status</code> 查询参数。</p>
+      <p><code>aria-pressed</code> 表示按钮是否处于选中状态，既能辅助样式，也能让辅助技术理解当前筛选。</p>
+    </section>
+
+    <section>
+      <h2>6. 代码精读二：页大小控件</h2>
+      <pre><code>&lt;label for="history-limit"&gt;每页数量&lt;/label&gt;
+&lt;select id="history-limit"&gt;
+  &lt;option value="3"&gt;3&lt;/option&gt;
+  &lt;option value="5" selected&gt;5&lt;/option&gt;
+  &lt;option value="10"&gt;10&lt;/option&gt;
+&lt;/select&gt;</code></pre>
+      <p><code>limit</code> 是一个选项集合，所以用下拉框很合适。我们没有给用户一个任意数字输入框，是因为后端已经限制 <code>limit</code> 最大为 100，而学习项目里 3、5、10 更便于观察分页效果。</p>
+      <p>页大小一旦改变，也应该回到第一页。否则用户在第 5 页时把每页 5 条改成每页 10 条，原来的 <code>offset</code> 可能不再符合用户直觉。</p>
+    </section>
+
+    <section>
+      <h2>7. 代码精读三：用一个对象保存历史状态</h2>
+      <pre><code>const historyState = {
+  status: "",
+  limit: Number(historyLimit.value),
+  offset: 0,
+  count: 0,
+  itemsLength: 0,
+};</code></pre>
+      <p>这个对象是本节最重要的设计。它把散落在按钮、下拉框、响应结果里的信息收拢到一个地方。</p>
+      <ul>
+        <li><code>status</code>：当前筛选条件。</li>
+        <li><code>limit</code>：每页最多多少条。</li>
+        <li><code>offset</code>：当前从哪里开始。</li>
+        <li><code>count</code>：当前筛选条件下的总数。</li>
+        <li><code>itemsLength</code>：当前页实际返回了多少条。</li>
+      </ul>
+      <p>状态对象让页面行为变得可推理。你可以问：下一次请求要发什么？看 <code>historyState</code> 就知道。</p>
+    </section>
+
+    <section>
+      <h2>8. 代码精读四：构造查询字符串</h2>
+      <pre><code>function buildTaskHistoryUrl() {
+  const params = new URLSearchParams({
+    limit: String(historyState.limit),
+    offset: String(historyState.offset),
+  });
+
+  if (historyState.status) {
+    params.set("status", historyState.status);
+  }
+
+  return `/tasks?${params.toString()}`;
+}</code></pre>
+      <p>这里不用手动字符串拼接：</p>
+      <pre><code>"/tasks?limit=" + limit + "&amp;offset=" + offset + "&amp;status=" + status</code></pre>
+      <p>原因是手动拼接容易漏掉 <code>&amp;</code>、忘记编码、或者在 <code>status</code> 为空时留下奇怪的 URL。<code>URLSearchParams</code> 把“键值对变查询字符串”这件事交给浏览器标准 API。</p>
+      <p>注意 <code>status</code> 只有在非空时才加入。这样“全部”对应的 URL 是：</p>
+      <pre><code>/tasks?limit=5&amp;offset=0</code></pre>
+      <p>而不是：</p>
+      <pre><code>/tasks?limit=5&amp;offset=0&amp;status=</code></pre>
+    </section>
+
+    <section>
+      <h2>9. 代码精读五：筛选变化为什么要 offset=0</h2>
+      <pre><code>for (const button of statusFilterButtons) {
+  button.addEventListener("click", async () =&gt; {
+    historyState.status = button.dataset.status;
+    historyState.offset = 0;
+    await loadTaskHistory();
+  });
+}</code></pre>
+      <p>假设你正在“全部任务”的第 5 页，<code>offset=40</code>。然后你点击 <code>Failed</code>。失败任务可能总共只有 3 条。如果仍然请求 <code>status=failed&amp;offset=40</code>，你会看到空列表，误以为没有失败任务。</p>
+      <p>所以筛选条件变化时，应该回到第一页。这是分页 UI 的基本规则：改变结果集，就重置当前位置。</p>
+    </section>
+
+    <section>
+      <h2>10. 代码精读六：上一页和下一页</h2>
+      <pre><code>previousPageButton.addEventListener("click", async () =&gt; {
+  historyState.offset = Math.max(historyState.offset - historyState.limit, 0);
+  await loadTaskHistory();
+});
+
+nextPageButton.addEventListener("click", async () =&gt; {
+  if (historyState.offset + historyState.itemsLength &lt; historyState.count) {
+    historyState.offset += historyState.limit;
+    await loadTaskHistory();
+  }
+});</code></pre>
+      <p>上一页很直观：从当前 <code>offset</code> 减去 <code>limit</code>，但不能小于 0。</p>
+      <p>下一页需要更小心。只有当 <code>offset + itemsLength &lt; count</code> 时，才说明后面还有数据。这里不能只看 <code>itemsLength === limit</code>，因为最后一页可能刚好满页，也可能因为筛选条件不同而变化。</p>
+    </section>
+
+    <section>
+      <h2>11. 代码精读七：渲染按钮状态</h2>
+      <pre><code>function renderPager() {
+  const start = historyState.count === 0 ? 0 : historyState.offset + 1;
+  const end = historyState.offset + historyState.itemsLength;
+  pagerInfo.textContent = `第 ${start}-${end} 条 / 共 ${historyState.count} 条`;
+  previousPageButton.disabled = historyState.offset === 0;
+  nextPageButton.disabled =
+    historyState.offset + historyState.itemsLength &gt;= historyState.count;
+}</code></pre>
+      <p>按钮是否可点不是写死的，而是由响应信封计算出来。后端给出 <code>count</code>，前端结合 <code>offset</code> 和 <code>items.length</code> 得出 UI 状态。</p>
+      <p>这就是第 25、26 课的真正用途：没有响应信封和 count 查询，前端分页按钮只能猜。</p>
+    </section>
+
+    <section>
+      <h2>12. 常见错误与诊断</h2>
+      <div class="two-col">
+        <div class="callout">
+          <h3>错误一：筛选后不重置 offset</h3>
+          <p>现象：切换状态后看到空列表。原因：新结果集没有那么多页。</p>
+        </div>
+        <div class="callout">
+          <h3>错误二：手写查询字符串</h3>
+          <p>现象：漏掉 <code>&amp;</code>、空参数或编码问题。用 <code>URLSearchParams</code> 更稳。</p>
+        </div>
+        <div class="callout">
+          <h3>错误三：下一页永远可点</h3>
+          <p>现象：点到最后还有下一页。原因：没有用 <code>count</code> 判断边界。</p>
+        </div>
+        <div class="callout">
+          <h3>错误四：按钮状态和请求状态不同步</h3>
+          <p>现象：按钮显示 Failed，但请求仍是全部。原因：没有用同一个状态对象驱动 UI 和请求。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="practice">
+      <h2>13. 课堂实验</h2>
+      <p>运行服务后打开：</p>
+      <pre><code>http://127.0.0.1:8000/app/</code></pre>
+      <p>按顺序观察：</p>
+      <ol>
+        <li>点 <code>Completed</code>，看元信息里的状态和任务列表是否变化。</li>
+        <li>点 <code>Failed</code>，观察空列表或失败任务。</li>
+        <li>把每页数量从 5 改成 3，看是否回到第一页。</li>
+        <li>连续点击“下一页”，直到按钮禁用。</li>
+        <li>点击“上一页”，观察 <code>offset</code> 如何减少。</li>
+      </ol>
+      <p>同时可以打开浏览器开发者工具的 Network 面板，查看每次请求的 URL 是否和控件状态一致。</p>
+    </section>
+
+    <section class="checkpoint">
+      <h2>14. 小测：先回忆，再展开</h2>
+      <details>
+        <summary>1. 为什么状态筛选变化时要把 <code>offset</code> 重置为 0？</summary>
+        <p class="answer">因为筛选会改变结果集，旧 offset 可能指向新结果集不存在的位置。</p>
+      </details>
+      <details>
+        <summary>2. <code>URLSearchParams</code> 在本节解决了什么问题？</summary>
+        <p class="answer">它把查询参数键值对转换成规范 URL 查询字符串，避免手写拼接出错。</p>
+      </details>
+      <details>
+        <summary>3. “下一页”按钮为什么需要 <code>count</code>？</summary>
+        <p class="answer">因为前端要知道当前页后面是否还有符合条件的数据。</p>
+      </details>
+      <details>
+        <summary>4. <code>data-status</code> 和 <code>dataset.status</code> 是什么关系？</summary>
+        <p class="answer">HTML 中的 <code>data-status</code> 会通过 DOM 的 <code>dataset.status</code> 暴露给 JavaScript。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>15. 本节总结</h2>
+      <p>本节把任务历史页面从“显示列表”升级成“可交互查询工具”。你现在有了一个完整闭环：用户操作控件，前端更新 <code>historyState</code>，<code>URLSearchParams</code> 生成查询字符串，FastAPI 解析查询参数，后端返回响应信封，前端再根据 <code>items/count/limit/offset</code> 更新界面。</p>
+      <p>下一课建议学习：OpenAPI 作为 API 契约。我们会研究 FastAPI 如何把类型注解、Pydantic 模型、路由和响应模型生成可读文档。</p>
+      <p>推荐主资源：<a href="https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams">MDN URLSearchParams</a>、<a href="https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/dataset">MDN HTMLElement.dataset</a>、<a href="https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/button">MDN button element</a>、<a href="https://fastapi.tiangolo.com/tutorial/query-params/">FastAPI Query Parameters</a>、<a href="https://fastapi.tiangolo.com/tutorial/query-params-str-validations/">FastAPI Query Validations</a>。</p>
+      <p class="small">如果某个状态流转还是绕，可以问我：“为什么筛选要重置 offset？”或者“为什么下一页要用 count 判断？”</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0027-frontend-task-history.html">上一课：前端任务历史</a>
+        <a href="../reference/0028-frontend-pagination-status-filter-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>
+
