@@ -88,6 +88,14 @@ The app serves a tiny static frontend at:
 
 It uploads a `.txt` file, creates a summary task, and shows the JSON result. CORS is configured for common local frontend origins such as `http://127.0.0.1:5500` and `http://localhost:5500`.
 
+The frontend also shows task history by calling:
+
+```text
+GET /tasks?limit=5&offset=0
+```
+
+It reads task rows from the response envelope's `items` field and displays `count`, `limit`, and `offset` as page metadata.
+
 ## Service layer
 
 The `services/` package keeps business logic out of route handlers:

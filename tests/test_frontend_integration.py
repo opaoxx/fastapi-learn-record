@@ -25,3 +25,5 @@ def test_static_frontend_page_is_served() -> None:
 
     assert response.status_code == 200
     assert "文件摘要工作台" in response.text
+    assert "任务历史" in response.text
+    assert "/tasks?limit=5&amp;offset=0" in response.text

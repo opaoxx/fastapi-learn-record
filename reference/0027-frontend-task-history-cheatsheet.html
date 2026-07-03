@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Frontend Task History Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0027</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0027-frontend-task-history.html">回到第 27 课</a>
+        <a href="./0026-count-query-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0027</p>
+      <h1>前端任务历史速查</h1>
+      <p class="lead">UI 状态是 API 契约的投影：响应信封进来，任务列表和页面元信息出去。</p>
+    </header>
+
+    <h2>请求任务历史</h2>
+    <pre><code>const response = await fetch("/tasks?limit=5&amp;offset=0", {
+  headers: {"X-API-Key": apiKey},
+});
+const page = await parseJsonResponse(response);</code></pre>
+
+    <h2>响应信封字段</h2>
+    <ul>
+      <li><code>items</code>：当前页任务数组。</li>
+      <li><code>count</code>：符合当前条件的任务总数。</li>
+      <li><code>limit</code>：本次最多取多少条。</li>
+      <li><code>offset</code>：本次从第几条开始取。</li>
+    </ul>
+
+    <h2>fetch 错误边界</h2>
+    <pre><code>async function parseJsonResponse(response) {
+  const body = await response.json().catch(() =&gt; ({}));
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}: ${JSON.stringify(body)}`);
+  }
+  return body;
+}</code></pre>
+
+    <h2>渲染列表骨架</h2>
+    <pre><code>taskList.replaceChildren();
+historyMeta.textContent =
+  `显示 ${page.items.length} 条，共 ${page.count} 条`;
+
+for (const task of page.items) {
+  const row = document.createElement("article");
+  row.textContent = `任务 #${task.id}: ${task.status}`;
+  taskList.append(row);
+}</code></pre>
+
+    <h2>常见错误</h2>
+    <ul>
+      <li>把 <code>page</code> 当数组遍历；应该遍历 <code>page.items</code>。</li>
+      <li>忘记 <code>X-API-Key</code>；受保护路由会返回 401。</li>
+      <li>不检查 <code>response.ok</code>；错误响应会被误当成功响应。</li>
+      <li>刷新前不清空旧 DOM；列表会重复追加。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API">MDN Fetch API</a>、
+      <a href="https://developer.mozilla.org/en-US/docs/Web/API/Response/json">MDN Response.json()</a>、
+      <a href="https://developer.mozilla.org/en-US/docs/Web/API/Document/createElement">MDN createElement()</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/response-model/">FastAPI Response Model</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0027-frontend-task-history.html">回到第 27 课</a>
+        <a href="./0026-count-query-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>
+

@@ -78,6 +78,14 @@
   Official guide to middleware. Use when explaining application-wide request/response processing such as CORS.
 - [FastAPI Static Files](https://fastapi.tiangolo.com/tutorial/static-files/)
   Official guide to StaticFiles and mounted static applications. Use when teaching simple frontend pages served by FastAPI.
+- [MDN Fetch API](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API)
+  Official browser API documentation for `fetch`, `Request`, and `Response`. Use when teaching browser-to-API calls.
+- [MDN Response.json()](https://developer.mozilla.org/en-US/docs/Web/API/Response/json)
+  Official documentation for parsing response bodies into JavaScript objects. Use when teaching JSON response handling.
+- [MDN Document.createElement()](https://developer.mozilla.org/en-US/docs/Web/API/Document/createElement)
+  Official DOM documentation for creating elements. Use when teaching dynamic UI rendering without a framework.
+- [MDN Element.append()](https://developer.mozilla.org/en-US/docs/Web/API/Element/append)
+  Official DOM documentation for appending nodes and strings. Use when teaching small vanilla-JavaScript render functions.
 - [Python dataclasses](https://docs.python.org/3/library/dataclasses.html)
   Official Python standard-library documentation. Use when teaching small internal data result objects such as `PredictionResult`.
 - [Python typing](https://docs.python.org/3/library/typing.html)

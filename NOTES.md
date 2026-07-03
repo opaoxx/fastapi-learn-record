@@ -20,3 +20,4 @@
 - The app now has a structured `AIClientError`; `/predict` converts known AI client failures into 503 responses, while background summary tasks store failures as `status="failed"` with an `error` string.
 - `GET /tasks` now supports `status`, `offset`, and `limit` query parameters. The list is ordered by newest task id first, and invalid query values return 422.
 - `GET /tasks` now returns a response envelope with `items`, `count`, `limit`, and `offset` instead of a bare list. Any future frontend or test code should read task rows from `items`.
+- The static frontend at `/app/` now has a task history section that reads `GET /tasks?limit=5&offset=0`, renders `items`, and displays `count`, `limit`, and `offset` metadata.

@@ -15,6 +15,8 @@
       --accent: #256f6c;
       --accent-dark: #154f4c;
       --warn: #9a5b00;
+      --soft: #eef4f3;
+      --danger: #8a1f11;
     }
 
     * {
@@ -104,6 +106,20 @@
       cursor: not-allowed;
     }
 
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .secondary-button {
+      background: #315f72;
+    }
+
+    .secondary-button:hover {
+      background: #234858;
+    }
+
     .layout {
       display: grid;
       gap: 16px;
@@ -119,6 +135,70 @@
 
     .status {
       border-left: 5px solid var(--warn);
+    }
+
+    .history {
+      margin-top: 16px;
+    }
+
+    .history-head {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 16px;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .history-meta {
+      background: var(--soft);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--muted);
+      font-size: 0.92rem;
+      padding: 8px 10px;
+    }
+
+    .task-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .task-row {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 12px;
+    }
+
+    .task-row header {
+      align-items: center;
+      border: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      justify-content: space-between;
+      margin: 0 0 8px;
+      padding: 0;
+    }
+
+    .task-id {
+      font-weight: 800;
+    }
+
+    .task-status {
+      background: var(--soft);
+      border-radius: 999px;
+      color: var(--accent-dark);
+      font-size: 0.82rem;
+      font-weight: 800;
+      padding: 3px 9px;
+      text-transform: uppercase;
+    }
+
+    .task-error {
+      color: var(--danger);
+      font-weight: 700;
     }
 
     pre {
@@ -154,7 +234,10 @@
         <label for="text-file">选择 .txt 文件</label>
         <input id="text-file" type="file" accept=".txt,text/plain">
 
-        <button id="run-button" type="button">上传并生成摘要</button>
+        <div class="button-row">
+          <button id="run-button" type="button">上传并生成摘要</button>
+          <button id="refresh-history" class="secondary-button" type="button">刷新任务历史</button>
+        </div>
         <p class="muted">运行服务后访问 <code>/app/</code>，这个页面会用浏览器的 <code>fetch</code> 调用后端。</p>
       </section>
 
@@ -163,14 +246,32 @@
         <pre id="output">等待操作...</pre>
       </section>
     </div>
+
+    <section class="panel history" aria-labelledby="task-history-title">
+      <div class="history-head">
+        <div>
+          <h2 id="task-history-title">任务历史</h2>
+          <p class="muted">读取 <code>GET /tasks?limit=5&amp;offset=0</code>，把响应信封渲染成界面。</p>
+        </div>
+        <div id="history-meta" class="history-meta">尚未加载</div>
+      </div>
+      <div id="task-list" class="task-list" aria-live="polite"></div>
+    </section>
   </main>
 
   <script>
     const runButton = document.querySelector("#run-button");
+    const refreshHistoryButton = document.querySelector("#refresh-history");
     const output = document.querySelector("#output");
+    const taskList = document.querySelector("#task-list");
+    const historyMeta = document.querySelector("#history-meta");
 
     function show(value) {
       output.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+    }
+
+    function getApiKey() {
+      return document.querySelector("#api-key").value.trim();
     }
 
     async function parseJsonResponse(response) {
@@ -181,8 +282,83 @@
       return body;
     }
 
+    function renderTaskHistory(page) {
+      taskList.replaceChildren();
+      historyMeta.textContent = `显示 ${page.items.length} 条，共 ${page.count} 条；limit=${page.limit}，offset=${page.offset}`;
+
+      if (page.items.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "muted";
+        empty.textContent = "还没有任务。上传一个 .txt 文件后再刷新。";
+        taskList.append(empty);
+        return;
+      }
+
+      for (const task of page.items) {
+        const row = document.createElement("article");
+        row.className = "task-row";
+
+        const rowHead = document.createElement("header");
+        const taskId = document.createElement("span");
+        taskId.className = "task-id";
+        taskId.textContent = `任务 #${task.id}`;
+
+        const status = document.createElement("span");
+        status.className = "task-status";
+        status.textContent = task.status;
+
+        rowHead.append(taskId, status);
+
+        const textInfo = document.createElement("p");
+        textInfo.className = "muted";
+        textInfo.textContent = `文本长度：${task.text_length}；来源文件：${task.source_file_id ?? "手动输入"}`;
+
+        const result = document.createElement("p");
+        if (task.error) {
+          result.className = "task-error";
+          result.textContent = task.error;
+        } else {
+          result.textContent = task.result || "任务还在等待处理。";
+        }
+
+        row.append(rowHead, textInfo, result);
+        taskList.append(row);
+      }
+    }
+
+    async function loadTaskHistory() {
+      const apiKey = getApiKey();
+      if (!apiKey) {
+        historyMeta.textContent = "缺少 X-API-Key";
+        taskList.replaceChildren();
+        return;
+      }
+
+      refreshHistoryButton.disabled = true;
+      historyMeta.textContent = "加载中...";
+
+      try {
+        const response = await fetch("/tasks?limit=5&offset=0", {
+          headers: {"X-API-Key": apiKey},
+        });
+        const page = await parseJsonResponse(response);
+        renderTaskHistory(page);
+      } catch (error) {
+        historyMeta.textContent = "加载失败";
+        taskList.replaceChildren();
+        const message = document.createElement("p");
+        message.className = "task-error";
+        message.textContent = error.message;
+        taskList.append(message);
+      } finally {
+        refreshHistoryButton.disabled = false;
+      }
+    }
+
+    refreshHistoryButton.addEventListener("click", loadTaskHistory);
+
     runButton.addEventListener("click", async () => {
-      const apiKey = document.querySelector("#api-key").value.trim();
+      const apiKey = getApiKey();
       const fileInput = document.querySelector("#text-file");
       const file = fileInput.files[0];
 
@@ -219,12 +395,15 @@
         const task = await parseJsonResponse(resultResponse);
 
         show({uploaded, task});
+        await loadTaskHistory();
       } catch (error) {
         show(error.message);
       } finally {
         runButton.disabled = false;
       }
     });
+
+    loadTaskHistory();
   </script>
 </body>
 </html>
