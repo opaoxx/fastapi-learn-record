@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Client Dependency Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0020</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0020-ai-client-dependency.html">回到第 20 课</a>
+        <a href="./0019-service-layer-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0020</p>
+      <h1>AI 客户端依赖速查</h1>
+      <p class="lead">把模型调用封装成客户端，再用 Depends 交给路由。</p>
+    </header>
+
+    <h2>客户端</h2>
+    <pre><code>class DemoAIClient:
+    def predict_sentiment(self, text: str, mode: str) -&gt; PredictionResult:
+        ...
+
+    def summarize(self, text: str) -&gt; str:
+        ...</code></pre>
+
+    <h2>依赖入口</h2>
+    <pre><code>def get_ai_client() -&gt; DemoAIClient:
+    return DemoAIClient()</code></pre>
+
+    <h2>路由使用</h2>
+    <pre><code>def predict(
+    payload: PredictionRequest,
+    ai_client: Annotated[DemoAIClient, Depends(get_ai_client)],
+) -&gt; PredictionResponse:
+    prediction = ai_client.predict_sentiment(payload.text, payload.mode)</code></pre>
+
+    <h2>测试替换</h2>
+    <pre><code>app.dependency_overrides[get_ai_client] = override_ai_client</code></pre>
+
+    <h2>关键区别</h2>
+    <ul>
+      <li>AI client：内部模型调用能力。</li>
+      <li>Response model：对外 JSON 合约。</li>
+      <li>dependency override：测试时替换依赖。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/dependencies/">FastAPI Dependencies</a>、
+      <a href="https://fastapi.tiangolo.com/advanced/testing-dependencies/">FastAPI Testing Dependencies with Overrides</a>、
+      <a href="https://docs.python.org/3/library/dataclasses.html">Python dataclasses</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0020-ai-client-dependency.html">回到第 20 课</a>
+        <a href="./0019-service-layer-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

@@ -70,6 +70,10 @@
   Official guide to middleware. Use when explaining application-wide request/response processing such as CORS.
 - [FastAPI Static Files](https://fastapi.tiangolo.com/tutorial/static-files/)
   Official guide to StaticFiles and mounted static applications. Use when teaching simple frontend pages served by FastAPI.
+- [Python dataclasses](https://docs.python.org/3/library/dataclasses.html)
+  Official Python standard-library documentation. Use when teaching small internal data result objects such as `PredictionResult`.
+- [Python typing](https://docs.python.org/3/library/typing.html)
+  Official Python typing documentation. Use when teaching `Literal`, type aliases, and typed service boundaries.
 - [Uvicorn Documentation](https://uvicorn.dev/)
   ASGI server documentation. Use when learning what actually runs the FastAPI app locally or in production.
 

@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0020 - AI Client Dependency</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0020</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0019-service-layer-thin-routers.html">上一课</a>
+        <a href="../reference/0020-ai-client-dependency-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0020</p>
+      <h1>AI 客户端依赖：先封装 demo 模型，再准备替换真实模型</h1>
+      <p class="lead">这一节把预测和摘要逻辑放进一个 <code>DemoAIClient</code>。它现在只是规则函数，但结构已经像真实 AI 服务客户端。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解为什么不要在 router 里直接写模型推理逻辑。</li>
+        <li>看懂 <code>DemoAIClient</code> 如何封装预测和摘要。</li>
+        <li>理解 <code>Depends(get_ai_client)</code> 如何把模型客户端交给接口。</li>
+        <li>学会用 <code>dependency_overrides</code> 在测试里替换模型客户端。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 真实 AI 接口长什么样</h2>
+      <p>真实 AI 服务通常不是一行函数。它可能需要：</p>
+      <ul>
+        <li>读取模型配置和 API Key。</li>
+        <li>调用本地模型、远程模型或第三方 API。</li>
+        <li>处理超时、限流、异常和重试。</li>
+        <li>记录模型来源、版本和分数。</li>
+      </ul>
+      <p>如果这些都写在 <code>routers/predictions.py</code> 里，路由会很快变成一锅粥。所以我们先把“模型能力”封装成客户端对象。</p>
+    </section>
+
+    <section>
+      <h2>2. PredictionResult：模型输出的小对象</h2>
+      <pre><code>@dataclass(frozen=True)
+class PredictionResult:
+    label: PredictionLabel
+    score: float
+    source: str</code></pre>
+      <p><code>dataclass</code> 是 Python 标准库提供的轻量数据类。这里它表示“模型内部输出”。它不是 HTTP 响应模型，HTTP 响应仍然由 <code>PredictionResponse</code> 控制。</p>
+    </section>
+
+    <section>
+      <h2>3. DemoAIClient：假的模型，真的结构</h2>
+      <pre><code>class DemoAIClient:
+    positive_words = {"good", "great", "love", "pleasant", "nice", "happy"}
+
+    def predict_sentiment(self, text: str, mode: str) -&gt; PredictionResult:
+        ...
+
+    def summarize(self, text: str) -&gt; str:
+        ...</code></pre>
+      <p>这个类目前还是规则算法：看到积极词就返回 positive，摘要就是取前 12 个单词。但它已经像真实模型客户端一样，对外提供稳定方法。</p>
+    </section>
+
+    <section>
+      <h2>4. get_ai_client：依赖注入入口</h2>
+      <pre><code>def get_ai_client() -&gt; DemoAIClient:
+    return DemoAIClient()</code></pre>
+      <p>然后在路由里声明：</p>
+      <pre><code>def predict(
+    payload: PredictionRequest,
+    ai_client: Annotated[DemoAIClient, Depends(get_ai_client)],
+) -&gt; PredictionResponse:
+    prediction = ai_client.predict_sentiment(payload.text, payload.mode)
+    ...</code></pre>
+      <p>路由函数不再自己知道“怎么预测”，它只知道“我要一个 ai_client，然后调用它”。这就是依赖注入在 AI 服务里的一个典型用法。</p>
+    </section>
+
+    <section>
+      <h2>5. 为什么响应模型仍然保留</h2>
+      <p>注意这里有两个模型概念，不要混：</p>
+      <ul>
+        <li><code>DemoAIClient</code> 是“AI 模型客户端”，负责算结果。</li>
+        <li><code>PredictionResponse</code> 是“API 响应模型”，负责规定返回 JSON 长什么样。</li>
+      </ul>
+      <p>AI 客户端可以换，但 API 合约最好保持稳定。这样前端和调用方不会因为你换模型而被迫改代码。</p>
+    </section>
+
+    <section>
+      <h2>6. 测试里替换 AI 客户端</h2>
+      <pre><code>class FixedAIClient:
+    def predict_sentiment(self, text: str, mode: str) -&gt; PredictionResult:
+        return PredictionResult(
+            label="positive",
+            score=0.99,
+            source="fixed-test-client",
+        )
+
+def override_ai_client() -&gt; FixedAIClient:
+    return FixedAIClient()
+
+app.dependency_overrides[get_ai_client] = override_ai_client</code></pre>
+      <p>这样测试 <code>/predict</code> 时，就不用依赖真实模型或复杂规则。测试只验证：路由确实调用了依赖注入进来的客户端，并把结果转换成响应。</p>
+    </section>
+
+    <section>
+      <h2>7. 后台任务里的区别</h2>
+      <p><code>BackgroundTasks</code> 里运行的是普通 Python 函数，不是路由函数，所以不能直接在后台函数参数里写 <code>Depends</code>。课程代码里采用了更简单的写法：</p>
+      <pre><code>def process_summary_task(task_id: int) -&gt; None:
+    with Session(engine) as session:
+        run_summary_task(
+            session=session,
+            task_id=task_id,
+            ai_client=get_ai_client(),
+        )</code></pre>
+      <p>核心思想仍然一样：运行任务时把 AI 客户端作为参数传进去，而不是把摘要规则散落在任务函数里。</p>
+    </section>
+
+    <section class="practice">
+      <h2>8. 课堂练习</h2>
+      <p>请你做两个实验：</p>
+      <ol>
+        <li>把 <code>DemoAIClient.positive_words</code> 里加入 <code>excellent</code>，调用 <code>/predict</code> 看结果变化。</li>
+        <li>在测试里的 <code>FixedAIClient</code> 改成返回 <code>neutral</code>，再跑测试观察断言如何失败。</li>
+      </ol>
+    </section>
+
+    <section class="checkpoint">
+      <h2>9. 小测：先回忆再展开</h2>
+      <details>
+        <summary>1. 为什么把 AI 逻辑封装成客户端？</summary>
+        <p class="answer">因为真实 AI 调用会涉及配置、网络、异常和版本，封装后 router 更稳定，也更容易替换。</p>
+      </details>
+      <details>
+        <summary>2. <code>PredictionResult</code> 和 <code>PredictionResponse</code> 有什么区别？</summary>
+        <p class="answer"><code>PredictionResult</code> 是服务内部结果，<code>PredictionResponse</code> 是对外 API 合约。</p>
+      </details>
+      <details>
+        <summary>3. 测试为什么要替换 AI 客户端？</summary>
+        <p class="answer">为了让测试稳定、快速、可控，不依赖真实模型输出或外部服务。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>10. 本节总结</h2>
+      <p>本节完成了一个重要转折：项目里的 AI 逻辑不再散落在路由和 worker 中，而是进入 <code>DemoAIClient</code>。这让后续接真实模型时，只需要替换客户端实现，尽量不动 API 合约。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/dependencies/">FastAPI Dependencies</a>、<a href="https://fastapi.tiangolo.com/advanced/testing-dependencies/">FastAPI Testing Dependencies with Overrides</a>、<a href="https://docs.python.org/3/library/dataclasses.html">Python dataclasses</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0019-service-layer-thin-routers.html">上一课：服务层与瘦路由</a>
+        <a href="../reference/0020-ai-client-dependency-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

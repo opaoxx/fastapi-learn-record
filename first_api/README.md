@@ -34,6 +34,9 @@ first_api/
   task_worker.py
   frontend/
     index.html
+  services/
+    ai_clients.py
+    summary_tasks.py
   routers/
     system.py
     items.py
@@ -42,7 +45,7 @@ first_api/
     files.py
 ```
 
-`main.py` creates the FastAPI app, configures CORS, includes routers, and mounts the static frontend. Models live in `schemas.py`, SQLite setup and database sessions live in `database.py`, shared request setup lives in `dependencies.py`, and route handlers live in `routers/`.
+`main.py` creates the FastAPI app, configures CORS, includes routers, and mounts the static frontend. Models live in `schemas.py`, SQLite setup and database sessions live in `database.py`, shared request setup lives in `dependencies.py`, route handlers live in `routers/`, and reusable business logic lives in `services/`.
 
 The app creates a local SQLite file at `first_api/first_api.db` when it starts. That file is ignored by Git because it is local runtime data.
 
@@ -67,3 +70,12 @@ The app serves a tiny static frontend at:
 - http://127.0.0.1:8000/app/
 
 It uploads a `.txt` file, creates a summary task, and shows the JSON result. CORS is configured for common local frontend origins such as `http://127.0.0.1:5500` and `http://localhost:5500`.
+
+## Service layer
+
+The `services/` package keeps business logic out of route handlers:
+
+- `services/summary_tasks.py` creates, reads, lists, and runs summary task records.
+- `services/ai_clients.py` contains `DemoAIClient`, a replaceable model-like client used by `/predict` and background summary tasks.
+
+The `/predict` endpoint receives its AI client with `Depends(get_ai_client)`, so tests can replace it through `app.dependency_overrides`.

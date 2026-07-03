@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Service Layer Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0019</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0019-service-layer-thin-routers.html">回到第 19 课</a>
+        <a href="./0018-static-frontend-fetch-cheatsheet.html">上一张速查</a>
+        <a href="./0020-ai-client-dependency-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0019</p>
+      <h1>服务层速查</h1>
+      <p class="lead">router 管 HTTP，service 管业务，model 管数据形状。</p>
+    </header>
+
+    <h2>目录</h2>
+    <pre><code>first_api/services/
+  summary_tasks.py
+  ai_clients.py</code></pre>
+
+    <h2>判断规则</h2>
+    <ul>
+      <li>HTTP 参数、状态码、请求头：留在 router。</li>
+      <li>创建任务、运行任务、组合业务步骤：放进 service。</li>
+      <li>字段、表、校验约束：放进 schema/model。</li>
+      <li>多个地方要复用：优先考虑 service。</li>
+    </ul>
+
+    <h2>典型服务函数</h2>
+    <pre><code>def create_summary_task(session: Session, text: str) -&gt; SummaryTask:
+    task = SummaryTask(text=text, text_length=len(text), status="queued")
+    session.add(task)
+    session.commit()
+    session.refresh(task)
+    return task</code></pre>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/bigger-applications/">FastAPI Bigger Applications</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/dependencies/">FastAPI Dependencies</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0019-service-layer-thin-routers.html">回到第 19 课</a>
+        <a href="./0018-static-frontend-fetch-cheatsheet.html">上一张速查</a>
+        <a href="./0020-ai-client-dependency-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

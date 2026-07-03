@@ -1,23 +1,23 @@
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Depends
 
 from ..schemas import PredictionRequest, PredictionResponse
+from ..services.ai_clients import DemoAIClient, get_ai_client
 
 
 router = APIRouter(tags=["predictions"])
 
 
 @router.post("/predict", response_model=PredictionResponse)
-def predict(payload: PredictionRequest) -> PredictionResponse:
-    positive_words = {"good", "great", "love", "pleasant", "nice", "happy"}
-    tokens = {word.strip(".,!?;:").lower() for word in payload.text.split()}
-    is_positive = bool(tokens & positive_words)
-    careful_bonus = 0.04 if payload.mode == "careful" else 0.0
-
-    score = (0.91 if is_positive else 0.55) + careful_bonus
-
+def predict(
+    payload: PredictionRequest,
+    ai_client: Annotated[DemoAIClient, Depends(get_ai_client)],
+) -> PredictionResponse:
+    prediction = ai_client.predict_sentiment(payload.text, payload.mode)
     return PredictionResponse(
-        label="positive" if is_positive else "neutral",
-        score=round(score, 2),
-        source="rule-based-demo",
+        label=prediction.label,
+        score=prediction.score,
+        source=prediction.source,
         text_length=len(payload.text),
     )

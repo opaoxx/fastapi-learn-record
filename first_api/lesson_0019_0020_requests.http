@@ -1,0 +1,18 @@
+### Prediction now uses an injectable AI client
+POST http://127.0.0.1:8000/predict
+Content-Type: application/json
+
+{
+  "text": "FastAPI feels pleasant when the model client is isolated.",
+  "mode": "careful",
+  "temperature": 0.2
+}
+
+### Existing summary task flow still works after the service-layer refactor
+POST http://127.0.0.1:8000/tasks/summaries
+Content-Type: application/json
+X-API-Key: dev-secret-key
+
+{
+  "text": "Service layers keep route handlers focused on HTTP while business logic stays reusable and easier to test."
+}
