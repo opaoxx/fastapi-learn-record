@@ -24,3 +24,4 @@
 - The static frontend task history now includes status filter buttons, a page-size selector, and previous/next pagination controls driven by a shared `historyState` object.
 - Lessons 0022 through 0026 have been retrofitted to the new quality standard with deeper principle-first explanations, code reading, common mistakes, experiments, and stronger quick-reference pages.
 - Lesson 0029 introduced OpenAPI as the machine-readable API contract behind `/docs`, and the project now has tests that guard the task-list OpenAPI schema and API key security scheme.
+- Lesson 0030 introduced schema evolution and backward compatibility. The task-list response envelope now has clearer field metadata, and tests guard both runtime JSON shape and OpenAPI schema shape.

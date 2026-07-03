@@ -68,6 +68,20 @@ def test_list_summary_tasks_supports_limit_and_offset() -> None:
     assert first_page.json()["items"][0]["id"] != second_page.json()["items"][0]["id"]
 
 
+def test_list_summary_tasks_returns_response_envelope_contract() -> None:
+    with TestClient(app) as client:
+        response = client.get("/tasks?limit=5&offset=0", headers=API_KEY_HEADERS)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert isinstance(payload, dict)
+    assert set(payload) == {"items", "count", "limit", "offset"}
+    assert isinstance(payload["items"], list)
+    assert isinstance(payload["count"], int)
+    assert isinstance(payload["limit"], int)
+    assert isinstance(payload["offset"], int)
+
+
 def test_list_summary_tasks_supports_status_filter() -> None:
     with TestClient(app) as client:
         created = client.post(

@@ -111,6 +111,8 @@ FastAPI exposes the generated OpenAPI contract at:
 
 The task APIs document their response models, query parameters, response descriptions, and `X-API-Key` security requirement. Tests in `tests/test_openapi_contract.py` guard the most important task-list contract details.
 
+The task-list response envelope is treated as a compatibility boundary. Tests in `tests/test_tasks_api.py` verify that `GET /tasks` keeps returning a JSON object with `items`, `count`, `limit`, and `offset`.
+
 ## Service layer
 
 The `services/` package keeps business logic out of route handlers:

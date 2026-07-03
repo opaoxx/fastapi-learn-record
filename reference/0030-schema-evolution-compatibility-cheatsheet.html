@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Schema Evolution and Compatibility Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0030</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0030-schema-evolution-compatibility.html">回到第 30 课</a>
+        <a href="./0029-openapi-api-contract-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0030</p>
+      <h1>Schema 演进与兼容性速查</h1>
+      <p class="lead">判断 API 变更时先问：旧客户端不改代码，还能不能继续工作？</p>
+    </header>
+
+    <h2>核心心智模型</h2>
+    <pre><code>API schema = 调用方依赖的数据形状
+兼容变更 = 旧客户端不用改也能继续工作
+破坏性变更 = 旧客户端可能解析失败或语义出错</code></pre>
+
+    <h2>兼容性判断</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>变更</th>
+          <th>判断</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>新增可选响应字段</td>
+          <td>通常兼容</td>
+        </tr>
+        <tr>
+          <td>新增可选查询参数且默认行为不变</td>
+          <td>通常兼容</td>
+        </tr>
+        <tr>
+          <td>新增必填请求字段</td>
+          <td>不兼容</td>
+        </tr>
+        <tr>
+          <td>删除响应字段</td>
+          <td>不兼容</td>
+        </tr>
+        <tr>
+          <td>字段改名</td>
+          <td>不兼容</td>
+        </tr>
+        <tr>
+          <td>字段类型改变</td>
+          <td>不兼容</td>
+        </tr>
+        <tr>
+          <td>默认行为改变</td>
+          <td>通常不兼容</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>任务列表契约</h2>
+    <pre><code>GET /tasks?limit=5&amp;offset=0
+
+{
+  "items": [],
+  "count": 0,
+  "limit": 5,
+  "offset": 0
+}</code></pre>
+
+    <h2>保护响应形状</h2>
+    <pre><code>payload = response.json()
+assert isinstance(payload, dict)
+assert set(payload) == {"items", "count", "limit", "offset"}
+assert isinstance(payload["items"], list)</code></pre>
+
+    <h2>变更流程</h2>
+    <ol>
+      <li>写出现有契约。</li>
+      <li>判断兼容或不兼容。</li>
+      <li>兼容变更补测试和文档。</li>
+      <li>不兼容变更优先寻找兼容方案。</li>
+      <li>必须不兼容时新增版本或新路径。</li>
+      <li>标记弃用，给迁移窗口。</li>
+    </ol>
+
+    <h2>常见坑</h2>
+    <ul>
+      <li>把字段改名当成内部重构。</li>
+      <li>新增必填参数导致旧客户端 422。</li>
+      <li>只测业务成功，不测 JSON 形状。</li>
+      <li>只有 <code>v2</code>，没有迁移说明和保留时间。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/response-model/">FastAPI Response Model</a>、
+      <a href="https://google.aip.dev/180">Google AIP-180</a>、
+      <a href="https://google.aip.dev/185">Google AIP-185</a>、
+      <a href="https://semver.org/">Semantic Versioning</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0030-schema-evolution-compatibility.html">回到第 30 课</a>
+        <a href="./0029-openapi-api-contract-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

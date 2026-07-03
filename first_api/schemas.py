@@ -74,10 +74,10 @@ class SummaryTaskRead(SQLModel):
 
 
 class SummaryTaskListResponse(BaseModel):
-    items: list[SummaryTaskRead]
-    count: int
-    limit: int
-    offset: int
+    items: list[SummaryTaskRead] = PydanticField(description="The current page of summary tasks.")
+    count: int = PydanticField(ge=0, description="Total number of tasks matching the current filter.")
+    limit: int = PydanticField(ge=1, le=100, description="Maximum number of tasks requested for this page.")
+    offset: int = PydanticField(ge=0, description="Zero-based number of matching tasks skipped before this page.")
 
 
 class UploadedTextFile(SQLModel, table=True):

@@ -43,3 +43,19 @@ def test_openapi_documents_api_key_security_scheme() -> None:
     assert security_scheme["type"] == "apiKey"
     assert security_scheme["in"] == "header"
     assert security_scheme["name"] == "X-API-Key"
+
+
+def test_openapi_documents_task_list_response_envelope_schema() -> None:
+    with TestClient(app) as client:
+        response = client.get("/openapi.json")
+
+    assert response.status_code == 200
+    schema = response.json()
+
+    envelope_schema = schema["components"]["schemas"]["SummaryTaskListResponse"]
+    assert envelope_schema["required"] == ["items", "count", "limit", "offset"]
+    assert set(envelope_schema["properties"]) == {"items", "count", "limit", "offset"}
+    assert envelope_schema["properties"]["count"]["minimum"] == 0
+    assert envelope_schema["properties"]["limit"]["minimum"] == 1
+    assert envelope_schema["properties"]["limit"]["maximum"] == 100
+    assert envelope_schema["properties"]["offset"]["minimum"] == 0

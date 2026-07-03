@@ -11,7 +11,7 @@
 - [FastAPI Query Parameters](https://fastapi.tiangolo.com/tutorial/query-params/)
   Official guide to query parameters and defaults. Use when teaching list filtering and search-like endpoints.
 - [FastAPI Query Parameters and String Validations](https://fastapi.tiangolo.com/tutorial/query-params-str-validations/)
-  Official guide to `Query` validation. Use when teaching bounds such as `limit >= 1` and optional query parameters.
+  Official guide to `Query` validation, aliases, deprecation, and schema inclusion. Use when teaching bounds such as `limit >= 1`, optional query parameters, and compatibility-aware parameter changes.
 - [FastAPI Request Body](https://fastapi.tiangolo.com/tutorial/body/)
   Official guide to receiving JSON request bodies with Pydantic models. Use for POST endpoints and AI-service inputs.
 - [FastAPI Body - Fields](https://fastapi.tiangolo.com/tutorial/body-fields/)
@@ -28,6 +28,14 @@
   Official guide to path operation summaries, descriptions, response descriptions, and deprecation metadata. Use when improving generated API documentation.
 - [FastAPI Additional Responses in OpenAPI](https://fastapi.tiangolo.com/advanced/additional-responses/)
   Official guide to adding extra response metadata to OpenAPI. Use when documenting non-200 responses and model-backed error shapes.
+- [OpenAPI Specification](https://spec.openapis.org/oas/latest.html)
+  Official OpenAPI specification. Use when explaining OpenAPI as a machine-readable API description format.
+- [Google AIP-180: Backwards Compatibility](https://google.aip.dev/180)
+  Google API design guidance for compatible and incompatible API changes. Use when teaching API schema evolution.
+- [Google AIP-185: API Versioning](https://google.aip.dev/185)
+  Google API design guidance for versioning. Use when teaching when compatibility breaks require a new version.
+- [Semantic Versioning 2.0.0](https://semver.org/)
+  Official SemVer specification. Use as a simple vocabulary for patch, minor, and major compatibility thinking.
 - [FastAPI Handling Errors](https://fastapi.tiangolo.com/tutorial/handling-errors/)
   Official guide to HTTPException and error responses. Use when teaching 404 and business-level API errors.
 - [FastAPI Bigger Applications - Multiple Files](https://fastapi.tiangolo.com/tutorial/bigger-applications/)
