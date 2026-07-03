@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
 from first_api.main import app
-from first_api.services.ai_clients import AIClientError, PredictionResult, get_ai_client
+from first_api.services.ai_clients import AIClientConfig, AIClientError, DemoAIClient, PredictionResult, get_ai_client
 
 
 class FixedAIClient:
@@ -54,6 +54,22 @@ def test_predict_uses_overridable_ai_client_dependency() -> None:
     assert response.json()["label"] == "positive"
     assert response.json()["score"] == 0.99
     assert response.json()["source"] == "fixed-test-client"
+
+
+def test_demo_ai_client_keeps_provider_configuration_at_boundary() -> None:
+    ai_client = DemoAIClient(
+        config=AIClientConfig(
+            provider="demo",
+            timeout_seconds=2.5,
+            max_attempts=2,
+        )
+    )
+
+    prediction = ai_client.predict_sentiment("FastAPI is pleasant and nice.", mode="fast")
+
+    assert prediction.source == "demo-ai-client"
+    assert ai_client.config.timeout_seconds == 2.5
+    assert ai_client.config.max_attempts == 2
 
 
 def test_predict_returns_stable_error_when_ai_client_fails() -> None:

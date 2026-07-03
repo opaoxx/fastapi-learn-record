@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0036 - Provider Health Endpoint</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0036</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0035-app-state-dependency-bridge.html">上一课</a>
+        <a href="./0037-provider-prediction-adapter.html">下一课</a>
+        <a href="../reference/0036-provider-health-endpoint-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0036</p>
+      <h1>Provider Health Endpoint：把外部服务状态翻译成稳定 API 契约</h1>
+      <p class="lead">第 33 课写了 provider HTTP adapter，第 34 课用 lifespan 管理 HTTP client，第 35 课用 Depends 把 client 交给路由。本节把这三块拼起来：新增 <code>GET /provider/health</code>，用配置好的 provider health URL 检查外部服务，并把外部错误转换成稳定的 503 JSON 响应。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解 provider health endpoint 在 AI 服务项目中的作用。</li>
+        <li>学会把 service adapter 接入 FastAPI endpoint。</li>
+        <li>理解为什么外部服务失败通常要在 API 边界转换成稳定错误契约。</li>
+        <li>理解为什么 health URL 应该来自配置，而不是来自用户请求参数。</li>
+        <li>学会用 <code>MockTransport</code> 和依赖覆盖测试外部 HTTP 调用。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 背景：真实 AI endpoint 之前，先学会观测 provider</h2>
+      <p>真实 AI 服务不是只写一个 <code>/predict</code> 就结束。只要接口背后依赖外部模型 provider，你就需要回答几个工程问题：</p>
+      <ul>
+        <li>provider 当前能不能访问？</li>
+        <li>provider 返回 500、503 时，我们自己的 API 要怎么响应？</li>
+        <li>provider 超时时，客户端看到的是随机异常，还是稳定 JSON？</li>
+        <li>测试时能不能不访问真实 provider？</li>
+      </ul>
+      <p>本节新增的 <code>GET /provider/health</code> 不是最终业务功能，而是一个训练用的外部依赖观测端点。它让你先学会“如何把外部 HTTP 调用接进 FastAPI”，再进入真正的 AI 请求转发。</p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 核心概念：API 边界是翻译层</h2>
+      <p>一个后端 API 往往夹在两类世界之间：</p>
+      <div class="two-col">
+        <div>
+          <h3>内部世界</h3>
+          <p>Python 函数、dataclass、异常类型、HTTPX 错误、provider adapter、配置对象。</p>
+        </div>
+        <div>
+          <h3>外部世界</h3>
+          <p>HTTP 状态码、JSON 响应体、OpenAPI 文档、前端和第三方调用方能依赖的契约。</p>
+        </div>
+      </div>
+      <p>endpoint 的重要职责之一，就是把内部世界翻译成外部世界。比如本节的转换关系是：</p>
+      <pre><code>ProviderHealthResult
+  -&gt; 200 ProviderHealthResponse
+
+AIClientError("ai_provider_timeout")
+  -&gt; 503 {"detail": {"error_code": "...", "message": "..."}}</code></pre>
+      <p>这比让 HTTPX 异常直接穿透到客户端要好得多。客户端不应该知道你的项目内部用了 HTTPX，也不应该被迫理解 Python 异常栈。</p>
+    </section>
+
+    <section>
+      <h2>3. 安全设计：为什么不让用户传入 health URL</h2>
+      <p>一个直觉写法可能是：</p>
+      <pre><code>GET /provider/health?url=https://somewhere.example/health</code></pre>
+      <p>学习时看起来很灵活，但真实项目里这是危险设计。因为这个接口会让你的服务器代替用户去请求任意地址，攻击者可能让它访问内网地址、本机管理端口、云厂商 metadata 地址等。这类问题通常叫 SSRF，也就是 Server-Side Request Forgery。</p>
+      <p>所以本节采用更稳的设计：health URL 来自服务端配置。</p>
+      <pre><code>FIRST_API_AI_PROVIDER_HEALTH_URL="https://example.com"</code></pre>
+      <p>用户只能调用 <code>/provider/health</code>，不能通过请求参数控制服务器去访问哪里。这是一个小项目里的小选择，但背后是很真实的安全边界意识。</p>
+    </section>
+
+    <section>
+      <h2>4. 运行机制：一次请求怎么走完整链路</h2>
+      <pre><code>GET /provider/health
+  -&gt; FastAPI 匹配 system router
+  -&gt; Depends(get_settings) 读取配置
+  -&gt; Depends(get_provider_http_client) 获取 lifespan-managed AsyncClient
+  -&gt; 构造 AIClientConfig
+  -&gt; check_provider_health(url, config, client)
+       -&gt; await client.get(url)
+       -&gt; response.raise_for_status()
+  -&gt; 成功：返回 ProviderHealthResponse
+  -&gt; 失败：AIClientError 转 HTTPException(503)</code></pre>
+      <p>这里把前几节的知识串起来了：配置管理、依赖注入、lifespan、app.state、async HTTP、错误映射、Pydantic 响应模型都在同一条路径上协作。</p>
+    </section>
+
+    <section>
+      <h2>5. 代码精读一：配置 provider health URL</h2>
+      <pre><code>class Settings(BaseSettings):
+    app_name: str = "First FastAPI API"
+    environment: str = "development"
+    api_key: str = "dev-secret-key"
+    ai_provider: Literal["demo"] = "demo"
+    ai_provider_health_url: str = "https://example.com"
+    ai_timeout_seconds: float = Field(default=10.0, gt=0)
+    ai_max_attempts: int = Field(default=1, ge=1, le=5)</code></pre>
+      <p><code>ai_provider_health_url</code> 是服务端配置项。它有两个作用：</p>
+      <ul>
+        <li>让不同环境可以用不同 provider 地址，例如本地、测试、生产。</li>
+        <li>避免把请求目标交给用户输入，降低 SSRF 风险。</li>
+      </ul>
+      <p>教学项目默认使用 <code>https://example.com</code>，只是为了让本地实验有一个稳定的 200 响应占位。真实项目里你会把它改成 provider 官方给出的 health 或 models endpoint。</p>
+    </section>
+
+    <section>
+      <h2>6. 代码精读二：成功响应模型</h2>
+      <pre><code>class ProviderHealthResponse(BaseModel):
+    ok: bool
+    provider: str
+    status_code: int
+    message: str</code></pre>
+      <p>这个模型把 provider 检查结果压成一个稳定 JSON 形状：</p>
+      <pre><code>{
+  "ok": true,
+  "provider": "demo",
+  "status_code": 200,
+  "message": "The AI provider responded successfully."
+}</code></pre>
+      <p>注意它没有把原始响应体直接返回给客户端。health endpoint 只回答“能不能访问”和“状态如何”，不负责暴露 provider 的所有细节。</p>
+    </section>
+
+    <section>
+      <h2>7. 代码精读三：endpoint 作为翻译层</h2>
+      <pre><code>@router.get(
+    "/provider/health",
+    response_model=ProviderHealthResponse,
+    responses={503: {"model": ErrorResponse}},
+)
+async def read_provider_health(
+    settings: Annotated[Settings, Depends(get_settings)],
+    provider_http_client: Annotated[
+        httpx.AsyncClient,
+        Depends(get_provider_http_client),
+    ],
+) -&gt; ProviderHealthResponse:
+    config = AIClientConfig(
+        provider=settings.ai_provider,
+        timeout_seconds=settings.ai_timeout_seconds,
+        max_attempts=settings.ai_max_attempts,
+    )
+
+    try:
+        result = await check_provider_health(
+            url=settings.ai_provider_health_url,
+            config=config,
+            client=provider_http_client,
+        )
+    except AIClientError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=ErrorDetail(
+                error_code=exc.error_code,
+                message=exc.message,
+            ).model_dump(),
+        ) from exc
+
+    return ProviderHealthResponse(
+        ok=result.ok,
+        provider=result.provider,
+        status_code=result.status_code,
+        message=result.message,
+    )</code></pre>
+      <p>这段代码可以分成四层理解：</p>
+      <ul>
+        <li><strong>依赖层：</strong><code>settings</code> 和 <code>provider_http_client</code> 都由 FastAPI 注入。</li>
+        <li><strong>配置层：</strong>把 settings 转成 adapter 需要的 <code>AIClientConfig</code>。</li>
+        <li><strong>调用层：</strong>把配置 URL、配置对象和长期复用的 client 传给 <code>check_provider_health()</code>。</li>
+        <li><strong>翻译层：</strong>成功返回响应模型，失败抛出 HTTP 503。</li>
+      </ul>
+      <p>endpoint 没有直接写 <code>await provider_http_client.get(...)</code>，这是有意的。外部 HTTP 细节已经属于 adapter 的职责；endpoint 负责 HTTP API 契约。</p>
+    </section>
+
+    <section>
+      <h2>8. 代码精读四：测试不用访问真实 provider</h2>
+      <pre><code>def test_provider_health_endpoint_uses_dependency_injected_client() -&gt; None:
+    def handler(request: httpx.Request) -&gt; httpx.Response:
+        return httpx.Response(200)
+
+    replacement_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        trust_env=False,
+    )
+    app.dependency_overrides[get_provider_http_client] = lambda: replacement_client
+
+    try:
+        with TestClient(app) as client:
+            response = client.get("/provider/health")
+    finally:
+        app.dependency_overrides.clear()
+        asyncio.run(replacement_client.aclose())</code></pre>
+      <p>这段测试同时使用了两个技术点：</p>
+      <ul>
+        <li><code>MockTransport</code>：让 HTTPX 请求不出网，而是交给测试里的 handler 返回假响应。</li>
+        <li><code>dependency_overrides</code>：让 endpoint 使用测试 client，而不是 lifespan 创建的真实 client。</li>
+      </ul>
+      <p>这就是前几节铺垫的价值。因为 route 依赖的是 <code>get_provider_http_client()</code>，所以测试可以替换它；因为 adapter 接收外部传入的 client，所以它不会强行创建真实网络连接。</p>
+    </section>
+
+    <section>
+      <h2>9. 错误路径：provider 503 怎么变成我们自己的 503</h2>
+      <pre><code>def test_provider_health_endpoint_maps_provider_errors_to_503() -&gt; None:
+    def handler(request: httpx.Request) -&gt; httpx.Response:
+        return httpx.Response(503)
+
+    replacement_client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        trust_env=False,
+    )
+    app.dependency_overrides[get_provider_http_client] = lambda: replacement_client
+
+    try:
+        with TestClient(app) as client:
+            response = client.get("/provider/health")
+    finally:
+        app.dependency_overrides.clear()
+        asyncio.run(replacement_client.aclose())
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": {
+            "error_code": "ai_provider_http_error",
+            "message": "The AI provider returned HTTP 503.",
+        }
+    }</code></pre>
+      <p>这里 provider 返回 503，HTTPX 的 <code>raise_for_status()</code> 会触发状态码异常，adapter 把它转换成 <code>AIClientError</code>，endpoint 再转换成 FastAPI 的 <code>HTTPException</code>。</p>
+      <p>为什么我们自己的 API 也返回 503？因为从客户端视角看，这个服务当前依赖的上游不可用。MDN 对 503 的定义就是服务暂时无法处理请求。对于 AI provider 暂时不可用、超时、维护等场景，503 比 500 更能表达“依赖服务不可用”的语义。</p>
+    </section>
+
+    <section class="practice">
+      <h2>10. 课堂实验</h2>
+      <p>先运行系统测试：</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests/test_system_api.py -q</code></pre>
+      <p>预期看到：</p>
+      <pre><code>6 passed</code></pre>
+      <p>再启动服务：</p>
+      <pre><code>fastapi dev first_api/main.py</code></pre>
+      <p>访问：</p>
+      <pre><code>http://127.0.0.1:8000/provider/health</code></pre>
+      <p>默认配置下，教学项目会请求 <code>https://example.com</code>，通常会返回类似：</p>
+      <pre><code>{
+  "ok": true,
+  "provider": "demo",
+  "status_code": 200,
+  "message": "The AI provider responded successfully."
+}</code></pre>
+      <p>如果你把 <code>FIRST_API_AI_PROVIDER_HEALTH_URL</code> 改成一个不可访问地址，再重启服务，就可以观察 503 错误契约。</p>
+    </section>
+
+    <section>
+      <h2>11. 常见错误与诊断</h2>
+      <div class="two-col">
+        <div class="callout">
+          <h3>错误一：把 provider URL 做成用户参数</h3>
+          <p>这会让服务器代替用户请求任意地址，真实项目中可能引入 SSRF 风险。优先使用服务端配置。</p>
+        </div>
+        <div class="callout">
+          <h3>错误二：endpoint 里直接写外部 HTTP 细节</h3>
+          <p>这样会让路由变胖。更清楚的方式是 adapter 负责外部调用，endpoint 负责 API 契约转换。</p>
+        </div>
+        <div class="callout">
+          <h3>错误三：测试真的访问外网</h3>
+          <p>外网测试慢且不稳定。用 <code>MockTransport</code> 模拟 provider 响应更适合单元和接口测试。</p>
+        </div>
+        <div class="callout">
+          <h3>错误四：失败时返回杂乱异常</h3>
+          <p>客户端需要稳定错误码和消息。把内部异常转换成固定 JSON 契约，前端和调用方才好处理。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>12. 面试视角：怎样解释 provider health endpoint</h2>
+      <blockquote>
+        <p>我会把 provider health endpoint 设计成一个 API 边界层。provider URL 来自服务端配置，避免让用户控制请求目标；HTTP client 由 lifespan 创建并通过 Depends 注入；外部调用放在 adapter 中；endpoint 只负责把成功结果转换成响应模型，把 provider 超时、HTTP 错误或连接错误转换成稳定的 503 JSON。测试时用 dependency_overrides 和 MockTransport 替换真实网络。</p>
+      </blockquote>
+    </section>
+
+    <section class="checkpoint">
+      <h2>13. 小测：先回忆，再展开</h2>
+      <details>
+        <summary>1. 为什么 <code>/provider/health</code> 不接收用户传入的 URL？</summary>
+        <p class="answer">因为让服务器请求用户指定的任意地址可能引入 SSRF 风险。health URL 更适合来自服务端配置。</p>
+      </details>
+      <details>
+        <summary>2. 本节 endpoint 为什么要捕获 <code>AIClientError</code>？</summary>
+        <p class="answer">因为 <code>AIClientError</code> 是内部服务层错误，endpoint 需要把它翻译成客户端能理解的 HTTP 状态码和 JSON 错误契约。</p>
+      </details>
+      <details>
+        <summary>3. <code>MockTransport</code> 在测试中解决了什么问题？</summary>
+        <p class="answer">它让 HTTPX 请求不访问真实网络，而是由测试代码返回预设响应，从而让测试快速、稳定、可重复。</p>
+      </details>
+      <details>
+        <summary>4. 为什么 provider 不可用时返回 503，而不是随便返回 500？</summary>
+        <p class="answer">503 更准确表示服务暂时无法处理请求，适合上游 provider 不可用、超时或维护这类依赖失败场景。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>14. 本节总结</h2>
+      <p>本节把第 33 到第 35 课的铺垫连成了一条真实链路：配置提供 provider URL，lifespan 提供长期 HTTP client，Depends 把 client 注入 endpoint，adapter 负责外部 HTTP 调用，endpoint 负责把内部结果和错误翻译成稳定 API 契约。</p>
+      <p>下一课建议学习：为真实 provider 调用设计请求 payload 和响应 schema。也就是从 health check 走向“真正把文本发给 provider，再把 provider 结果转换成自己的 <code>PredictionResponse</code>”。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/handling-errors/">FastAPI Handling Errors</a>、<a href="https://fastapi.tiangolo.com/advanced/testing-dependencies/">FastAPI Testing Dependencies with Overrides</a>、<a href="https://www.python-httpx.org/advanced/transports/">HTTPX Mock Transports</a>、<a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/503">MDN 503 Service Unavailable</a>。</p>
+      <p class="small">如果这里有点抽象，可以问我：“adapter 抛 AIClientError，endpoint 再抛 HTTPException，这两层为什么不能合并？”这正是后端分层设计的关键问题。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0035-app-state-dependency-bridge.html">上一课：app.state 依赖桥</a>
+        <a href="./0037-provider-prediction-adapter.html">下一课：Provider Prediction Adapter</a>
+        <a href="../reference/0036-provider-health-endpoint-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

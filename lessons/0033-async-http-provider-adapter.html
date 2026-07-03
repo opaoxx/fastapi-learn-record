@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0033 - Async HTTP Provider Adapter</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0033</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0032-fastapi-async-basics.html">上一课</a>
+        <a href="./0034-lifespan-http-client.html">下一课</a>
+        <a href="../reference/0033-async-http-provider-adapter-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0033</p>
+      <h1>异步 HTTP Provider Adapter：把外部失败翻译成内部错误</h1>
+      <p class="lead">第 31 课设计了 AI provider 边界，第 32 课讲了 async 等待。本节把两条线接起来：用 <code>httpx.AsyncClient</code> 写一个 timeout-aware provider 健康检查，并用 <code>MockTransport</code> 测试成功、超时和 503。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解异步 HTTP client 在 AI provider adapter 中的位置。</li>
+        <li>掌握 <code>httpx.AsyncClient</code>、timeout、HTTP status error、request error 的基本关系。</li>
+        <li>学会把外部 provider 的异常映射成项目内部 <code>AIClientError</code>。</li>
+        <li>理解为什么测试外部 HTTP 依赖时应该用 mock transport，而不是访问真实网络。</li>
+        <li>能解释 provider adapter 的职责边界：HTTP 细节留在服务层，router 只看稳定内部结果。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 背景：真实 AI provider 本质上是外部 HTTP 依赖</h2>
+      <p>大多数在线 AI provider 都通过 HTTP API 调用。你发送 JSON，请求模型推理，然后等待响应。这个过程有很多不稳定点：</p>
+      <ul>
+        <li>连接不上。</li>
+        <li>连接成功但读取超时。</li>
+        <li>provider 返回 429、500、503。</li>
+        <li>响应不是你预期的 JSON。</li>
+        <li>服务变慢，但你的用户还在等待。</li>
+      </ul>
+      <p>如果这些细节直接出现在 router 里，API 层会被 provider 污染。更好的做法是：把 HTTP provider 调用封装成 adapter，让 adapter 把外部世界翻译成内部世界。</p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 核心概念：provider adapter 是错误翻译器</h2>
+      <p>外部 provider 的失败语言可能是：</p>
+      <pre><code>httpx.ReadTimeout
+httpx.ConnectError
+httpx.HTTPStatusError: 503 Service Unavailable</code></pre>
+      <p>项目内部不应该到处认识这些异常。项目内部应该看到稳定错误：</p>
+      <pre><code>AIClientError(
+    error_code="ai_provider_timeout",
+    message="The AI provider health check timed out.",
+)</code></pre>
+      <p>这就是 adapter 的价值：它不只负责“发 HTTP 请求”，还负责把外部异常翻译成项目自己的错误契约。</p>
+    </section>
+
+    <section>
+      <h2>3. 官方资料里的关键点</h2>
+      <p>HTTPX 官方文档说明：如果你在 async web framework 中发送外部 HTTP 请求，通常也应该使用 async client。这样请求等待网络时可以配合事件循环，而不是阻塞当前执行。</p>
+      <p>HTTPX timeout 文档说明，它默认会在网络非活动超过一定时间后抛出 timeout 异常；你也可以显式配置 timeout。对于 AI provider，这个配置是必要的工程边界。</p>
+      <p>HTTPX exceptions 文档列出了异常层级：timeout 属于 timeout exception，HTTP 状态码错误通常通过 <code>raise_for_status()</code> 变成 <code>HTTPStatusError</code>，连接或请求层错误属于 <code>RequestError</code> 系列。</p>
+      <p>FastAPI async 文档则给了我们运行环境背景：async 路径操作适合等待型 I/O，而外部 HTTP 请求正是典型等待型 I/O。</p>
+    </section>
+
+    <section>
+      <h2>4. 本节项目改动概览</h2>
+      <ul>
+        <li>新增直接依赖 <code>httpx</code>。</li>
+        <li>新增 <code>services/provider_http.py</code>。</li>
+        <li>新增 <code>ProviderHealthResult</code>，把 provider 健康检查结果转成内部数据。</li>
+        <li>新增 <code>check_provider_health()</code>，使用 <code>httpx.AsyncClient</code> 发起异步 HTTP 请求。</li>
+        <li>把 timeout、HTTP status error、request error 映射成 <code>AIClientError</code>。</li>
+        <li>新增 <code>tests/test_provider_http.py</code>，用 <code>httpx.MockTransport</code> 测试成功、超时和 503。</li>
+      </ul>
+      <p>这里仍然没有访问真实 provider。我们先把 adapter 形状和失败映射练熟。</p>
+    </section>
+
+    <section>
+      <h2>5. 代码精读一：内部结果模型</h2>
+      <pre><code>@dataclass(frozen=True)
+class ProviderHealthResult:
+    ok: bool
+    provider: str
+    status_code: int
+    message: str</code></pre>
+      <p>这不是 provider 原始响应，而是项目自己的内部结果。它回答四个问题：</p>
+      <ul>
+        <li><code>ok</code>：健康检查是否成功。</li>
+        <li><code>provider</code>：哪个 provider。</li>
+        <li><code>status_code</code>：外部 HTTP 状态码。</li>
+        <li><code>message</code>：给内部日志或调试看的稳定说明。</li>
+      </ul>
+      <p>真实业务里，这个结果可以继续被 router 转成 API 响应，也可以只用于内部监控。</p>
+    </section>
+
+    <section>
+      <h2>6. 代码精读二：AsyncClient 生命周期</h2>
+      <pre><code>async def check_provider_health(
+    url: str,
+    config: AIClientConfig,
+    client: httpx.AsyncClient | None = None,
+) -&gt; ProviderHealthResult:
+    owns_client = client is None
+    active_client = client or httpx.AsyncClient(timeout=config.timeout_seconds)</code></pre>
+      <p>这个函数允许传入 client，也允许自己创建 client。原因是：</p>
+      <ul>
+        <li>生产代码可以暂时让函数自己创建 client。</li>
+        <li>测试代码可以传入带 <code>MockTransport</code> 的 client。</li>
+        <li>未来真实项目可以在 lifespan 里创建长期复用的 client。</li>
+      </ul>
+      <p><code>owns_client</code> 的意思是：如果函数自己创建 client，它也负责关闭；如果外部传入 client，函数不应该擅自关闭别人的资源。</p>
+    </section>
+
+    <section>
+      <h2>7. 代码精读三：await 外部 HTTP 请求</h2>
+      <pre><code>try:
+    response = await active_client.get(url)
+    response.raise_for_status()</code></pre>
+      <p><code>await active_client.get(url)</code> 是本节和上一节 async 基础连接最紧的地方。网络请求在等待 provider 响应时，协程可以让出执行权，让事件循环处理其他任务。</p>
+      <p><code>response.raise_for_status()</code> 会把 4xx 或 5xx 响应变成 <code>httpx.HTTPStatusError</code>。这一步很关键：否则 503 也只是一个普通 response，很容易被误当作成功流程继续处理。</p>
+    </section>
+
+    <section>
+      <h2>8. 代码精读四：异常映射</h2>
+      <pre><code>except httpx.TimeoutException as exc:
+    raise AIClientError(
+        message="The AI provider health check timed out.",
+        error_code="ai_provider_timeout",
+    ) from exc
+except httpx.HTTPStatusError as exc:
+    raise AIClientError(
+        message=f"The AI provider returned HTTP {exc.response.status_code}.",
+        error_code="ai_provider_http_error",
+    ) from exc
+except httpx.RequestError as exc:
+    raise AIClientError(
+        message="The AI provider could not be reached.",
+        error_code="ai_provider_request_error",
+    ) from exc</code></pre>
+      <p>这个顺序很重要：</p>
+      <ul>
+        <li>timeout 单独映射，因为它通常意味着 provider 过慢或网络卡住。</li>
+        <li>HTTP status error 单独映射，因为 provider 已经响应了，但状态码表示失败。</li>
+        <li>request error 兜底连接、DNS、协议等请求层问题。</li>
+      </ul>
+      <p><code>from exc</code> 保留了异常链。对外返回稳定错误，对内调试时仍能看到原始异常。</p>
+    </section>
+
+    <section>
+      <h2>9. 代码精读五：资源关闭</h2>
+      <pre><code>finally:
+    if owns_client:
+        await active_client.aclose()</code></pre>
+      <p>异步 HTTP client 持有连接池等资源。自己创建的 client 要关闭，否则长期运行的应用可能泄漏连接资源。</p>
+      <p>但如果 client 是调用方传入的，函数不关闭它。这个规则非常重要：谁创建，谁负责生命周期。</p>
+    </section>
+
+    <section>
+      <h2>10. 测试精读一：MockTransport 模拟成功响应</h2>
+      <pre><code>def handler(request: httpx.Request) -&gt; httpx.Response:
+    return httpx.Response(status_code=200, json={"status": "ok"}, request=request)
+
+transport = httpx.MockTransport(handler)
+client = httpx.AsyncClient(transport=transport)</code></pre>
+      <p><code>MockTransport</code> 让我们不用真实联网，也能测试 HTTP client 行为。handler 收到请求，直接返回一个模拟响应。</p>
+      <p>这比访问真实 provider 更适合自动化测试，因为它快、稳定、免费，而且可以精准制造边界条件。</p>
+    </section>
+
+    <section>
+      <h2>11. 测试精读二：模拟 timeout</h2>
+      <pre><code>def handler(request: httpx.Request) -&gt; httpx.Response:
+    raise httpx.ReadTimeout("Read timed out.", request=request)</code></pre>
+      <p>我们直接抛出 <code>ReadTimeout</code>，模拟 provider 长时间不返回数据。测试的重点不是 HTTPX 本身会不会 timeout，而是我们的 adapter 会不会把 timeout 翻译成：</p>
+      <pre><code>error_code == "ai_provider_timeout"</code></pre>
+      <p>这才是项目调用方真正依赖的内部错误契约。</p>
+    </section>
+
+    <section>
+      <h2>12. 测试精读三：模拟 503</h2>
+      <pre><code>def handler(request: httpx.Request) -&gt; httpx.Response:
+    return httpx.Response(status_code=503, request=request)</code></pre>
+      <p>503 是 provider 已经响应，但告诉我们服务暂时不可用。adapter 调用 <code>raise_for_status()</code> 后，会把它映射成：</p>
+      <pre><code>error_code == "ai_provider_http_error"
+message == "The AI provider returned HTTP 503."</code></pre>
+      <p>这让同步预测接口、后台任务、监控或未来前端都不用理解 HTTPX 的异常层级。</p>
+    </section>
+
+    <section class="practice">
+      <h2>13. 课堂实验</h2>
+      <p>运行本节测试：</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q</code></pre>
+      <p>你应该看到：</p>
+      <pre><code>3 passed</code></pre>
+      <p>然后尝试阅读三个测试的 handler：一个返回 200，一个抛 timeout，一个返回 503。它们分别对应真实 provider 的三种常见状态。</p>
+    </section>
+
+    <section>
+      <h2>14. 常见错误与诊断</h2>
+      <div class="two-col">
+        <div class="callout">
+          <h3>错误一：自动化测试访问真实 provider</h3>
+          <p>测试会慢、贵、不稳定，还可能受限流影响。用 mock transport 更合适。</p>
+        </div>
+        <div class="callout">
+          <h3>错误二：忘记 raise_for_status</h3>
+          <p>503 会被当成普通 response，错误路径可能无法触发。</p>
+        </div>
+        <div class="callout">
+          <h3>错误三：吞掉原始异常</h3>
+          <p>对外要稳定错误，对内要保留异常链，使用 <code>raise ... from exc</code>。</p>
+        </div>
+        <div class="callout">
+          <h3>错误四：乱关外部传入的 client</h3>
+          <p>谁创建资源，谁关闭资源。函数不应该关闭不属于自己的 client。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>15. 面试视角：如何回答“外部 AI HTTP 调用怎么测试？”</h2>
+      <blockquote>
+        <p>我会把外部 AI HTTP 调用封装到 provider adapter 中，使用 async HTTP client 和 timeout。adapter 负责把 timeout、HTTPStatusError、RequestError 等外部异常映射成项目内部稳定错误。测试时不会访问真实 provider，而是使用 mock transport 模拟 200、timeout、503 等情况，验证 adapter 的成功解析和错误映射。</p>
+      </blockquote>
+    </section>
+
+    <section class="checkpoint">
+      <h2>16. 小测：先回忆，再展开</h2>
+      <details>
+        <summary>1. 为什么 provider adapter 不应该把 HTTPX 异常直接漏给 router？</summary>
+        <p class="answer">因为 router 应该依赖项目内部错误契约，而不是外部库和 provider 细节。</p>
+      </details>
+      <details>
+        <summary>2. <code>raise_for_status()</code> 在本节解决什么问题？</summary>
+        <p class="answer">它把 4xx/5xx 响应变成异常，让错误路径被明确处理。</p>
+      </details>
+      <details>
+        <summary>3. 为什么测试用 <code>MockTransport</code>，不直接访问真实 URL？</summary>
+        <p class="answer">因为 mock 测试更快、更稳定、免费，还能精确制造失败场景。</p>
+      </details>
+      <details>
+        <summary>4. <code>owns_client</code> 这个布尔值表达什么生命周期原则？</summary>
+        <p class="answer">谁创建资源，谁负责关闭；外部传入的 client 不由函数关闭。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>17. 本节总结</h2>
+      <p>本节把 async 和 AI provider 边界合到一起：外部 provider 是等待型 HTTP 依赖，适合使用异步 client；adapter 负责 timeout、状态码、请求异常和内部错误映射；测试用 mock transport 稳定复现外部世界的成功与失败。</p>
+      <p>下一课建议学习：把 provider adapter 接进真实业务路径。我们可以继续设计一个 async 预测端点，或者先讲 FastAPI lifespan 如何管理长期复用的 <code>AsyncClient</code>。</p>
+      <p>推荐主资源：<a href="https://www.python-httpx.org/async/">HTTPX Async Support</a>、<a href="https://www.python-httpx.org/advanced/timeouts/">HTTPX Timeouts</a>、<a href="https://www.python-httpx.org/exceptions/">HTTPX Exceptions</a>、<a href="https://fastapi.tiangolo.com/async/">FastAPI Concurrency and async / await</a>。</p>
+      <p class="small">如果你对 client 生命周期还有点晕，可以问我：“为什么 AsyncClient 不应该每次都随便创建和泄漏？”这会是接真实 provider 前很重要的一步。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0032-fastapi-async-basics.html">上一课：FastAPI async 基础</a>
+        <a href="./0034-lifespan-http-client.html">下一课：Lifespan HTTP Client</a>
+        <a href="../reference/0033-async-http-provider-adapter-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lifespan HTTP Client Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0034</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0034-lifespan-http-client.html">回到第 34 课</a>
+        <a href="./0033-async-http-provider-adapter-cheatsheet.html">上一张速查</a>
+        <a href="./0035-app-state-dependency-bridge-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0034</p>
+      <h1>Lifespan HTTP Client 速查</h1>
+      <p class="lead">应用启动时创建长期资源，应用关闭时清理资源。</p>
+    </header>
+
+    <h2>核心心智模型</h2>
+    <pre><code>lifespan startup
+  -> create AsyncClient
+  -> store in app.state
+  -> serve requests
+lifespan shutdown
+  -> await client.aclose()</code></pre>
+
+    <h2>基本写法</h2>
+    <pre><code>@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.provider_http_client = httpx.AsyncClient(
+        timeout=10.0,
+        trust_env=False,
+    )
+    try:
+        yield
+    finally:
+        await app.state.provider_http_client.aclose()</code></pre>
+
+    <h2>观察端点</h2>
+    <pre><code>GET /provider/http-client
+
+{
+  "provider": "demo",
+  "timeout_seconds": 10.0,
+  "client_ready": true
+}</code></pre>
+
+    <h2>适合放进 app.state</h2>
+    <ul>
+      <li>HTTP client</li>
+      <li>数据库连接池</li>
+      <li>缓存客户端</li>
+      <li>模型加载结果</li>
+      <li>消息队列连接</li>
+    </ul>
+
+    <h2>常见坑</h2>
+    <ul>
+      <li>每个请求都新建 AsyncClient。</li>
+      <li>创建 client 后忘记关闭。</li>
+      <li>把请求级数据放进 <code>app.state</code>。</li>
+      <li>忽略环境代理对 HTTPX 的影响。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/advanced/events/">FastAPI Lifespan Events</a>、
+      <a href="https://www.python-httpx.org/advanced/clients/">HTTPX Clients</a>、
+      <a href="https://starlette.dev/applications/">Starlette app.state</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0034-lifespan-http-client.html">回到第 34 课</a>
+        <a href="./0033-async-http-provider-adapter-cheatsheet.html">上一张速查</a>
+        <a href="./0035-app-state-dependency-bridge-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

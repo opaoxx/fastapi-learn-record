@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FastAPI Async Basics Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0032</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0032-fastapi-async-basics.html">回到第 32 课</a>
+        <a href="./0031-real-ai-provider-boundary-cheatsheet.html">上一张速查</a>
+        <a href="./0033-async-http-provider-adapter-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0032</p>
+      <h1>FastAPI async 基础速查</h1>
+      <p class="lead">async 提升等待型 I/O 的并发效率，不会让 CPU 计算自动变快。</p>
+    </header>
+
+    <h2>核心心智模型</h2>
+    <pre><code>async def = 创建可暂停的协程函数
+await = 等待并让出执行权
+event loop = 调度可运行的任务
+blocking call = 占住线程，不能让出</code></pre>
+
+    <h2>教学端点</h2>
+    <pre><code>GET /async/wait?delay=0.2
+
+{
+  "status": "ok",
+  "delay_seconds": 0.2,
+  "message": "The endpoint awaited without doing CPU work."
+}</code></pre>
+
+    <h2>基本写法</h2>
+    <pre><code>@router.get("/async/wait")
+async def async_wait(delay: Annotated[float, Query(ge=0, le=1)] = 0.05):
+    await asyncio.sleep(delay)
+    return {"status": "ok"}</code></pre>
+
+    <h2>选择规则</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>场景</th>
+          <th>建议</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>可 await 的 HTTP / DB / I/O</td>
+          <td><code>async def</code></td>
+        </tr>
+        <tr>
+          <td>同步库和同步数据库</td>
+          <td>普通 <code>def</code> 通常更清楚</td>
+        </tr>
+        <tr>
+          <td>CPU 密集计算</td>
+          <td>线程、进程、队列或专门服务</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>常见坑</h2>
+    <ul>
+      <li>以为 async 会让 CPU 计算变快。</li>
+      <li>在 <code>async def</code> 里调用 <code>time.sleep</code>。</li>
+      <li>忘记 <code>await</code>，拿到协程对象。</li>
+      <li>把同步 SQLModel 代码直接改成 async。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/async/">FastAPI async / await</a>、
+      <a href="https://docs.python.org/3/library/asyncio-task.html">Python asyncio Tasks</a>、
+      <a href="https://docs.python.org/3/howto/a-conceptual-overview-of-asyncio.html">Python asyncio Conceptual Overview</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0032-fastapi-async-basics.html">回到第 32 课</a>
+        <a href="./0031-real-ai-provider-boundary-cheatsheet.html">上一张速查</a>
+        <a href="./0033-async-http-provider-adapter-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

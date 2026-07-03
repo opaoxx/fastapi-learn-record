@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Provider Prediction Adapter Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0037</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0037-provider-prediction-adapter.html">回到第 37 课</a>
+        <a href="./0036-provider-health-endpoint-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0037</p>
+      <h1>Provider Prediction Adapter 速查</h1>
+      <p class="lead">把本地预测输入转换成 provider JSON，再把 provider JSON 校验并转换成内部 <code>PredictionResult</code>。</p>
+    </header>
+
+    <h2>核心链路</h2>
+    <pre><code>text + mode
+  -&gt; ProviderPredictionPayload
+  -&gt; await client.post(url, json=...)
+  -&gt; response.raise_for_status()
+  -&gt; ProviderPredictionBody.model_validate(response.json())
+  -&gt; PredictionResult</code></pre>
+
+    <h2>请求模型</h2>
+    <pre><code>class ProviderPredictionPayload(BaseModel):
+    text: str
+    mode: str</code></pre>
+
+    <h2>响应校验模型</h2>
+    <pre><code>class ProviderPredictionBody(BaseModel):
+    label: PredictionLabel
+    score: float = Field(ge=0, le=1)</code></pre>
+
+    <h2>成功返回</h2>
+    <pre><code>return PredictionResult(
+    label=body.label,
+    score=round(body.score, 2),
+    source=f"{config.provider}-provider",
+)</code></pre>
+
+    <h2>错误映射</h2>
+    <ul>
+      <li><code>TimeoutException</code> -&gt; <code>ai_provider_timeout</code></li>
+      <li><code>HTTPStatusError</code> -&gt; <code>ai_provider_http_error</code></li>
+      <li><code>RequestError</code> -&gt; <code>ai_provider_request_error</code></li>
+      <li><code>ValueError</code> / <code>ValidationError</code> -&gt; <code>ai_provider_invalid_response</code></li>
+    </ul>
+
+    <h2>测试重点</h2>
+    <ul>
+      <li>检查发送给 provider 的 JSON 字段是否正确。</li>
+      <li>检查 provider 成功响应是否映射为 <code>PredictionResult</code>。</li>
+      <li>检查 provider HTTP 503 是否映射为稳定错误。</li>
+      <li>检查 provider 返回非法 JSON 是否映射为稳定错误。</li>
+    </ul>
+
+    <h2>常见坑</h2>
+    <ul>
+      <li>把 provider 原始 JSON 直接返回给前端。</li>
+      <li>只检查 HTTP 200，不校验业务字段。</li>
+      <li>在 adapter 里吞掉 provider 错误。</li>
+      <li>测试只覆盖成功路径。</li>
+    </ul>
+
+    <h2>面试短答</h2>
+    <blockquote>
+      <p>Provider prediction adapter 负责把本项目输入转换成 provider 请求 JSON，并把 provider 响应 JSON 校验后转换成内部 PredictionResult。它屏蔽 provider 字段形状和 HTTPX 异常，上层只依赖稳定结果和 AIClientError。</p>
+    </blockquote>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/body/">FastAPI Request Body</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/response-model/">FastAPI Response Model</a>、
+      <a href="https://pydantic.dev/docs/validation/latest/concepts/models/">Pydantic Models</a>、
+      <a href="https://www.python-httpx.org/quickstart/">HTTPX QuickStart</a>、
+      <a href="https://www.python-httpx.org/exceptions/">HTTPX Exceptions</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0037-provider-prediction-adapter.html">回到第 37 课</a>
+        <a href="./0036-provider-health-endpoint-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

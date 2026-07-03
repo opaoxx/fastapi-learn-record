@@ -9,6 +9,25 @@ class HealthResponse(BaseModel):
     service: str
 
 
+class AsyncWaitResponse(BaseModel):
+    status: Literal["ok"]
+    delay_seconds: float
+    message: str
+
+
+class ProviderHttpClientStateResponse(BaseModel):
+    provider: str
+    timeout_seconds: float
+    client_ready: bool
+
+
+class ProviderHealthResponse(BaseModel):
+    ok: bool
+    provider: str
+    status_code: int
+    message: str
+
+
 class PublicConfigResponse(BaseModel):
     app_name: str
     environment: str

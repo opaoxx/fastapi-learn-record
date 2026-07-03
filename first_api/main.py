@@ -2,19 +2,31 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .database import create_db_and_tables
 from .routers import files, items, predictions, system, tasks
+from .services.ai_clients import build_ai_client_config
 from .settings import get_settings
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     create_db_and_tables()
-    yield
+    ai_client_config = build_ai_client_config()
+    app.state.provider_http_client = httpx.AsyncClient(
+        timeout=ai_client_config.timeout_seconds,
+        trust_env=False,
+    )
+    app.state.provider_http_client_provider = ai_client_config.provider
+    app.state.provider_http_client_timeout_seconds = ai_client_config.timeout_seconds
+    try:
+        yield
+    finally:
+        await app.state.provider_http_client.aclose()
 
 
 settings = get_settings()

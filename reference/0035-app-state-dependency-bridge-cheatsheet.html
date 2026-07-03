@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>App State Dependency Bridge Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0035</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0035-app-state-dependency-bridge.html">回到第 35 课</a>
+        <a href="./0034-lifespan-http-client-cheatsheet.html">上一张速查</a>
+        <a href="./0036-provider-health-endpoint-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0035</p>
+      <h1>app.state 依赖桥速查</h1>
+      <p class="lead">lifespan 负责资源生命周期，app.state 保存应用级资源，Depends 把资源交给路由使用。</p>
+    </header>
+
+    <h2>核心心智模型</h2>
+    <pre><code>lifespan owns the resource
+app.state stores the resource
+dependency exposes the resource
+endpoint uses the resource</code></pre>
+
+    <h2>标准写法</h2>
+    <pre><code>def get_provider_http_client(request: Request) -&gt; httpx.AsyncClient:
+    return request.app.state.provider_http_client
+
+
+def endpoint(
+    provider_http_client: Annotated[
+        httpx.AsyncClient,
+        Depends(get_provider_http_client),
+    ],
+):
+    ...</code></pre>
+
+    <h2>职责分工</h2>
+    <ul>
+      <li><code>lifespan</code>：创建和关闭长期资源。</li>
+      <li><code>app.state</code>：保存跨请求复用的应用级资源。</li>
+      <li><code>Depends</code>：把资源作为参数提供给 endpoint。</li>
+      <li><code>endpoint</code>：使用资源处理 HTTP 请求，不负责资源生命周期。</li>
+    </ul>
+
+    <h2>测试覆盖写法</h2>
+    <pre><code>replacement_client = httpx.AsyncClient(timeout=0.1, trust_env=False)
+app.dependency_overrides[get_provider_http_client] = lambda: replacement_client
+
+try:
+    with TestClient(app) as client:
+        response = client.get("/provider/http-client")
+finally:
+    app.dependency_overrides.clear()</code></pre>
+
+    <h2>常见坑</h2>
+    <ul>
+      <li>把 <code>request.app.state.xxx</code> 散落在很多路由里。</li>
+      <li>在依赖函数里每次请求都新建长期 client。</li>
+      <li>测试后忘记清理 <code>app.dependency_overrides</code>。</li>
+      <li>把用户级、请求级数据保存到 <code>app.state</code>。</li>
+    </ul>
+
+    <h2>面试短答</h2>
+    <blockquote>
+      <p>lifespan 管理长期资源生命周期，app.state 保存应用级资源，依赖函数把资源暴露给路由。这样路由不依赖资源存储细节，测试也能用 dependency_overrides 替换资源。</p>
+    </blockquote>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/dependencies/">FastAPI Dependencies</a>、
+      <a href="https://fastapi.tiangolo.com/advanced/testing-dependencies/">FastAPI Testing Dependencies</a>、
+      <a href="https://fastapi.tiangolo.com/advanced/events/">FastAPI Lifespan Events</a>、
+      <a href="https://starlette.dev/applications/">Starlette Applications</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0035-app-state-dependency-bridge.html">回到第 35 课</a>
+        <a href="./0034-lifespan-http-client-cheatsheet.html">上一张速查</a>
+        <a href="./0036-provider-health-endpoint-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

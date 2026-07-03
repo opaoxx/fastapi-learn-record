@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Async HTTP Provider Adapter Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0033</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0033-async-http-provider-adapter.html">回到第 33 课</a>
+        <a href="./0032-fastapi-async-basics-cheatsheet.html">上一张速查</a>
+        <a href="./0034-lifespan-http-client-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0033</p>
+      <h1>异步 HTTP Provider Adapter 速查</h1>
+      <p class="lead">外部 HTTP 细节留在 adapter，项目内部只看稳定结果和稳定错误。</p>
+    </header>
+
+    <h2>核心心智模型</h2>
+    <pre><code>httpx.AsyncClient
+  -> provider HTTP response / exception
+  -> provider adapter
+  -> ProviderHealthResult or AIClientError</code></pre>
+
+    <h2>成功路径</h2>
+    <pre><code>response = await active_client.get(url)
+response.raise_for_status()
+
+return ProviderHealthResult(
+    ok=True,
+    provider=config.provider,
+    status_code=response.status_code,
+    message="The AI provider responded successfully.",
+)</code></pre>
+
+    <h2>错误映射</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>外部异常</th>
+          <th>内部错误码</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>httpx.TimeoutException</code></td>
+          <td><code>ai_provider_timeout</code></td>
+        </tr>
+        <tr>
+          <td><code>httpx.HTTPStatusError</code></td>
+          <td><code>ai_provider_http_error</code></td>
+        </tr>
+        <tr>
+          <td><code>httpx.RequestError</code></td>
+          <td><code>ai_provider_request_error</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>MockTransport</h2>
+    <pre><code>def handler(request: httpx.Request) -&gt; httpx.Response:
+    return httpx.Response(status_code=200, json={"status": "ok"}, request=request)
+
+transport = httpx.MockTransport(handler)
+client = httpx.AsyncClient(transport=transport)</code></pre>
+
+    <h2>常见坑</h2>
+    <ul>
+      <li>测试访问真实 provider。</li>
+      <li>忘记 <code>raise_for_status()</code>。</li>
+      <li>对外暴露 HTTPX 原始异常。</li>
+      <li>关闭不属于自己的 client。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://www.python-httpx.org/async/">HTTPX Async Support</a>、
+      <a href="https://www.python-httpx.org/advanced/timeouts/">HTTPX Timeouts</a>、
+      <a href="https://www.python-httpx.org/exceptions/">HTTPX Exceptions</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0033-async-http-provider-adapter.html">回到第 33 课</a>
+        <a href="./0032-fastapi-async-basics-cheatsheet.html">上一张速查</a>
+        <a href="./0034-lifespan-http-client-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

@@ -2,7 +2,7 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from ..schemas import SummaryTask, SummaryTaskListResponse, TaskStatus, UploadedTextFile
-from .ai_clients import AIClientError, DemoAIClient
+from .ai_clients import AIClient, AIClientError
 
 
 def create_summary_task(
@@ -59,7 +59,7 @@ def read_summary_task(session: Session, task_id: int) -> SummaryTask | None:
     return session.get(SummaryTask, task_id)
 
 
-def run_summary_task(session: Session, task_id: int, ai_client: DemoAIClient) -> None:
+def run_summary_task(session: Session, task_id: int, ai_client: AIClient) -> None:
     task = session.get(SummaryTask, task_id)
     if task is None:
         return

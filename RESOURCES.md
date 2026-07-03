@@ -6,6 +6,8 @@
   Official tutorial. Use for installation, first app setup, request models, response models, and the main learning path.
 - [FastAPI First Steps](https://fastapi.tiangolo.com/tutorial/first-steps/)
   Official first endpoint explanation. Use for the mental model of app instance, path operation decorator, and path operation function.
+- [FastAPI Concurrency and async / await](https://fastapi.tiangolo.com/async/)
+  Official explanation of async path operation functions, concurrency, parallelism, and when to use `async def`.
 - [FastAPI Path Parameters](https://fastapi.tiangolo.com/tutorial/path-params/)
   Official guide to dynamic URL segments. Use when moving from fixed routes to item-specific routes.
 - [FastAPI Query Parameters](https://fastapi.tiangolo.com/tutorial/query-params/)
@@ -62,6 +64,10 @@
   Official guide to TestClient and pytest. Use when teaching automated API tests.
 - [FastAPI Testing Dependencies with Overrides](https://fastapi.tiangolo.com/advanced/testing-dependencies/)
   Official guide to app.dependency_overrides. Use when teaching test databases, mocked services, and replacing dependencies.
+- [FastAPI Lifespan Events](https://fastapi.tiangolo.com/advanced/events/)
+  Official guide to application startup and shutdown with async context managers. Use when teaching long-lived resource lifecycle.
+- [Python typing.Protocol specification](https://typing.python.org/en/latest/spec/protocol.html)
+  Official typing specification for protocols and structural subtyping. Use when teaching replaceable service interfaces.
 - [FastAPI Settings and Environment Variables](https://fastapi.tiangolo.com/advanced/settings/)
   Official guide to Pydantic Settings in FastAPI. Use when teaching application configuration and environment variables.
 - [Pydantic Settings](https://pydantic.dev/docs/validation/latest/concepts/pydantic_settings/)
@@ -110,8 +116,26 @@
   Official Python standard-library documentation. Use when teaching small internal data result objects such as `PredictionResult`.
 - [Python typing](https://docs.python.org/3/library/typing.html)
   Official Python typing documentation. Use when teaching `Literal`, type aliases, and typed service boundaries.
+- [Python asyncio Coroutines and Tasks](https://docs.python.org/3/library/asyncio-task.html)
+  Official asyncio documentation for coroutines, tasks, cooperative scheduling, and `asyncio.sleep`.
+- [Python asyncio Conceptual Overview](https://docs.python.org/3/howto/a-conceptual-overview-of-asyncio.html)
+  Official conceptual guide to asyncio. Use when teaching event loops and non-blocking waiting.
+- [HTTPX Timeouts](https://www.python-httpx.org/advanced/timeouts/)
+  Official HTTPX guide to timeout behavior. Use when teaching external provider calls and failure boundaries.
+- [HTTPX Async Support](https://www.python-httpx.org/async/)
+  Official HTTPX guide to AsyncClient usage. Use when teaching async external HTTP provider adapters.
+- [HTTPX QuickStart](https://www.python-httpx.org/quickstart/)
+  Official HTTPX quickstart for common request methods and sending POST data. Use when teaching provider adapter request payloads.
+- [HTTPX Clients](https://www.python-httpx.org/advanced/clients/)
+  Official HTTPX guide to client instances and connection pooling. Use when teaching long-lived HTTP clients.
+- [HTTPX Exceptions](https://www.python-httpx.org/exceptions/)
+  Official HTTPX exception hierarchy. Use when teaching provider error mapping.
+- [HTTPX Transports](https://www.python-httpx.org/advanced/transports/)
+  Official HTTPX guide to transports and connection retries. Use when introducing cautious retry behavior for external dependencies.
 - [Uvicorn Documentation](https://uvicorn.dev/)
   ASGI server documentation. Use when learning what actually runs the FastAPI app locally or in production.
+- [Starlette Applications](https://starlette.dev/applications/)
+  Starlette documentation for application state. Use when teaching `app.state` in FastAPI.
 
 ## Wisdom (Communities)
 

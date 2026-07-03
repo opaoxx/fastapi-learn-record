@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from ..schemas import ErrorResponse, PredictionRequest, PredictionResponse
-from ..services.ai_clients import AIClientError, DemoAIClient, get_ai_client
+from ..services.ai_clients import AIClient, AIClientError, get_ai_client
 
 
 router = APIRouter(tags=["predictions"])
@@ -16,7 +16,7 @@ router = APIRouter(tags=["predictions"])
 )
 def predict(
     payload: PredictionRequest,
-    ai_client: Annotated[DemoAIClient, Depends(get_ai_client)],
+    ai_client: Annotated[AIClient, Depends(get_ai_client)],
 ) -> PredictionResponse:
     try:
         prediction = ai_client.predict_sentiment(payload.text, payload.mode)

@@ -15,6 +15,8 @@ Then open:
 
 - http://127.0.0.1:8000/
 - http://127.0.0.1:8000/health
+- http://127.0.0.1:8000/async/wait?delay=0.2
+- http://127.0.0.1:8000/provider/http-client
 - http://127.0.0.1:8000/docs
 
 ## Why this exists
@@ -36,6 +38,7 @@ first_api/
     index.html
   services/
     ai_clients.py
+    provider_http.py
     summary_tasks.py
   routers/
     system.py
@@ -58,6 +61,12 @@ Copy-Item .env.example .env
 ```
 
 The protected write endpoints use `FIRST_API_API_KEY`, which defaults to `dev-secret-key` for local learning. Include it as an `X-API-Key` header when calling `POST`, `PATCH`, or `DELETE` item endpoints.
+
+The demo AI client is configured with:
+
+- `FIRST_API_AI_PROVIDER`, currently only `demo`
+- `FIRST_API_AI_TIMEOUT_SECONDS`, reserved for real external provider calls
+- `FIRST_API_AI_MAX_ATTEMPTS`, reserved for retry policy experiments
 
 The task endpoints under `/tasks` are also protected with `X-API-Key`. They demonstrate the AI-service pattern of accepting work with `202 Accepted`, processing it in the background, and letting clients query task status later.
 
@@ -118,9 +127,28 @@ The task-list response envelope is treated as a compatibility boundary. Tests in
 The `services/` package keeps business logic out of route handlers:
 
 - `services/summary_tasks.py` creates, reads, lists, and runs summary task records.
-- `services/ai_clients.py` contains `DemoAIClient`, a replaceable model-like client used by `/predict` and background summary tasks.
+- `services/ai_clients.py` contains the `AIClient` protocol, provider configuration, and `DemoAIClient`, a replaceable model-like client used by `/predict` and background summary tasks.
+- `services/provider_http.py` contains a small async HTTP provider adapter example that maps provider success, timeout, and HTTP errors into stable internal results or `AIClientError`.
 
 The `/predict` endpoint receives its AI client with `Depends(get_ai_client)`, so tests can replace it through `app.dependency_overrides`.
+
+## Async teaching endpoint
+
+The app includes a small async teaching endpoint:
+
+```text
+GET /async/wait?delay=0.2
+```
+
+It uses `await asyncio.sleep(delay)` to demonstrate non-blocking waiting. It is not a business endpoint; it exists to make FastAPI's `async def` behavior easy to observe.
+
+The app also creates a lifespan-managed provider HTTP client and exposes a small teaching state endpoint:
+
+```text
+GET /provider/http-client
+```
+
+It shows whether the app-level `httpx.AsyncClient` was created during startup. The client uses `trust_env=False` so local proxy environment variables do not affect the learning app.
 
 ## AI errors
 

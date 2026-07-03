@@ -1,6 +1,7 @@
 from typing import Annotated
 
-from fastapi import Query
+import httpx
+from fastapi import Query, Request
 
 from .schemas import ItemCategory
 
@@ -27,3 +28,7 @@ class Pagination:
     ) -> None:
         self.skip = skip
         self.limit = limit
+
+
+def get_provider_http_client(request: Request) -> httpx.AsyncClient:
+    return request.app.state.provider_http_client

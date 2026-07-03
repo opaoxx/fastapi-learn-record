@@ -1,8 +1,11 @@
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Protocol
+
+from ..settings import get_settings
 
 
 PredictionLabel = Literal["positive", "neutral"]
+AIProvider = Literal["demo"]
 
 
 @dataclass(frozen=True)
@@ -10,6 +13,21 @@ class PredictionResult:
     label: PredictionLabel
     score: float
     source: str
+
+
+@dataclass(frozen=True)
+class AIClientConfig:
+    provider: AIProvider = "demo"
+    timeout_seconds: float = 10.0
+    max_attempts: int = 1
+
+
+class AIClient(Protocol):
+    def predict_sentiment(self, text: str, mode: str) -> PredictionResult:
+        ...
+
+    def summarize(self, text: str) -> str:
+        ...
 
 
 class AIClientError(Exception):
@@ -27,6 +45,9 @@ class DemoAIClient:
     positive_words = {"good", "great", "love", "pleasant", "nice", "happy"}
     failure_marker = "simulate-ai-failure"
 
+    def __init__(self, config: AIClientConfig | None = None) -> None:
+        self.config = config or AIClientConfig()
+
     def predict_sentiment(self, text: str, mode: str) -> PredictionResult:
         self._raise_if_failure_requested(text)
         tokens = {word.strip(".,!?;:").lower() for word in text.split()}
@@ -37,7 +58,7 @@ class DemoAIClient:
         return PredictionResult(
             label="positive" if is_positive else "neutral",
             score=round(score, 2),
-            source="demo-ai-client",
+            source=f"{self.config.provider}-ai-client",
         )
 
     def summarize(self, text: str) -> str:
@@ -55,5 +76,14 @@ class DemoAIClient:
             )
 
 
-def get_ai_client() -> DemoAIClient:
-    return DemoAIClient()
+def build_ai_client_config() -> AIClientConfig:
+    settings = get_settings()
+    return AIClientConfig(
+        provider=settings.ai_provider,
+        timeout_seconds=settings.ai_timeout_seconds,
+        max_attempts=settings.ai_max_attempts,
+    )
+
+
+def get_ai_client() -> AIClient:
+    return DemoAIClient(config=build_ai_client_config())
