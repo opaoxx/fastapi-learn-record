@@ -6,7 +6,12 @@ from fastapi.security import APIKeyHeader
 from .settings import Settings, get_settings
 
 
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+api_key_header = APIKeyHeader(
+    name="X-API-Key",
+    scheme_name="ApiKeyAuth",
+    description="Local learning API key required by protected write, file, and task endpoints.",
+    auto_error=False,
+)
 
 
 def require_api_key(

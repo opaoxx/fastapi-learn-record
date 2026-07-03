@@ -23,3 +23,4 @@
 - The static frontend at `/app/` now has a task history section that reads `GET /tasks?limit=5&offset=0`, renders `items`, and displays `count`, `limit`, and `offset` metadata.
 - The static frontend task history now includes status filter buttons, a page-size selector, and previous/next pagination controls driven by a shared `historyState` object.
 - Lessons 0022 through 0026 have been retrofitted to the new quality standard with deeper principle-first explanations, code reading, common mistakes, experiments, and stronger quick-reference pages.
+- Lesson 0029 introduced OpenAPI as the machine-readable API contract behind `/docs`, and the project now has tests that guard the task-list OpenAPI schema and API key security scheme.

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenAPI API Contract Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0029</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0029-openapi-api-contract.html">回到第 29 课</a>
+        <a href="./0028-frontend-pagination-status-filter-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0029</p>
+      <h1>OpenAPI 契约速查</h1>
+      <p class="lead">FastAPI 从代码生成 <code>/openapi.json</code>，<code>/docs</code> 再把它渲染成交互式文档。</p>
+    </header>
+
+    <h2>核心心智模型</h2>
+    <pre><code>FastAPI code
+  -> routes + type hints + models + params + security
+  -> /openapi.json
+  -> /docs</code></pre>
+
+    <h2>常见来源</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>代码</th>
+          <th>契约含义</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>FastAPI(title=..., summary=...)</code></td>
+          <td>API 级元信息</td>
+        </tr>
+        <tr>
+          <td><code>tags=["tasks"]</code></td>
+          <td>接口分组</td>
+        </tr>
+        <tr>
+          <td><code>summary</code> / <code>description</code></td>
+          <td>路径操作说明</td>
+        </tr>
+        <tr>
+          <td><code>response_model=Model</code></td>
+          <td>成功响应 schema</td>
+        </tr>
+        <tr>
+          <td><code>Query(ge=1, le=100)</code></td>
+          <td>查询参数校验和文档</td>
+        </tr>
+        <tr>
+          <td><code>APIKeyHeader</code></td>
+          <td>header API key 安全方案</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>任务列表契约</h2>
+    <pre><code>GET /tasks?status=completed&amp;limit=5&amp;offset=0
+Header: X-API-Key
+
+200 response:
+{
+  "items": [],
+  "count": 0,
+  "limit": 5,
+  "offset": 0
+}</code></pre>
+
+    <h2>契约测试模板</h2>
+    <pre><code>schema = client.get("/openapi.json").json()
+operation = schema["paths"]["/tasks"]["get"]
+
+assert operation["responses"]["200"]["content"]["application/json"]["schema"] == {
+    "$ref": "#/components/schemas/SummaryTaskListResponse"
+}
+assert operation["security"] == [{"ApiKeyAuth": []}]</code></pre>
+
+    <h2>常见坑</h2>
+    <ul>
+      <li>只看 <code>/docs</code>，不理解 <code>/openapi.json</code> 才是机器可读契约。</li>
+      <li>忘记 <code>response_model</code>，导致响应结构不够清晰。</li>
+      <li>只写 <code>int</code>，不写 <code>Query</code> 边界。</li>
+      <li>接口契约变化了，但没有对应测试提醒。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/metadata/">FastAPI Metadata</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/path-operation-configuration/">FastAPI Path Operation Configuration</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/response-model/">FastAPI Response Model</a>、
+      <a href="https://fastapi.tiangolo.com/reference/security/">FastAPI Security Tools</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0029-openapi-api-contract.html">回到第 29 课</a>
+        <a href="./0028-frontend-pagination-status-filter-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

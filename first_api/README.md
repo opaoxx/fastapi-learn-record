@@ -102,6 +102,15 @@ The task history UI also exposes controls for:
 - page size: 3, 5, or 10 rows
 - previous and next page navigation
 
+## API contract
+
+FastAPI exposes the generated OpenAPI contract at:
+
+- http://127.0.0.1:8000/openapi.json
+- http://127.0.0.1:8000/docs
+
+The task APIs document their response models, query parameters, response descriptions, and `X-API-Key` security requirement. Tests in `tests/test_openapi_contract.py` guard the most important task-list contract details.
+
 ## Service layer
 
 The `services/` package keeps business logic out of route handlers:

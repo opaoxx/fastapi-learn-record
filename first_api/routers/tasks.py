@@ -29,7 +29,17 @@ router = APIRouter(
 )
 
 
-@router.post("/summaries", response_model=SummaryTaskRead, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/summaries",
+    response_model=SummaryTaskRead,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Create a summary task from raw text",
+    description=(
+        "Accepts text, stores a queued summary task, schedules background processing, "
+        "and returns the task record immediately."
+    ),
+    response_description="The accepted summary task.",
+)
 def create_summary_task(
     payload: SummaryRequest,
     background_tasks: BackgroundTasks,
@@ -44,9 +54,22 @@ def create_summary_task(
     return task
 
 
-@router.post("/files/{file_id}/summary", response_model=SummaryTaskRead, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/files/{file_id}/summary",
+    response_model=SummaryTaskRead,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Create a summary task from an uploaded text file",
+    description=(
+        "Reads an existing uploaded text file, creates a queued summary task from its content, "
+        "and schedules background processing."
+    ),
+    response_description="The accepted file-backed summary task.",
+    responses={
+        status.HTTP_404_NOT_FOUND: {"description": "The uploaded text file does not exist."},
+    },
+)
 def create_file_summary_task(
-    file_id: Annotated[int, Path(ge=1)],
+    file_id: Annotated[int, Path(ge=1, description="The uploaded text file ID.")],
     background_tasks: BackgroundTasks,
     session: Annotated[Session, Depends(get_session)],
 ) -> SummaryTask:
@@ -66,12 +89,24 @@ def create_file_summary_task(
     return task
 
 
-@router.get("", response_model=SummaryTaskListResponse)
+@router.get(
+    "",
+    response_model=SummaryTaskListResponse,
+    summary="List summary tasks",
+    description=(
+        "Returns a newest-first page of summary tasks. Clients can filter by task status "
+        "and use limit/offset pagination."
+    ),
+    response_description="A paginated task-list response envelope.",
+)
 def list_summary_tasks(
     session: Annotated[Session, Depends(get_session)],
-    task_status: Annotated[TaskStatus | None, Query(alias="status")] = None,
-    offset: Annotated[int, Query(ge=0)] = 0,
-    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    task_status: Annotated[
+        TaskStatus | None,
+        Query(alias="status", description="Optional status filter for the task list."),
+    ] = None,
+    offset: Annotated[int, Query(ge=0, description="Zero-based number of matching tasks to skip.")] = 0,
+    limit: Annotated[int, Query(ge=1, le=100, description="Maximum number of tasks to return.")] = 20,
 ) -> SummaryTaskListResponse:
     return list_summary_task_records(
         session=session,
@@ -81,9 +116,18 @@ def list_summary_tasks(
     )
 
 
-@router.get("/{task_id}", response_model=SummaryTaskRead)
+@router.get(
+    "/{task_id}",
+    response_model=SummaryTaskRead,
+    summary="Read one summary task",
+    description="Returns the current status, result, or stored error for a single summary task.",
+    response_description="The requested summary task.",
+    responses={
+        status.HTTP_404_NOT_FOUND: {"description": "The summary task does not exist."},
+    },
+)
 def read_summary_task(
-    task_id: Annotated[int, Path(ge=1)],
+    task_id: Annotated[int, Path(ge=1, description="The summary task ID.")],
     session: Annotated[Session, Depends(get_session)],
 ) -> SummaryTask:
     task = read_summary_task_record(session, task_id)

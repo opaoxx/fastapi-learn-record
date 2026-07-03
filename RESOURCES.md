@@ -22,6 +22,12 @@
   Official Pydantic field concept guide. Use for explaining Field, defaults, constraints, and schema metadata.
 - [FastAPI Response Model](https://fastapi.tiangolo.com/tutorial/response-model/)
   Official guide to response validation and filtering. Use when designing API contracts for frontend and AI-service consumers.
+- [FastAPI Metadata and Docs URLs](https://fastapi.tiangolo.com/tutorial/metadata/)
+  Official guide to API metadata, tag metadata, OpenAPI URL, and docs URLs. Use when teaching OpenAPI as an API contract.
+- [FastAPI Path Operation Configuration](https://fastapi.tiangolo.com/tutorial/path-operation-configuration/)
+  Official guide to path operation summaries, descriptions, response descriptions, and deprecation metadata. Use when improving generated API documentation.
+- [FastAPI Additional Responses in OpenAPI](https://fastapi.tiangolo.com/advanced/additional-responses/)
+  Official guide to adding extra response metadata to OpenAPI. Use when documenting non-200 responses and model-backed error shapes.
 - [FastAPI Handling Errors](https://fastapi.tiangolo.com/tutorial/handling-errors/)
   Official guide to HTTPException and error responses. Use when teaching 404 and business-level API errors.
 - [FastAPI Bigger Applications - Multiple Files](https://fastapi.tiangolo.com/tutorial/bigger-applications/)

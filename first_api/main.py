@@ -27,10 +27,35 @@ allowed_origins = [
     "http://localhost:8000",
 ]
 
+openapi_tags = [
+    {
+        "name": "system",
+        "description": "Health checks and public runtime configuration.",
+    },
+    {
+        "name": "items",
+        "description": "Database-backed learning endpoints for CRUD and filtering.",
+    },
+    {
+        "name": "predictions",
+        "description": "Model-like synchronous endpoints for AI service practice.",
+    },
+    {
+        "name": "tasks",
+        "description": "Protected background summary tasks with status, filtering, and pagination.",
+    },
+    {
+        "name": "files",
+        "description": "Protected UTF-8 text uploads used as summary-task inputs.",
+    },
+]
+
 app = FastAPI(
     title=settings.app_name,
+    summary="A learning API that grows from backend basics into AI-service endpoints.",
     description="A tiny learning API for backend basics and future AI service endpoints.",
     version="0.1.0",
+    openapi_tags=openapi_tags,
     lifespan=lifespan,
 )
 
