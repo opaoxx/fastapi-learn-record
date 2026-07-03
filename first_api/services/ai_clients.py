@@ -20,6 +20,9 @@ class AIClientConfig:
     provider: AIProvider = "demo"
     timeout_seconds: float = 10.0
     max_attempts: int = 1
+    retry_base_delay_seconds: float = 0.1
+    retry_max_delay_seconds: float = 2.0
+    retry_jitter_seconds: float = 0.0
 
 
 class AIClient(Protocol):
@@ -82,6 +85,9 @@ def build_ai_client_config() -> AIClientConfig:
         provider=settings.ai_provider,
         timeout_seconds=settings.ai_timeout_seconds,
         max_attempts=settings.ai_max_attempts,
+        retry_base_delay_seconds=settings.ai_retry_base_delay_seconds,
+        retry_max_delay_seconds=settings.ai_retry_max_delay_seconds,
+        retry_jitter_seconds=settings.ai_retry_jitter_seconds,
     )
 
 

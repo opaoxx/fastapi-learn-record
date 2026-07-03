@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Retry Observability Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0046</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0046-retry-observability.html">回到第 46 课</a>
+        <a href="./0045-retry-jitter-cheatsheet.html">上一张速查</a>
+        <a href="./0047-retry-exhaustion-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0046</p>
+      <h1>Retry Observability 速查</h1>
+      <p class="lead">重试可观测性的目标：让每次“准备重试”都有稳定事件名和可测试的诊断字段。</p>
+    </header>
+
+    <h2>心智模型</h2>
+    <pre><code>retry policy        = should we try again?
+retry delay         = how long should we wait?
+retry observability = why did we wait, and how can we prove it?</code></pre>
+
+    <h2>日志事件</h2>
+    <pre><code>provider_prediction_retry_scheduled</code></pre>
+
+    <h2>推荐字段</h2>
+    <ul>
+      <li><code>attempt</code>：当前失败发生在第几次尝试。</li>
+      <li><code>max_attempts</code>：最多允许尝试几次。</li>
+      <li><code>retry_reason</code>：timeout、http_status 或 request_error。</li>
+      <li><code>status_code</code>：HTTP 状态失败时记录，例如 429、503。</li>
+      <li><code>retry_after</code>：provider 返回的 Retry-After 原始值。</li>
+      <li><code>delay_seconds</code>：本次重试前最终等待秒数。</li>
+      <li><code>delay_source</code>：retry_after 或 local_backoff。</li>
+    </ul>
+
+    <h2>核心类型</h2>
+    <pre><code>RetryDelaySource = Literal["retry_after", "local_backoff"]
+
+@dataclass(frozen=True)
+class RetryDelayPlan:
+    delay_seconds: float
+    source: RetryDelaySource</code></pre>
+
+    <h2>logging extra</h2>
+    <pre><code>logger.info(
+    "provider_prediction_retry_scheduled",
+    extra={
+        "attempt": attempt,
+        "delay_seconds": delay_plan.delay_seconds,
+        "delay_source": delay_plan.source,
+    },
+)</code></pre>
+
+    <h2>caplog 断言</h2>
+    <pre><code>caplog.set_level(logging.INFO, logger="first_api.services.provider_http")
+
+retry_records = [
+    record
+    for record in caplog.records
+    if record.getMessage() == "provider_prediction_retry_scheduled"
+]
+
+assert retry_records[0].delay_source == "retry_after"</code></pre>
+
+    <h2>边界规则</h2>
+    <ul>
+      <li>公共 JSON 响应保持稳定，retry 细节优先放日志。</li>
+      <li>日志消息名保持稳定，变化数据放 <code>extra</code> 字段。</li>
+      <li>不要记录 API key、完整敏感请求体或用户隐私文本。</li>
+      <li>在 sleep 前记录日志，保留即将等待的事实。</li>
+    </ul>
+
+    <h2>面试短答</h2>
+    <blockquote>
+      <p>我会在 provider adapter 边界记录 retry 的结构化日志，包括 attempt、原因、状态码、Retry-After、等待秒数和等待来源。这样既不污染公共响应体，又能在日志系统或测试中解释慢请求和 provider 不稳定问题。</p>
+    </blockquote>
+
+    <footer>
+      来源：<a href="https://docs.python.org/3/library/logging.html">Python logging</a>、
+      <a href="https://docs.pytest.org/en/stable/how-to/logging.html">pytest logging</a>、
+      <a href="https://www.python-httpx.org/exceptions/">HTTPX exceptions</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0046-retry-observability.html">回到第 46 课</a>
+        <a href="./0045-retry-jitter-cheatsheet.html">上一张速查</a>
+        <a href="./0047-retry-exhaustion-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

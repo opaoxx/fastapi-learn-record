@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Honor Retry-After Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0044</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0044-honor-retry-after.html">回到第 44 课</a>
+        <a href="./0043-backoff-before-retry-cheatsheet.html">上一张速查</a>
+        <a href="./0045-retry-jitter-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0044</p>
+      <h1>Honor Retry-After 速查</h1>
+      <p class="lead">provider 给了可解析的重试时间提示时，优先听 provider，但仍受本地 cap 保护。</p>
+    </header>
+
+    <h2>心智模型</h2>
+    <pre><code>local backoff = client estimate
+Retry-After  = provider hint
+final delay  = provider hint first, capped locally</code></pre>
+
+    <h2>两种格式</h2>
+    <pre><code>Retry-After: 120
+Retry-After: Wed, 21 Oct 2015 07:28:00 GMT</code></pre>
+
+    <h2>解析结果</h2>
+    <ul>
+      <li>合法秒数：返回秒数。</li>
+      <li>合法 HTTP-date：返回目标时间与当前时间的差值。</li>
+      <li>过去的 HTTP-date：返回 <code>0.0</code>。</li>
+      <li>无效 header：返回 <code>None</code>，回退本地 backoff。</li>
+    </ul>
+
+    <h2>核心代码</h2>
+    <pre><code>provider_delay = parse_retry_after_delay(retry_after, now=now)
+if provider_delay is not None:
+    return min(provider_delay, max_delay)
+
+return min(local_exponential_delay, max_delay)</code></pre>
+
+    <h2>HTTP 分支</h2>
+    <pre><code>await wait_before_retry(
+    attempt,
+    config,
+    sleep,
+    retry_after=exc.response.headers.get("Retry-After"),
+)</code></pre>
+
+    <h2>测试清单</h2>
+    <ul>
+      <li><code>Retry-After: 5</code> 解析为 <code>5.0</code>。</li>
+      <li>HTTP-date 用固定 <code>now</code> 计算差值。</li>
+      <li><code>Retry-After: 5</code> 且 max delay 为 3 时，最终等待 3。</li>
+      <li>无效 header 回退到本地指数退避。</li>
+      <li>429 响应带 <code>Retry-After: 2</code> 时，fake sleep 记录 <code>2.0</code>。</li>
+    </ul>
+
+    <h2>常见坑</h2>
+    <ul>
+      <li>把无效 header 当作 0 秒。</li>
+      <li>完全不设置本地最大等待。</li>
+      <li>用真实当前时间写日期测试。</li>
+      <li>在 timeout 分支读取不存在的响应头。</li>
+    </ul>
+
+    <h2>面试短答</h2>
+    <blockquote>
+      <p><code>Retry-After</code> 是 provider 的标准重试时间提示。我会在 429 或可重试 5xx 的 HTTP 响应分支读取它，支持秒数和 HTTP-date；可解析时优先使用它，并被本地 max delay 截断；不可解析时回退到本地指数退避。</p>
+    </blockquote>
+
+    <footer>
+      来源：<a href="https://datatracker.ietf.org/doc/html/rfc9110#section-10.2.3">RFC 9110 Retry-After</a>、
+      <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Retry-After">MDN Retry-After</a>、
+      <a href="https://docs.python.org/3/library/email.utils.html">Python email.utils</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0044-honor-retry-after.html">回到第 44 课</a>
+        <a href="./0043-backoff-before-retry-cheatsheet.html">上一张速查</a>
+        <a href="./0045-retry-jitter-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

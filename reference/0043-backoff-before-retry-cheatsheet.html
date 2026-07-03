@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Backoff Before Retry Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0043</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0043-backoff-before-retry.html">回到第 43 课</a>
+        <a href="./0042-provider-retry-policy-cheatsheet.html">上一张速查</a>
+        <a href="./0044-honor-retry-after-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0043</p>
+      <h1>Backoff Before Retry 速查</h1>
+      <p class="lead">retry 之前先等待，避免把短暂故障放大成请求风暴。</p>
+    </header>
+
+    <h2>心智模型</h2>
+    <pre><code>retry policy says: should we retry?
+backoff says: how long should we wait before retrying?</code></pre>
+
+    <h2>公式</h2>
+    <pre><code>delay = min(base_delay * 2 ** (attempt - 1), max_delay)</code></pre>
+
+    <h2>例子</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>attempt</th>
+          <th>base=1, max=3</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td>1 秒</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>2 秒</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>3 秒</td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td>3 秒</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>配置</h2>
+    <pre><code>FIRST_API_AI_MAX_ATTEMPTS="3"
+FIRST_API_AI_RETRY_BASE_DELAY_SECONDS="0.1"
+FIRST_API_AI_RETRY_MAX_DELAY_SECONDS="2.0"</code></pre>
+
+    <h2>核心函数</h2>
+    <pre><code>def calculate_retry_delay(attempt, config):
+    base_delay = max(config.retry_base_delay_seconds, 0.0)
+    max_delay = max(config.retry_max_delay_seconds, 0.0)
+    exponential_delay = base_delay * (2 ** (attempt - 1))
+    return min(exponential_delay, max_delay)</code></pre>
+
+    <h2>等待位置</h2>
+    <pre><code>if attempt &lt; config.max_attempts and error_is_retryable:
+    await wait_before_retry(attempt, config, sleep)
+    continue</code></pre>
+
+    <h2>async 原则</h2>
+    <ul>
+      <li>在 async adapter 中使用 <code>await asyncio.sleep(...)</code>。</li>
+      <li>不要用 <code>time.sleep(...)</code> 阻塞线程。</li>
+      <li>最后一次失败后不 sleep，因为没有下一次 retry。</li>
+    </ul>
+
+    <h2>测试技巧</h2>
+    <pre><code>sleep_calls = []
+
+async def fake_sleep(delay_seconds):
+    sleep_calls.append(delay_seconds)
+
+assert sleep_calls == [1.0, 2.0]</code></pre>
+
+    <h2>常见坑</h2>
+    <ul>
+      <li>失败后立即连续 retry。</li>
+      <li>指数增长没有最大上限。</li>
+      <li>async 代码里用 <code>time.sleep</code>。</li>
+      <li>测试真的等待几秒。</li>
+    </ul>
+
+    <h2>面试短答</h2>
+    <blockquote>
+      <p>retry 决定是否再试，backoff 决定再试前等多久。我会用有上限的指数退避降低 provider 过载时的请求冲击，并在 async 代码中用 <code>await asyncio.sleep</code>；测试中注入 fake sleep，验证等待时间而不拖慢测试。</p>
+    </blockquote>
+
+    <footer>
+      来源：<a href="https://docs.cloud.google.com/iam/docs/retry-strategy">Google Cloud Retry Strategy</a>、
+      <a href="https://docs.python.org/3/library/asyncio-task.html#sleeping">Python asyncio Sleeping</a>、
+      <a href="https://datatracker.ietf.org/doc/html/rfc9110#section-10.2.3">RFC 9110 Retry-After</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0043-backoff-before-retry.html">回到第 43 课</a>
+        <a href="./0042-provider-retry-policy-cheatsheet.html">上一张速查</a>
+        <a href="./0044-honor-retry-after-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

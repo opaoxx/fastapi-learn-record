@@ -1,5 +1,4 @@
 import logging
-from time import perf_counter
 from typing import Annotated
 
 import httpx
@@ -7,8 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from ..dependencies import get_provider_http_client
 from ..schemas import ErrorResponse, PredictionRequest, PredictionResponse
-from ..services.ai_clients import AIClient, AIClientConfig, AIClientError, PredictionResult, get_ai_client
-from ..services.provider_http import request_provider_prediction
+from ..services.ai_clients import AIClient, PredictionResult, get_ai_client
+from ..services.predictions import PredictionServiceError, PredictionServiceResult, run_prediction
 from ..settings import Settings, get_settings
 
 
@@ -56,6 +55,28 @@ def set_prediction_headers(
         response.headers[name] = value
 
 
+def log_prediction_completed(result: PredictionServiceResult) -> None:
+    logger.info(
+        "prediction_completed",
+        extra={
+            "prediction_backend": result.backend,
+            "prediction_source": result.prediction.source,
+            "prediction_elapsed_ms": round(result.elapsed_ms, 2),
+        },
+    )
+
+
+def log_prediction_failed(error: PredictionServiceError) -> None:
+    logger.warning(
+        "prediction_failed",
+        extra={
+            "prediction_backend": error.backend,
+            "prediction_elapsed_ms": round(error.elapsed_ms, 2),
+            "prediction_error_code": error.error_code,
+        },
+    )
+
+
 @router.post(
     "/predict",
     response_model=PredictionResponse,
@@ -68,35 +89,16 @@ async def predict(
     ai_client: Annotated[AIClient, Depends(get_ai_client)],
     provider_http_client: Annotated[httpx.AsyncClient, Depends(get_provider_http_client)],
 ) -> PredictionResponse:
-    started_at = perf_counter()
-    backend = settings.ai_prediction_backend
-
     try:
-        if backend == "provider":
-            config = AIClientConfig(
-                provider=settings.ai_provider,
-                timeout_seconds=settings.ai_timeout_seconds,
-                max_attempts=settings.ai_max_attempts,
-            )
-            prediction = await request_provider_prediction(
-                url=settings.ai_provider_prediction_url,
-                text=payload.text,
-                mode=payload.mode,
-                config=config,
-                client=provider_http_client,
-            )
-        else:
-            prediction = ai_client.predict_sentiment(payload.text, payload.mode)
-    except AIClientError as exc:
-        elapsed_ms = (perf_counter() - started_at) * 1000
-        logger.warning(
-            "prediction_failed",
-            extra={
-                "prediction_backend": backend,
-                "prediction_elapsed_ms": round(elapsed_ms, 2),
-                "prediction_error_code": exc.error_code,
-            },
+        result = await run_prediction(
+            text=payload.text,
+            mode=payload.mode,
+            settings=settings,
+            ai_client=ai_client,
+            provider_http_client=provider_http_client,
         )
+    except PredictionServiceError as exc:
+        log_prediction_failed(exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
@@ -104,29 +106,21 @@ async def predict(
                 "message": exc.message,
             },
             headers=build_prediction_headers(
-                backend=backend,
-                elapsed_ms=elapsed_ms,
+                backend=exc.backend,
+                elapsed_ms=exc.elapsed_ms,
                 error_code=exc.error_code,
             ),
         ) from exc
 
-    elapsed_ms = (perf_counter() - started_at) * 1000
     set_prediction_headers(
         response=response,
-        backend=backend,
-        elapsed_ms=elapsed_ms,
-        source=prediction.source,
+        backend=result.backend,
+        elapsed_ms=result.elapsed_ms,
+        source=result.prediction.source,
     )
-    logger.info(
-        "prediction_completed",
-        extra={
-            "prediction_backend": backend,
-            "prediction_source": prediction.source,
-            "prediction_elapsed_ms": round(elapsed_ms, 2),
-        },
-    )
+    log_prediction_completed(result)
 
-    return build_prediction_response(prediction, payload.text)
+    return build_prediction_response(result.prediction, payload.text)
 
 
 @router.post(
@@ -144,34 +138,20 @@ async def predict_with_provider(
     payload: PredictionRequest,
     response: Response,
     settings: Annotated[Settings, Depends(get_settings)],
+    ai_client: Annotated[AIClient, Depends(get_ai_client)],
     provider_http_client: Annotated[httpx.AsyncClient, Depends(get_provider_http_client)],
 ) -> PredictionResponse:
-    started_at = perf_counter()
-    backend = "provider"
-    config = AIClientConfig(
-        provider=settings.ai_provider,
-        timeout_seconds=settings.ai_timeout_seconds,
-        max_attempts=settings.ai_max_attempts,
-    )
-
     try:
-        prediction = await request_provider_prediction(
-            url=settings.ai_provider_prediction_url,
+        result = await run_prediction(
             text=payload.text,
             mode=payload.mode,
-            config=config,
-            client=provider_http_client,
+            settings=settings,
+            ai_client=ai_client,
+            provider_http_client=provider_http_client,
+            backend="provider",
         )
-    except AIClientError as exc:
-        elapsed_ms = (perf_counter() - started_at) * 1000
-        logger.warning(
-            "prediction_failed",
-            extra={
-                "prediction_backend": backend,
-                "prediction_elapsed_ms": round(elapsed_ms, 2),
-                "prediction_error_code": exc.error_code,
-            },
-        )
+    except PredictionServiceError as exc:
+        log_prediction_failed(exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail={
@@ -179,26 +159,18 @@ async def predict_with_provider(
                 "message": exc.message,
             },
             headers=build_prediction_headers(
-                backend=backend,
-                elapsed_ms=elapsed_ms,
+                backend=exc.backend,
+                elapsed_ms=exc.elapsed_ms,
                 error_code=exc.error_code,
             ),
         ) from exc
 
-    elapsed_ms = (perf_counter() - started_at) * 1000
     set_prediction_headers(
         response=response,
-        backend=backend,
-        elapsed_ms=elapsed_ms,
-        source=prediction.source,
+        backend=result.backend,
+        elapsed_ms=result.elapsed_ms,
+        source=result.prediction.source,
     )
-    logger.info(
-        "prediction_completed",
-        extra={
-            "prediction_backend": backend,
-            "prediction_source": prediction.source,
-            "prediction_elapsed_ms": round(elapsed_ms, 2),
-        },
-    )
+    log_prediction_completed(result)
 
-    return build_prediction_response(prediction, payload.text)
+    return build_prediction_response(result.prediction, payload.text)

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Retry Jitter Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0045</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0045-retry-jitter.html">回到第 45 课</a>
+        <a href="./0044-honor-retry-after-cheatsheet.html">上一张速查</a>
+        <a href="./0046-retry-observability-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0045</p>
+      <h1>Retry Jitter 速查</h1>
+      <p class="lead">jitter 用随机扰动打散多个客户端的重试时间。</p>
+    </header>
+
+    <h2>心智模型</h2>
+    <pre><code>backoff = slow down retries
+jitter  = spread out retries</code></pre>
+
+    <h2>本项目公式</h2>
+    <pre><code>jitter_delay = retry_jitter_seconds * random_fraction
+delay = min(exponential_delay + jitter_delay, max_delay)</code></pre>
+
+    <h2>配置</h2>
+    <pre><code>FIRST_API_AI_RETRY_BASE_DELAY_SECONDS="0.1"
+FIRST_API_AI_RETRY_MAX_DELAY_SECONDS="2.0"
+FIRST_API_AI_RETRY_JITTER_SECONDS="0.1"</code></pre>
+
+    <h2>核心函数</h2>
+    <pre><code>def calculate_retry_jitter(config, random_fraction=random.random):
+    jitter_seconds = max(config.retry_jitter_seconds, 0.0)
+    if jitter_seconds == 0:
+        return 0.0
+
+    fraction = min(max(random_fraction(), 0.0), 1.0)
+    return jitter_seconds * fraction</code></pre>
+
+    <h2>边界规则</h2>
+    <ul>
+      <li>只给本地 backoff 加 jitter。</li>
+      <li>有效 <code>Retry-After</code> 不额外加 jitter。</li>
+      <li>jitter 后仍然受 <code>retry_max_delay_seconds</code> 截断。</li>
+      <li>测试中注入固定 <code>random_fraction</code>。</li>
+    </ul>
+
+    <h2>测试例子</h2>
+    <pre><code>delay = calculate_retry_delay(
+    attempt=2,
+    config=config,
+    random_fraction=lambda: 0.4,
+)
+
+assert delay == 2.2</code></pre>
+
+    <h2>常见坑</h2>
+    <ul>
+      <li>真实随机数进入断言测试。</li>
+      <li>jitter 后不做 max delay 截断。</li>
+      <li>给 <code>Retry-After</code> 再随机加等待。</li>
+      <li>把 <code>random</code> 当安全随机数使用。</li>
+    </ul>
+
+    <h2>面试短答</h2>
+    <blockquote>
+      <p>backoff 能放慢重试，但多个客户端仍可能同步。jitter 给本地 backoff 加小随机扰动，把请求峰值打散。我会把 jitter 做成配置，并把随机函数注入测试，让随机逻辑可重复验证。</p>
+    </blockquote>
+
+    <footer>
+      来源：<a href="https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/">AWS Exponential Backoff and Jitter</a>、
+      <a href="https://docs.cloud.google.com/iam/docs/retry-strategy">Google Cloud Retry Strategy</a>、
+      <a href="https://docs.python.org/3/library/random.html">Python random</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0045-retry-jitter.html">回到第 45 课</a>
+        <a href="./0044-honor-retry-after-cheatsheet.html">上一张速查</a>
+        <a href="./0046-retry-observability-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

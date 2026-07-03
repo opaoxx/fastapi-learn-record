@@ -452,6 +452,83 @@
             <a href="lessons/0040-prediction-observability.html">进入课程</a>
             <a href="reference/0040-prediction-observability-cheatsheet.html">查看速查</a>
             <a href="lessons/0039-prediction-backend-switch.html">上一课</a>
+            <a href="lessons/0041-prediction-service-orchestration.html">下一课</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Lesson 0041 - Prediction Service Orchestration</h3>
+          <p>把预测后端选择、耗时测量和错误包装从 router 抽到 service 层，让路由重新专注 HTTP 翻译。</p>
+          <div class="links">
+            <a href="lessons/0041-prediction-service-orchestration.html">进入课程</a>
+            <a href="reference/0041-prediction-service-orchestration-cheatsheet.html">查看速查</a>
+            <a href="lessons/0040-prediction-observability.html">上一课</a>
+            <a href="lessons/0042-provider-retry-policy.html">下一课</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Lesson 0042 - Provider Retry Policy</h3>
+          <p>为 provider prediction adapter 增加有限重试策略，区分 timeout、网络错误、429/5xx、400 类错误和非法响应体。</p>
+          <div class="links">
+            <a href="lessons/0042-provider-retry-policy.html">进入课程</a>
+            <a href="reference/0042-provider-retry-policy-cheatsheet.html">查看速查</a>
+            <a href="lessons/0041-prediction-service-orchestration.html">上一课</a>
+            <a href="lessons/0043-backoff-before-retry.html">下一课</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Lesson 0043 - Backoff Before Retry</h3>
+          <p>在 provider retry 之间加入有上限的指数退避，理解为什么 async adapter 要用 await asyncio.sleep，并用 fake sleep 测试等待策略。</p>
+          <div class="links">
+            <a href="lessons/0043-backoff-before-retry.html">进入课程</a>
+            <a href="reference/0043-backoff-before-retry-cheatsheet.html">查看速查</a>
+            <a href="lessons/0042-provider-retry-policy.html">上一课</a>
+            <a href="lessons/0044-honor-retry-after.html">下一课</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Lesson 0044 - Honor Retry-After</h3>
+          <p>解析 provider 返回的 Retry-After 响应头，支持秒数和 HTTP-date，让 provider 提示优先于本地 backoff 并受 max delay 截断。</p>
+          <div class="links">
+            <a href="lessons/0044-honor-retry-after.html">进入课程</a>
+            <a href="reference/0044-honor-retry-after-cheatsheet.html">查看速查</a>
+            <a href="lessons/0043-backoff-before-retry.html">上一课</a>
+            <a href="lessons/0045-retry-jitter.html">下一课</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Lesson 0045 - Retry Jitter</h3>
+          <p>给本地 provider backoff 加入可配置随机扰动，打散多个客户端同步重试的峰值，并用注入随机函数保证测试稳定。</p>
+          <div class="links">
+            <a href="lessons/0045-retry-jitter.html">进入课程</a>
+            <a href="reference/0045-retry-jitter-cheatsheet.html">查看速查</a>
+            <a href="lessons/0044-honor-retry-after.html">上一课</a>
+            <a href="lessons/0046-retry-observability.html">下一课</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Lesson 0046 - Retry Observability</h3>
+          <p>把 provider 重试过程记录成结构化日志，说明 attempt、失败原因、等待来源和等待秒数，并用 caplog 验证日志字段。</p>
+          <div class="links">
+            <a href="lessons/0046-retry-observability.html">进入课程</a>
+            <a href="reference/0046-retry-observability-cheatsheet.html">查看速查</a>
+            <a href="lessons/0045-retry-jitter.html">上一课</a>
+            <a href="lessons/0047-retry-exhaustion.html">下一课</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Lesson 0047 - Retry Exhaustion</h3>
+          <p>当 provider 可重试错误用完所有 attempt 后，记录最终失败 warning，区分 scheduled retry、retry exhausted 和快速失败。</p>
+          <div class="links">
+            <a href="lessons/0047-retry-exhaustion.html">进入课程</a>
+            <a href="reference/0047-retry-exhaustion-cheatsheet.html">查看速查</a>
+            <a href="lessons/0046-retry-observability.html">上一课</a>
           </div>
         </article>
       </div>
@@ -829,6 +906,83 @@
             <a href="reference/0040-prediction-observability-cheatsheet.html">打开速查</a>
             <a href="lessons/0040-prediction-observability.html">回到课程</a>
             <a href="reference/0039-prediction-backend-switch-cheatsheet.html">上一张速查</a>
+            <a href="reference/0041-prediction-service-orchestration-cheatsheet.html">下一张速查</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Reference 0041 - Prediction Service Orchestration</h3>
+          <p>router/service 职责边界、PredictionServiceResult、PredictionServiceError、run_prediction 和 service 层测试。</p>
+          <div class="links">
+            <a href="reference/0041-prediction-service-orchestration-cheatsheet.html">打开速查</a>
+            <a href="lessons/0041-prediction-service-orchestration.html">回到课程</a>
+            <a href="reference/0040-prediction-observability-cheatsheet.html">上一张速查</a>
+            <a href="reference/0042-provider-retry-policy-cheatsheet.html">下一张速查</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Reference 0042 - Provider Retry Policy</h3>
+          <p>有限重试、可重试状态码、不可重试错误、max_attempts 语义、adapter 职责和 MockTransport 测试清单。</p>
+          <div class="links">
+            <a href="reference/0042-provider-retry-policy-cheatsheet.html">打开速查</a>
+            <a href="lessons/0042-provider-retry-policy.html">回到课程</a>
+            <a href="reference/0041-prediction-service-orchestration-cheatsheet.html">上一张速查</a>
+            <a href="reference/0043-backoff-before-retry-cheatsheet.html">下一张速查</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Reference 0043 - Backoff Before Retry</h3>
+          <p>指数退避公式、base/max delay 配置、async sleep 原则、等待位置和 fake sleep 测试技巧。</p>
+          <div class="links">
+            <a href="reference/0043-backoff-before-retry-cheatsheet.html">打开速查</a>
+            <a href="lessons/0043-backoff-before-retry.html">回到课程</a>
+            <a href="reference/0042-provider-retry-policy-cheatsheet.html">上一张速查</a>
+            <a href="reference/0044-honor-retry-after-cheatsheet.html">下一张速查</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Reference 0044 - Honor Retry-After</h3>
+          <p>Retry-After 秒数和 HTTP-date 格式、解析函数、provider hint 优先级、本地 cap 和测试清单。</p>
+          <div class="links">
+            <a href="reference/0044-honor-retry-after-cheatsheet.html">打开速查</a>
+            <a href="lessons/0044-honor-retry-after.html">回到课程</a>
+            <a href="reference/0043-backoff-before-retry-cheatsheet.html">上一张速查</a>
+            <a href="reference/0045-retry-jitter-cheatsheet.html">下一张速查</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Reference 0045 - Retry Jitter</h3>
+          <p>jitter 心智模型、additive jitter 公式、配置项、Retry-After 边界和固定随机函数测试技巧。</p>
+          <div class="links">
+            <a href="reference/0045-retry-jitter-cheatsheet.html">打开速查</a>
+            <a href="lessons/0045-retry-jitter.html">回到课程</a>
+            <a href="reference/0044-honor-retry-after-cheatsheet.html">上一张速查</a>
+            <a href="reference/0046-retry-observability-cheatsheet.html">下一张速查</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Reference 0046 - Retry Observability</h3>
+          <p>重试日志事件、结构化字段、RetryDelayPlan、logging extra、caplog 断言和公共响应契约边界。</p>
+          <div class="links">
+            <a href="reference/0046-retry-observability-cheatsheet.html">打开速查</a>
+            <a href="lessons/0046-retry-observability.html">回到课程</a>
+            <a href="reference/0045-retry-jitter-cheatsheet.html">上一张速查</a>
+            <a href="reference/0047-retry-exhaustion-cheatsheet.html">下一张速查</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Reference 0047 - Retry Exhaustion</h3>
+          <p>retry budget、scheduled retry、retry exhausted、fail fast、warning 日志字段和 caplog 断言。</p>
+          <div class="links">
+            <a href="reference/0047-retry-exhaustion-cheatsheet.html">打开速查</a>
+            <a href="lessons/0047-retry-exhaustion.html">回到课程</a>
+            <a href="reference/0046-retry-observability-cheatsheet.html">上一张速查</a>
           </div>
         </article>
       </div>

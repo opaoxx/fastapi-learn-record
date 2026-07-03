@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0044 - Honor Retry-After</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0044</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0043-backoff-before-retry.html">上一课</a>
+        <a href="../reference/0044-honor-retry-after-cheatsheet.html">本课速查</a>
+        <a href="./0045-retry-jitter.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0044</p>
+      <h1>Honor Retry-After：听懂 provider 说“多久后再试”</h1>
+      <p class="lead">上一节我们用本地指数退避估算 retry 等待时间。本节让 provider 的响应头参与决策：当 provider 返回 <code>Retry-After</code> 时，adapter 优先使用它；同时仍然用本地最大等待上限保护自己的 API 响应时间。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解 <code>Retry-After</code> 是服务端给客户端的重试时间提示。</li>
+        <li>掌握 <code>delay-seconds</code> 和 <code>HTTP-date</code> 两种格式。</li>
+        <li>理解为什么要“优先尊重 provider，但仍用本地 cap 截断”。</li>
+        <li>学会用 Python 标准库 <code>email.utils.parsedate_to_datetime</code> 解析 HTTP-date。</li>
+        <li>用测试保护秒数格式、日期格式、无效 header 回退、本地 cap 和真实 retry 分支。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 背景：本地 backoff 是估算，Retry-After 是 provider 信号</h2>
+      <p>第 43 课里，adapter 根据本地配置计算等待时间。例如第 1 次失败等 0.1 秒，第 2 次失败等 0.2 秒。这种策略比立即重试更温和，但它仍然是客户端自己的估算。</p>
+      <p>真实 provider 可能比我们更清楚当前状态：它知道限流窗口什么时候重置，维护预计多久结束，或者过载恢复需要多长时间。HTTP 提供了一个标准响应头：<code>Retry-After</code>。它让服务端把“请多久后再试”表达给客户端。</p>
+      <p>所以本节的设计原则是：如果 provider 给了可解析的 <code>Retry-After</code>，就优先使用 provider 的提示；如果没有给、格式错了、或者提示太长，就回到本地 backoff 和本地 cap。</p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 核心概念：Retry-After 的两种格式</h2>
+      <p>RFC 9110 定义 <code>Retry-After</code> 的值可以是 HTTP-date，也可以是 delay-seconds。MDN 也把它解释为用户代理在下一次请求前应该等待多久。</p>
+      <div class="two-col">
+        <div>
+          <h3>delay-seconds</h3>
+          <pre><code>Retry-After: 120</code></pre>
+          <p>表示收到响应后等待 120 秒再发下一次请求。</p>
+        </div>
+        <div>
+          <h3>HTTP-date</h3>
+          <pre><code>Retry-After: Wed, 21 Oct 2015 07:28:00 GMT</code></pre>
+          <p>表示等到这个 HTTP 日期时间之后再发下一次请求。</p>
+        </div>
+      </div>
+      <p>对 API client 来说，秒数格式更容易处理；日期格式需要计算“目标时间 - 当前时间”。本节两种都支持。</p>
+    </section>
+
+    <section>
+      <h2>3. 设计原则：尊重 provider，但不要无限等待</h2>
+      <p>如果 provider 返回：</p>
+      <pre><code>HTTP/1.1 429 Too Many Requests
+Retry-After: 2</code></pre>
+      <p>那么本地 backoff 算出 0.1 秒也不够礼貌，因为 provider 已经明确说它希望 2 秒后再试。</p>
+      <p>但如果 provider 返回：</p>
+      <pre><code>Retry-After: 3600</code></pre>
+      <p>在一个普通同步 API 请求里等 1 小时也不现实。我们的 FastAPI endpoint 应该尽快给调用方一个稳定失败，而不是把 worker 长时间占着。所以本节采用折中规则：</p>
+      <pre><code>final_delay = min(provider_retry_after_delay, retry_max_delay_seconds)</code></pre>
+      <p>这不是不尊重 provider，而是把 provider 的提示纳入客户端自己的服务边界。更完整的生产系统可以把长等待转成后台任务、队列重试或返回 202，这些会留给后面的课程。</p>
+    </section>
+
+    <section>
+      <h2>4. 运行机制：HTTP 错误分支多读一个响应头</h2>
+      <pre><code>provider returns 429 or retryable 5xx
+  -&gt; HTTPX raises HTTPStatusError
+  -&gt; adapter reads response.headers["Retry-After"]
+  -&gt; parse delay-seconds or HTTP-date
+  -&gt; cap by retry_max_delay_seconds
+  -&gt; await sleep(delay)
+  -&gt; next attempt</code></pre>
+      <p>timeout 和 request error 没有 provider 响应体，也就没有响应头可读。这类错误仍然使用本地指数退避。</p>
+    </section>
+
+    <section>
+      <h2>5. 代码精读一：解析 Retry-After</h2>
+      <pre><code>def parse_retry_after_delay(
+    retry_after: str | None,
+    now: datetime | None = None,
+) -&gt; float | None:
+    if retry_after is None:
+        return None
+
+    value = retry_after.strip()
+    if value.isdecimal():
+        return float(value)</code></pre>
+      <p>函数先处理最简单的秒数格式。<code>isdecimal()</code> 确保只有非负十进制整数会被当成 delay-seconds。<code>"2"</code> 合法，<code>"-2"</code>、<code>"1.5"</code>、<code>"soon"</code> 都不会进入这个分支。</p>
+      <p>返回 <code>None</code> 的含义不是“等待 0 秒”，而是“没有可用的 provider 提示，请回退到本地 backoff”。</p>
+    </section>
+
+    <section>
+      <h2>6. 代码精读二：解析 HTTP-date</h2>
+      <pre><code>try:
+    retry_at = parsedate_to_datetime(value)
+except (TypeError, ValueError, IndexError, OverflowError):
+    return None
+
+if retry_at.tzinfo is None:
+    retry_at = retry_at.replace(tzinfo=timezone.utc)
+
+current_time = now or datetime.now(timezone.utc)
+delay_seconds = (retry_at - current_time).total_seconds()
+return max(delay_seconds, 0.0)</code></pre>
+      <p>HTTP-date 不是随便的字符串日期。Python 标准库 <code>email.utils.parsedate_to_datetime</code> 可以把符合邮件/HTTP 日期风格的字符串解析成 <code>datetime</code>。解析失败时，我们不应该让整个 provider 请求崩掉，而是返回 <code>None</code>，回退到本地 backoff。</p>
+      <p>如果日期已经过去，等待时间会是负数。此时用 <code>max(delay_seconds, 0.0)</code> 把它变成 0，表示 provider 提示的时间已经到了。</p>
+    </section>
+
+    <section>
+      <h2>7. 代码精读三：Retry-After 优先，但被 cap 截断</h2>
+      <pre><code>def calculate_retry_delay(
+    attempt: int,
+    config: AIClientConfig,
+    retry_after: str | None = None,
+    now: datetime | None = None,
+) -&gt; float:
+    max_delay = max(config.retry_max_delay_seconds, 0.0)
+    provider_delay = parse_retry_after_delay(retry_after, now=now)
+    if provider_delay is not None:
+        return min(provider_delay, max_delay)
+
+    exponential_delay = base_delay * (2 ** (attempt - 1))
+    return min(exponential_delay, max_delay)</code></pre>
+      <p>这个函数现在有两条路径：</p>
+      <ul>
+        <li>provider header 可用：用 <code>Retry-After</code>，再被本地 <code>max_delay</code> 截断。</li>
+        <li>provider header 不可用：使用上一节的本地指数退避。</li>
+      </ul>
+      <p>这就是“provider hint 优先，本地边界兜底”。</p>
+    </section>
+
+    <section>
+      <h2>8. 代码精读四：在 HTTPStatusError 分支传入 header</h2>
+      <pre><code>await wait_before_retry(
+    attempt,
+    config,
+    sleep,
+    retry_after=exc.response.headers.get("Retry-After"),
+)</code></pre>
+      <p>只有 <code>HTTPStatusError</code> 分支能读到响应头。timeout 和 request error 是请求没有得到正常响应，不能指望有 <code>Retry-After</code>。</p>
+      <p>这也是为什么 adapter 适合承载这段逻辑：router 和 service 不应该知道 HTTPX 异常对象里如何拿响应头。</p>
+    </section>
+
+    <section>
+      <h2>9. 测试精读一：秒数和日期格式</h2>
+      <pre><code>def test_parse_retry_after_delay_accepts_delay_seconds():
+    assert parse_retry_after_delay("5") == 5.0</code></pre>
+      <pre><code>now = datetime(2026, 7, 4, 12, 0, tzinfo=timezone.utc)
+retry_at = now + timedelta(seconds=7)
+retry_after = format_datetime(retry_at, usegmt=True)
+
+assert parse_retry_after_delay(retry_after, now=now) == 7.0</code></pre>
+      <p>第二条测试故意传入固定的 <code>now</code>，避免测试依赖真实当前时间。只要涉及时间，测试都应该尽量控制时钟。</p>
+    </section>
+
+    <section>
+      <h2>10. 测试精读二：真实 retry 分支采用 header</h2>
+      <pre><code>return httpx.Response(
+    status_code=429,
+    headers={"Retry-After": "2"},
+    request=request,
+)</code></pre>
+      <pre><code>assert sleep_calls == [2.0]</code></pre>
+      <p>这条测试让第一次 provider 响应返回 429，并带上 <code>Retry-After: 2</code>。本地 base delay 配的是 0.1 秒，但最终 sleep 记录是 2 秒，证明 provider 提示优先于本地估算。</p>
+    </section>
+
+    <section class="practice">
+      <h2>11. 课堂实验</h2>
+      <p>先运行 provider adapter 测试：</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests/test_provider_http.py -q</code></pre>
+      <p>预期看到：</p>
+      <pre><code>22 passed</code></pre>
+      <p>再运行全量测试：</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest -q</code></pre>
+      <p>观察重点：</p>
+      <ul>
+        <li><code>Retry-After: 2</code> 会让 fake sleep 记录 <code>2.0</code>。</li>
+        <li>无效 <code>Retry-After</code> 不会让请求崩掉，而是回退到本地 backoff。</li>
+        <li>超长 <code>Retry-After</code> 会被 <code>retry_max_delay_seconds</code> 截断。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>12. 常见错误与诊断</h2>
+      <div class="two-col">
+        <div class="callout">
+          <h3>错误一：把无效 header 当 0 秒</h3>
+          <p>无效 header 应该表示“没有可用提示”，回退到本地 backoff，而不是立即重试。</p>
+        </div>
+        <div class="callout">
+          <h3>错误二：不设置本地 cap</h3>
+          <p>provider 可能返回很长等待。同步 API 请求里必须保护自己的最大等待边界。</p>
+        </div>
+        <div class="callout">
+          <h3>错误三：用真实时间测试日期</h3>
+          <p>测试会不稳定。解析 HTTP-date 时传入固定 <code>now</code>。</p>
+        </div>
+        <div class="callout">
+          <h3>错误四：在 timeout 分支读 header</h3>
+          <p>timeout 通常没有正常响应对象，也就没有可读响应头。只有 HTTP 状态错误分支适合读 <code>Retry-After</code>。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>13. 面试视角：怎么解释 Retry-After</h2>
+      <blockquote>
+        <p><code>Retry-After</code> 是 provider 给客户端的标准重试时间提示。我的 adapter 会在 429 或可重试 5xx 的 HTTPStatusError 分支读取它，支持秒数和 HTTP-date 两种格式。可解析时优先使用 provider 提示，但会被本地最大等待截断；不可解析时回退到本地指数退避。这样既尊重服务端限流和维护信号，也避免一次 API 请求等待过久。</p>
+      </blockquote>
+    </section>
+
+    <section class="checkpoint">
+      <h2>14. 小测：先回忆，再展开</h2>
+      <details>
+        <summary>1. <code>Retry-After: 120</code> 表示什么？</summary>
+        <p class="answer">表示收到响应后等待 120 秒再发后续请求。</p>
+      </details>
+      <details>
+        <summary>2. HTTP-date 格式为什么要传固定 <code>now</code> 测试？</summary>
+        <p class="answer">因为真实当前时间不断变化，固定 <code>now</code> 能让日期差值测试稳定可重复。</p>
+      </details>
+      <details>
+        <summary>3. provider 返回 <code>Retry-After: 3600</code> 时为什么还要 cap？</summary>
+        <p class="answer">同步 API 请求不适合长时间占用 worker，本地 max delay 是客户端自己的服务边界。</p>
+      </details>
+      <details>
+        <summary>4. 无效 <code>Retry-After</code> 应该怎么处理？</summary>
+        <p class="answer">不要崩溃，也不要当作 0 秒；应该忽略它并回退到本地 backoff。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>15. 本节总结</h2>
+      <p>本节让 provider adapter 学会理解 <code>Retry-After</code>。现在它支持秒数和 HTTP-date 两种格式，可解析时优先使用 provider 提示，不可解析时回退到本地指数退避，并始终受 <code>retry_max_delay_seconds</code> 保护。这样我们的 retry 策略从“自己估算等待”升级成“结合 provider 信号和本地边界”。</p>
+      <p>下一课建议学习：<a href="./0045-retry-jitter.html">Retry Jitter</a>。我们会给 backoff 加一点随机扰动，避免多个客户端仍然在同一时间点整齐重试。</p>
+      <p>推荐主资源：<a href="https://datatracker.ietf.org/doc/html/rfc9110#section-10.2.3">RFC 9110 Retry-After</a>、<a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Retry-After">MDN Retry-After</a>、<a href="https://docs.python.org/3/library/email.utils.html">Python email.utils</a>。</p>
+      <p class="small">如果你想继续追问，可以问我：“为什么 Retry-After 很长时不应该一直 await？”这会引出同步请求、后台任务和队列重试的边界。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0043-backoff-before-retry.html">上一课：Backoff Before Retry</a>
+        <a href="../reference/0044-honor-retry-after-cheatsheet.html">查看本课速查</a>
+        <a href="./0045-retry-jitter.html">下一课：Retry Jitter</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

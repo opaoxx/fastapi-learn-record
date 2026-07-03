@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0041 - Prediction Service Orchestration</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0041</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0040-prediction-observability.html">上一课</a>
+        <a href="../reference/0041-prediction-service-orchestration-cheatsheet.html">本课速查</a>
+        <a href="./0042-provider-retry-policy.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0041</p>
+      <h1>Prediction Service Orchestration：把路由里的业务编排抽到 service 层</h1>
+      <p class="lead">第 40 课给预测接口加了可观测性，但也让 <code>predictions.py</code> 变胖了：它既要处理 HTTP，又要选择 demo/provider 后端，还要测耗时和包装错误。本节做一次架构收束：把预测业务编排抽到 <code>services/predictions.py</code>，让 router 重新专注 HTTP 翻译。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解“瘦 router，深 service”的模块边界。</li>
+        <li>学会用 service 函数承接后端选择、耗时测量和错误包装。</li>
+        <li>理解为什么 service error 可以携带 backend、elapsed_ms、error_code。</li>
+        <li>学会用 dataclass 表达 service 层返回结果。</li>
+        <li>学会为 service 层直接写单元测试，而不总是通过 HTTP 测试。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 背景：上一课之后，router 开始变胖</h2>
+      <p>上一课的 <code>/predict</code> 做了很多事：</p>
+      <ul>
+        <li>读取 <code>PredictionRequest</code>。</li>
+        <li>读取 settings。</li>
+        <li>选择 demo 或 provider 后端。</li>
+        <li>构造 <code>AIClientConfig</code>。</li>
+        <li>调用 demo client 或 provider adapter。</li>
+        <li>测量耗时。</li>
+        <li>把错误转成 503。</li>
+        <li>设置 headers。</li>
+        <li>写日志。</li>
+        <li>返回 <code>PredictionResponse</code>。</li>
+      </ul>
+      <p>这些代码都能运行，但职责已经混在一起。真实项目里，如果 router 继续变胖，后面加缓存、重试、限流、审计、A/B 实验时，路由函数会越来越难读。</p>
+      <p>所以本节做一个关键调整：把“预测业务怎么跑”交给 service；router 只负责“HTTP 请求怎么进来，HTTP 响应怎么出去”。</p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 核心概念：router 是协议层，service 是用例层</h2>
+      <p>可以把后端分成两层看：</p>
+      <div class="two-col">
+        <div>
+          <h3>Router</h3>
+          <p>处理 HTTP 相关的事情：路径、请求体、依赖注入、状态码、headers、OpenAPI、HTTPException。</p>
+        </div>
+        <div>
+          <h3>Service</h3>
+          <p>处理用例相关的事情：选择后端、调用 adapter、测量耗时、统一内部成功结果和内部错误结果。</p>
+        </div>
+      </div>
+      <p>本节重构后的链路是：</p>
+      <pre><code>router receives HTTP
+  -&gt; service runs prediction use case
+  -&gt; router maps service result to HTTP response
+  -&gt; router maps service error to HTTP 503</code></pre>
+      <p>这个边界不是为了“多建文件显得高级”，而是为了让变化有地方放。以后预测业务复杂了，优先长在 service 里，而不是把 router 写成大杂烩。</p>
+    </section>
+
+    <section>
+      <h2>3. 本节项目改动概览</h2>
+      <ul>
+        <li>新增 <code>first_api/services/predictions.py</code>。</li>
+        <li>新增 <code>PredictionServiceResult</code>，表达 service 成功结果。</li>
+        <li>新增 <code>PredictionServiceError</code>，表达 service 失败结果。</li>
+        <li>新增 <code>run_prediction()</code>，承接 demo/provider 后端选择和耗时测量。</li>
+        <li>重构 <code>routers/predictions.py</code>，让 <code>/predict</code> 和 <code>/provider/predict</code> 调用 service。</li>
+        <li>新增 <code>tests/test_prediction_service.py</code>，直接测试 service 层。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>4. 代码精读一：service 成功结果</h2>
+      <pre><code>@dataclass(frozen=True)
+class PredictionServiceResult:
+    prediction: PredictionResult
+    backend: PredictionBackend
+    elapsed_ms: float</code></pre>
+      <p>这个 dataclass 表示一次预测用例成功完成后，service 要交给 router 的信息。</p>
+      <ul>
+        <li><code>prediction</code> 是内部稳定预测结果。</li>
+        <li><code>backend</code> 告诉 router 本次走了 demo 还是 provider。</li>
+        <li><code>elapsed_ms</code> 告诉 router 本次业务耗时。</li>
+      </ul>
+      <p>为什么不用普通 dict？因为 dataclass 有明确字段、类型提示和构造方法。它比随手传字典更适合作为 service 层和 router 层之间的内部契约。</p>
+    </section>
+
+    <section>
+      <h2>5. 代码精读二：service 失败结果</h2>
+      <pre><code>class PredictionServiceError(Exception):
+    def __init__(
+        self,
+        message: str,
+        error_code: str,
+        backend: PredictionBackend,
+        elapsed_ms: float,
+    ) -&gt; None:
+        super().__init__(message)
+        self.message = message
+        self.error_code = error_code
+        self.backend = backend
+        self.elapsed_ms = elapsed_ms</code></pre>
+      <p>失败路径也需要携带上下文。上一课我们已经知道，失败时最需要 backend、elapsed_ms 和 error_code。问题是这些信息不能丢在 service 里，也不能让 router 自己重新猜。</p>
+      <p>所以 service 捕获底层 <code>AIClientError</code> 后，包装成 <code>PredictionServiceError</code>。router 拿到它以后，可以稳定地生成 HTTP 503、响应头和日志。</p>
+    </section>
+
+    <section>
+      <h2>6. 代码精读三：run_prediction 编排后端选择</h2>
+      <pre><code>async def run_prediction(
+    text: str,
+    mode: str,
+    settings: Settings,
+    ai_client: AIClient,
+    provider_http_client: httpx.AsyncClient,
+    backend: PredictionBackend | None = None,
+) -&gt; PredictionServiceResult:
+    active_backend = backend or settings.ai_prediction_backend
+    started_at = perf_counter()
+
+    try:
+        if active_backend == "provider":
+            config = AIClientConfig(...)
+            prediction = await request_provider_prediction(...)
+        else:
+            prediction = ai_client.predict_sentiment(text, mode)
+    except AIClientError as exc:
+        elapsed_ms = (perf_counter() - started_at) * 1000
+        raise PredictionServiceError(...) from exc
+
+    elapsed_ms = (perf_counter() - started_at) * 1000
+    return PredictionServiceResult(
+        prediction=prediction,
+        backend=active_backend,
+        elapsed_ms=elapsed_ms,
+    )</code></pre>
+      <p>这就是本节的核心函数。它把之前散在 router 里的“预测怎么跑”集中起来：</p>
+      <ul>
+        <li>决定 active backend。</li>
+        <li>记录开始时间。</li>
+        <li>根据 backend 调用 demo client 或 provider adapter。</li>
+        <li>成功时返回带耗时的 service result。</li>
+        <li>失败时抛出带耗时的 service error。</li>
+      </ul>
+      <p><code>backend</code> 参数是可选的。普通 <code>/predict</code> 使用 settings 决定后端；<code>/provider/predict</code> 可以传入 <code>backend="provider"</code>，强制走 provider 分支。</p>
+    </section>
+
+    <section>
+      <h2>7. 代码精读四：router 变回 HTTP 翻译层</h2>
+      <pre><code>try:
+    result = await run_prediction(
+        text=payload.text,
+        mode=payload.mode,
+        settings=settings,
+        ai_client=ai_client,
+        provider_http_client=provider_http_client,
+    )
+except PredictionServiceError as exc:
+    log_prediction_failed(exc)
+    raise HTTPException(
+        status_code=503,
+        detail={
+            "error_code": exc.error_code,
+            "message": exc.message,
+        },
+        headers=build_prediction_headers(
+            backend=exc.backend,
+            elapsed_ms=exc.elapsed_ms,
+            error_code=exc.error_code,
+        ),
+    ) from exc</code></pre>
+      <p>现在 router 不再关心 demo/provider 分支怎么执行。它只关心：</p>
+      <ul>
+        <li>调用 service。</li>
+        <li>service 成功时设置 headers、写成功日志、返回响应模型。</li>
+        <li>service 失败时设置错误 headers、写失败日志、抛出 HTTPException。</li>
+      </ul>
+      <p>这就是“router 负责 HTTP 翻译”的意思。</p>
+    </section>
+
+    <section>
+      <h2>8. 测试精读一：直接测 service 的 demo 分支</h2>
+      <pre><code>def test_run_prediction_uses_demo_backend() -&gt; None:
+    async def run() -&gt; object:
+        provider_client = httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda request: httpx.Response(500))
+        )
+        try:
+            return await run_prediction(
+                text="FastAPI is great and pleasant.",
+                mode="fast",
+                settings=Settings(ai_prediction_backend="demo"),
+                ai_client=DemoAIClient(config=AIClientConfig(provider="demo")),
+                provider_http_client=provider_client,
+            )
+        finally:
+            await provider_client.aclose()
+
+    result = asyncio.run(run())
+
+    assert result.backend == "demo"
+    assert result.prediction.source == "demo-ai-client"
+    assert result.elapsed_ms &gt;= 0</code></pre>
+      <p>这条测试不经过 HTTP，也不创建 TestClient。它直接测试 service 用例。这种测试更快、更聚焦，失败时也更容易定位到业务编排层。</p>
+    </section>
+
+    <section>
+      <h2>9. 测试精读二：service 错误必须保留上下文</h2>
+      <pre><code>def test_run_prediction_wraps_provider_errors_with_backend_and_elapsed_time() -&gt; None:
+    async def run() -&gt; None:
+        def handler(request: httpx.Request) -&gt; httpx.Response:
+            return httpx.Response(status_code=503, request=request)
+
+        provider_client = httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        )
+        try:
+            await run_prediction(
+                text="FastAPI is great and pleasant.",
+                mode="fast",
+                settings=Settings(ai_prediction_backend="provider"),
+                ai_client=DemoAIClient(config=AIClientConfig(provider="demo")),
+                provider_http_client=provider_client,
+            )
+        finally:
+            await provider_client.aclose()
+
+    try:
+        asyncio.run(run())
+    except PredictionServiceError as exc:
+        error = exc
+
+    assert error.backend == "provider"
+    assert error.error_code == "ai_provider_http_error"
+    assert error.elapsed_ms &gt;= 0</code></pre>
+      <p>这个测试保护了本节最重要的失败语义：provider 失败以后，router 仍然能知道 backend、error_code 和 elapsed_ms。</p>
+    </section>
+
+    <section class="practice">
+      <h2>10. 课堂实验</h2>
+      <p>先运行 service 层测试：</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests/test_prediction_service.py -q</code></pre>
+      <p>预期看到：</p>
+      <pre><code>2 passed</code></pre>
+      <p>再运行预测接口测试：</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests/test_ai_client_dependency.py -q</code></pre>
+      <p>观察点：</p>
+      <ul>
+        <li>service 测试证明业务编排本身正确。</li>
+        <li>HTTP 测试证明 router 翻译仍然正确。</li>
+        <li>全量测试证明重构没有破坏其他课程功能。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>11. 常见错误与诊断</h2>
+      <div class="two-col">
+        <div class="callout">
+          <h3>错误一：router 什么都做</h3>
+          <p>router 变胖后，业务变化和 HTTP 变化混在一起。优先把用例编排抽到 service。</p>
+        </div>
+        <div class="callout">
+          <h3>错误二：service 抛 HTTPException</h3>
+          <p>HTTPException 属于 HTTP 层。service 更适合抛内部错误，由 router 翻译成 HTTP。</p>
+        </div>
+        <div class="callout">
+          <h3>错误三：错误包装丢失上下文</h3>
+          <p>如果只保留 message，router 就无法设置 backend、elapsed 和 error-code headers。</p>
+        </div>
+        <div class="callout">
+          <h3>错误四：只写 HTTP 测试</h3>
+          <p>HTTP 测试很重要，但 service 层单元测试能更快定位业务编排问题。</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>12. 面试视角：怎样解释这次重构</h2>
+      <blockquote>
+        <p>我把预测后端选择和耗时测量从 FastAPI router 抽到了 service 层。service 返回 PredictionServiceResult 或抛 PredictionServiceError，里面包含 prediction、backend、elapsed_ms 和 error_code。router 不再关心 demo/provider 分支细节，只负责把 service 结果翻译成 HTTP response、headers、logs 或 HTTPException。这样路由更薄，业务编排更容易测试。</p>
+      </blockquote>
+    </section>
+
+    <section class="checkpoint">
+      <h2>13. 小测：先回忆，再展开</h2>
+      <details>
+        <summary>1. router 和 service 的职责分别是什么？</summary>
+        <p class="answer">router 负责 HTTP 协议翻译，service 负责业务用例编排，例如选择后端、调用 adapter、测量耗时和包装内部错误。</p>
+      </details>
+      <details>
+        <summary>2. 为什么 service 不直接抛 <code>HTTPException</code>？</summary>
+        <p class="answer"><code>HTTPException</code> 属于 HTTP 层；service 应该保持框架无关，抛内部错误，再由 router 转成 HTTP 响应。</p>
+      </details>
+      <details>
+        <summary>3. <code>PredictionServiceError</code> 为什么要携带 <code>elapsed_ms</code>？</summary>
+        <p class="answer">失败路径同样需要耗时证据，router 要用它设置响应头和日志，帮助定位慢失败或 provider 超时。</p>
+      </details>
+      <details>
+        <summary>4. 为什么还要保留 HTTP 测试？</summary>
+        <p class="answer">service 测试验证业务编排，HTTP 测试验证 FastAPI 依赖、headers、状态码和响应 JSON 翻译。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>14. 本节总结</h2>
+      <p>本节把预测业务编排从 router 抽到 service 层。现在 <code>run_prediction()</code> 负责选择后端、调用 demo 或 provider、测量耗时和包装错误；router 负责把 service 结果转换成 HTTP 响应、headers 和日志。这个结构更接近真实后端项目，也为下一步加入缓存、重试、限流或更复杂 provider 策略留下了清晰位置。</p>
+      <p>下一课建议学习：<a href="./0042-provider-retry-policy.html">Provider Retry Policy</a>。我们会讨论哪些错误适合重试、哪些错误不该重试，以及如何避免把重试写成“无限请求 provider”。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/bigger-applications/">FastAPI Bigger Applications</a>、<a href="https://fastapi.tiangolo.com/tutorial/dependencies/">FastAPI Dependencies</a>、<a href="https://docs.python.org/3/library/dataclasses.html">Python dataclasses</a>、<a href="https://docs.python.org/3/library/time.html">Python time</a>。</p>
+      <p class="small">如果你想继续追问，可以问我：“service 层再变胖怎么办？”这个问题会引出更深的 application service、domain service 和 adapter 分层。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0040-prediction-observability.html">上一课：Prediction Observability</a>
+        <a href="../reference/0041-prediction-service-orchestration-cheatsheet.html">查看本课速查</a>
+        <a href="./0042-provider-retry-policy.html">下一课：Provider Retry Policy</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

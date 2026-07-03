@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Provider Retry Policy Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0042</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0042-provider-retry-policy.html">回到第 42 课</a>
+        <a href="./0041-prediction-service-orchestration-cheatsheet.html">上一张速查</a>
+        <a href="./0043-backoff-before-retry-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0042</p>
+      <h1>Provider Retry Policy 速查</h1>
+      <p class="lead">retry 是有限预算下的错误分类策略，不是无脑循环。</p>
+    </header>
+
+    <h2>心智模型</h2>
+    <pre><code>retry policy =
+  which failures can be retried
+  + which failures must fail fast
+  + how many total attempts are allowed</code></pre>
+
+    <h2>可重试状态码</h2>
+    <pre><code>RETRYABLE_PROVIDER_STATUS_CODES = {429, 500, 502, 503, 504}</code></pre>
+
+    <h2>本项目规则</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>情况</th>
+          <th>是否重试</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>httpx.TimeoutException</code></td>
+          <td>是，直到 <code>max_attempts</code></td>
+        </tr>
+        <tr>
+          <td><code>httpx.RequestError</code></td>
+          <td>是，直到 <code>max_attempts</code></td>
+        </tr>
+        <tr>
+          <td><code>429/500/502/503/504</code></td>
+          <td>是，直到 <code>max_attempts</code></td>
+        </tr>
+        <tr>
+          <td><code>400/401/403/404</code></td>
+          <td>否，立刻失败</td>
+        </tr>
+        <tr>
+          <td>非法 JSON 或 Pydantic 校验失败</td>
+          <td>否，立刻失败</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>核心代码形状</h2>
+    <pre><code>for attempt in range(1, config.max_attempts + 1):
+    try:
+        response = await active_client.post(...)
+        response.raise_for_status()
+        body = ProviderPredictionBody.model_validate(response.json())
+        return PredictionResult(...)
+    except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code
+        if attempt &lt; config.max_attempts and is_retryable_provider_status(status_code):
+            continue
+        raise AIClientError(...) from exc</code></pre>
+
+    <h2>职责位置</h2>
+    <ul>
+      <li>adapter：识别 HTTPX 异常、HTTP 状态码、provider 响应体。</li>
+      <li>service：选择 demo/provider，编排预测用例，包装 service 错误。</li>
+      <li>router：把 service 成功或失败翻译成 HTTP 响应、headers、日志。</li>
+    </ul>
+
+    <h2>测试清单</h2>
+    <ul>
+      <li>第一次 503、第二次 200：应该成功，调用 2 次。</li>
+      <li>连续 503 且 <code>max_attempts=3</code>：应该失败，调用 3 次。</li>
+      <li>400：应该失败，调用 1 次。</li>
+      <li>非法响应体：应该失败，调用 1 次。</li>
+    </ul>
+
+    <h2>常见坑</h2>
+    <ul>
+      <li>把所有异常都重试。</li>
+      <li>没有最大尝试次数。</li>
+      <li>在 router 里处理 provider retry 细节。</li>
+      <li>忘记 POST 可能有副作用或计费成本。</li>
+    </ul>
+
+    <h2>面试短答</h2>
+    <blockquote>
+      <p>我会在 provider adapter 层做有限 retry：超时、网络错误、429 和常见临时 5xx 可以重试到 <code>max_attempts</code>；400、认证错误、权限错误、路径错误和非法响应体不重试。这样既提升临时故障下的成功率，又不会掩盖确定性错误。</p>
+    </blockquote>
+
+    <footer>
+      来源：<a href="https://www.python-httpx.org/exceptions/">HTTPX Exceptions</a>、
+      <a href="https://www.python-httpx.org/advanced/timeouts/">HTTPX Timeouts</a>、
+      <a href="https://datatracker.ietf.org/doc/html/rfc6585">RFC 6585</a>、
+      <a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-503-service-unavailable">RFC 9110</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0042-provider-retry-policy.html">回到第 42 课</a>
+        <a href="./0041-prediction-service-orchestration-cheatsheet.html">上一张速查</a>
+        <a href="./0043-backoff-before-retry-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

@@ -86,6 +86,18 @@
   HTTP reference for 202 semantics. Use when explaining task submission responses.
 - [MDN 503 Service Unavailable](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/503)
   HTTP reference for temporary service unavailability. Use when explaining model-client outages, timeouts, and retryable AI-service failures.
+- [RFC 6585: Additional HTTP Status Codes](https://datatracker.ietf.org/doc/html/rfc6585)
+  IETF RFC defining 429 Too Many Requests. Use when teaching rate limiting and retry decisions around provider calls.
+- [RFC 9110: HTTP Semantics](https://www.rfc-editor.org/rfc/rfc9110.html)
+  IETF HTTP semantics specification. Use when teaching Retry-After, 503 Service Unavailable, and standards-backed retry reasoning.
+- [MDN Retry-After Header](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Retry-After)
+  MDN reference for Retry-After syntax and common use with 503, 429, and redirects. Use when teaching provider-driven retry timing.
+- [Google Cloud Retry Strategy](https://docs.cloud.google.com/iam/docs/retry-strategy)
+  Official Google Cloud guidance on truncated exponential backoff and jitter. Use when teaching why immediate retries can amplify load and how backoff reduces retry storms.
+- [AWS Architecture Blog: Exponential Backoff and Jitter](https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/)
+  AWS architecture article explaining why capped exponential backoff can still cluster retries and how jitter spreads retry traffic.
+- [Python random](https://docs.python.org/3/library/random.html)
+  Official Python standard-library documentation for pseudo-random number generation. Use when teaching testable jitter and non-security randomization.
 - [FastAPI Request Files](https://fastapi.tiangolo.com/tutorial/request-files/)
   Official guide to File, bytes, and UploadFile. Use when teaching file upload endpoints.
 - [FastAPI Request Forms and Files](https://fastapi.tiangolo.com/tutorial/request-forms-and-files/)

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Retry Exhaustion Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0047</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0047-retry-exhaustion.html">回到第 47 课</a>
+        <a href="./0046-retry-observability-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0047</p>
+      <h1>Retry Exhaustion 速查</h1>
+      <p class="lead">Retry exhaustion 表示可重试错误已经用完所有 attempt，必须停止并向上抛出失败。</p>
+    </header>
+
+    <h2>心智模型</h2>
+    <pre><code>retry budget = max_attempts
+scheduled retry = failed, but can try again
+retry exhausted = failed, and no attempts left
+fail fast = should not retry at all</code></pre>
+
+    <h2>日志事件</h2>
+    <pre><code>provider_prediction_retry_scheduled
+provider_prediction_retry_exhausted</code></pre>
+
+    <h2>Exhausted 字段</h2>
+    <ul>
+      <li><code>attempt</code>：最终失败发生在第几次尝试。</li>
+      <li><code>max_attempts</code>：最多允许尝试几次。</li>
+      <li><code>retry_reason</code>：timeout、http_status 或 request_error。</li>
+      <li><code>status_code</code>：HTTP 状态失败时记录。</li>
+      <li><code>retry_after</code>：最后一次 HTTP 响应里的 Retry-After。</li>
+      <li><code>error_code</code>：上抛给 service/router 的稳定错误码。</li>
+    </ul>
+
+    <h2>核心规则</h2>
+    <pre><code>if retryable and attempt &lt; max_attempts:
+    log scheduled retry
+    sleep
+    continue
+
+if retryable and attempt == max_attempts:
+    log retry exhausted
+    raise AIClientError
+
+if not retryable:
+    raise AIClientError</code></pre>
+
+    <h2>代码形状</h2>
+    <pre><code>logger.warning(
+    "provider_prediction_retry_exhausted",
+    extra={
+        "attempt": attempt,
+        "max_attempts": config.max_attempts,
+        "retry_reason": retry_reason,
+        "status_code": status_code,
+        "error_code": error_code,
+    },
+)</code></pre>
+
+    <h2>caplog 断言</h2>
+    <pre><code>caplog.set_level(logging.WARNING, logger="first_api.services.provider_http")
+
+assert exhausted_records[0].attempt == 3
+assert exhausted_records[0].max_attempts == 3
+assert exhausted_records[0].status_code == 503
+assert exhausted_records[0].error_code == "ai_provider_http_error"</code></pre>
+
+    <h2>常见边界</h2>
+    <ul>
+      <li>503 连续失败到最后一次：记录 exhausted。</li>
+      <li>timeout 连续失败到最后一次：记录 exhausted。</li>
+      <li>request error 连续失败到最后一次：记录 exhausted。</li>
+      <li>400：快速失败，不记录 exhausted。</li>
+      <li>非法响应体：快速失败，不记录 exhausted。</li>
+    </ul>
+
+    <h2>面试短答</h2>
+    <blockquote>
+      <p>我会把 max_attempts 看作 retry budget。预算内的可重试错误记录 scheduled retry；最后一次仍失败时记录 retry exhausted warning 并抛出稳定错误码。不可重试错误快速失败，不误标为 exhausted。</p>
+    </blockquote>
+
+    <footer>
+      来源：<a href="https://docs.python.org/3/library/logging.html">Python logging</a>、
+      <a href="https://docs.pytest.org/en/stable/how-to/logging.html">pytest logging</a>、
+      <a href="https://www.python-httpx.org/exceptions/">HTTPX exceptions</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0047-retry-exhaustion.html">回到第 47 课</a>
+        <a href="./0046-retry-observability-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>
