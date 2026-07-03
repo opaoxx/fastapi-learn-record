@@ -55,7 +55,6 @@ fastapi dev first_api/main.py
 - API 文档：http://127.0.0.1:8000/docs
 - OpenAPI 契约：http://127.0.0.1:8000/openapi.json
 - 静态前端：http://127.0.0.1:8000/app/
-- 课程目录：直接用浏览器打开 `index.html`
 
 ## 配置
 
@@ -105,16 +104,21 @@ python -m pytest -q
 
 每节课都尽量遵循同一结构：先讲原理，再看机制，再读代码，最后做实验和小测。
 
-## 仓库说明
+## 打开课程 HTML
 
-以下内容属于本地开发产物，不应该提交到 GitHub：
+课程页面是静态 HTML 文件，不需要启动 FastAPI 服务也能阅读。
 
-- `.venv/`
-- `.env`
-- `.idea/`
-- `__pycache__/`
-- `.pytest_cache/`
-- `*.db`
-- `*.pyc`
+本地阅读方式：
 
-如果这些文件之前已经被 Git 追踪，需要先用 `git rm --cached` 从仓库索引中移除，再提交一次清理记录。本地文件不会被删除。
+1. 下载或克隆仓库到电脑。
+2. 在文件管理器中打开项目根目录。
+3. 双击 `index.html`，或右键选择用浏览器打开。
+4. 从课程目录进入 `lessons/` 中的完整讲义，或进入 `reference/` 中的速查表。
+
+也可以直接在浏览器地址栏打开本地文件路径，例如：
+
+```text
+F:\teaching_me\index.html
+```
+
+如果是在 GitHub 网页上直接点击 HTML 文件，通常会看到源码而不是课程页面。建议把仓库克隆到本地后，用浏览器打开 `index.html` 阅读。
