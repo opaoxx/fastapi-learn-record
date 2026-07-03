@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fail-fast Observability Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0048</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0048-fail-fast-observability.html">回到第 48 课</a>
+        <a href="./0047-retry-exhaustion-cheatsheet.html">上一张速查</a>
+        <a href="./0049-provider-error-taxonomy-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0048</p>
+      <h1>Fail-fast Observability 速查</h1>
+      <p class="lead">Fail fast 表示错误从分类上不该重试。它应该快速停止，同时留下清楚的结构化日志。</p>
+    </header>
+
+    <h2>心智模型</h2>
+    <pre><code>retry exhausted = retryable error + no attempts left
+fail fast = non-retryable error + stop immediately</code></pre>
+
+    <h2>日志事件</h2>
+    <pre><code>provider_prediction_fail_fast</code></pre>
+
+    <h2>字段清单</h2>
+    <ul>
+      <li><code>attempt</code>：在哪一次 attempt 上停止。</li>
+      <li><code>max_attempts</code>：配置允许的最大 attempt 数。</li>
+      <li><code>fail_fast_reason</code>：<code>http_status</code> 或 <code>invalid_response</code>。</li>
+      <li><code>status_code</code>：拿到 HTTP 响应时记录状态码。</li>
+      <li><code>error_code</code>：上抛给 service/router 的稳定错误码。</li>
+    </ul>
+
+    <h2>核心规则</h2>
+    <pre><code>if retryable and attempt &lt; max_attempts:
+    log scheduled retry
+    sleep
+    continue
+
+if retryable:
+    log retry exhausted
+    raise AIClientError
+
+if not retryable:
+    log fail fast
+    raise AIClientError</code></pre>
+
+    <h2>典型场景</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>场景</th>
+          <th>是否重试</th>
+          <th>日志语义</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>HTTP 400</td>
+          <td>否</td>
+          <td><code>fail_fast_reason="http_status"</code></td>
+        </tr>
+        <tr>
+          <td>HTTP 503 到最后一次</td>
+          <td>先重试，最后停止</td>
+          <td><code>provider_prediction_retry_exhausted</code></td>
+        </tr>
+        <tr>
+          <td>非法响应体</td>
+          <td>否</td>
+          <td><code>fail_fast_reason="invalid_response"</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>代码形状</h2>
+    <pre><code>logger.warning(
+    "provider_prediction_fail_fast",
+    extra={
+        "attempt": attempt,
+        "max_attempts": config.max_attempts,
+        "fail_fast_reason": fail_fast_reason,
+        "status_code": status_code,
+        "error_code": error_code,
+    },
+)</code></pre>
+
+    <h2>caplog 断言</h2>
+    <pre><code>assert attempts == 1
+assert fail_fast_records[0].fail_fast_reason == "http_status"
+assert fail_fast_records[0].status_code == 400
+assert exhausted_records == []</code></pre>
+
+    <h2>常见错误</h2>
+    <ul>
+      <li>把 400 误记成 retry exhausted。</li>
+      <li>非法响应体不记录诊断日志。</li>
+      <li>日志里写完整用户输入或 provider 响应体。</li>
+      <li>只测试不重试，不测试日志语义。</li>
+      <li>把内部 fail-fast 字段加入公共响应体。</li>
+    </ul>
+
+    <h2>面试短答</h2>
+    <blockquote>
+      <p>我会把不可重试错误和 retry exhausted 分开。400 和非法响应体会 fail fast，只尝试一次，并记录 attempt、max_attempts、fail_fast_reason、status_code 和 error_code。这样既避免无意义重试，也不会误导日志读者以为 retry budget 被用完。</p>
+    </blockquote>
+
+    <footer>
+      来源：<a href="https://docs.python.org/3/library/logging.html">Python logging</a>、
+      <a href="https://docs.pytest.org/en/stable/how-to/logging.html">pytest logging</a>、
+      <a href="https://www.python-httpx.org/exceptions/">HTTPX exceptions</a>、
+      <a href="https://docs.pydantic.dev/latest/concepts/models/">Pydantic models</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0048-fail-fast-observability.html">回到第 48 课</a>
+        <a href="./0047-retry-exhaustion-cheatsheet.html">上一张速查</a>
+        <a href="./0049-provider-error-taxonomy-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

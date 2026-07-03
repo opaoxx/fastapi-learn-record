@@ -1,8 +1,9 @@
 import asyncio
 import logging
 import random
+from collections import Counter
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Literal
@@ -19,6 +20,22 @@ RetrySleep = Callable[[float], Awaitable[None]]
 RetryRandom = Callable[[], float]
 RetryDelaySource = Literal["retry_after", "local_backoff"]
 RetryFailureReason = Literal["timeout", "http_status", "request_error"]
+FailFastReason = Literal["http_status", "invalid_response"]
+ProviderFailureCategory = Literal[
+    "timeout",
+    "request_error",
+    "retryable_http_status",
+    "non_retryable_http_status",
+    "invalid_response",
+]
+ProviderMetricOutcome = Literal[
+    "success",
+    "retry_scheduled",
+    "retry_exhausted",
+    "fail_fast",
+]
+ProviderMetricFailureCategory = ProviderFailureCategory | Literal["none"]
+ProviderMetricOperation = Literal["prediction"]
 
 
 @dataclass(frozen=True)
@@ -35,6 +52,53 @@ class RetryDelayPlan:
     source: RetryDelaySource
 
 
+@dataclass(frozen=True)
+class ProviderMetricLabels:
+    operation: ProviderMetricOperation
+    outcome: ProviderMetricOutcome
+    failure_category: ProviderMetricFailureCategory
+    error_code: str
+    status_code: str
+
+    def as_dict(self) -> dict[str, str]:
+        return {
+            "operation": self.operation,
+            "outcome": self.outcome,
+            "failure_category": self.failure_category,
+            "error_code": self.error_code,
+            "status_code": self.status_code,
+        }
+
+
+@dataclass
+class ProviderMetricsCounter:
+    _counts: Counter[ProviderMetricLabels] = field(default_factory=Counter)
+
+    def increment(self, labels: ProviderMetricLabels, amount: int = 1) -> None:
+        if amount < 1:
+            raise ValueError("Metric increment amount must be positive.")
+        self._counts[labels] += amount
+
+    def snapshot(self) -> list[dict[str, object]]:
+        samples = sorted(
+            self._counts.items(),
+            key=lambda item: (
+                item[0].operation,
+                item[0].outcome,
+                item[0].failure_category,
+                item[0].error_code,
+                item[0].status_code,
+            ),
+        )
+        return [
+            {
+                "labels": labels.as_dict(),
+                "count": count,
+            }
+            for labels, count in samples
+        ]
+
+
 class ProviderPredictionPayload(BaseModel):
     text: str
     mode: str
@@ -47,6 +111,27 @@ class ProviderPredictionBody(BaseModel):
 
 def is_retryable_provider_status(status_code: int) -> bool:
     return status_code in RETRYABLE_PROVIDER_STATUS_CODES
+
+
+def classify_provider_http_status(status_code: int) -> ProviderFailureCategory:
+    if is_retryable_provider_status(status_code):
+        return "retryable_http_status"
+    return "non_retryable_http_status"
+
+
+def build_provider_metric_labels(
+    outcome: ProviderMetricOutcome,
+    failure_category: ProviderMetricFailureCategory = "none",
+    error_code: str = "none",
+    status_code: int | None = None,
+) -> ProviderMetricLabels:
+    return ProviderMetricLabels(
+        operation="prediction",
+        outcome=outcome,
+        failure_category=failure_category,
+        error_code=error_code,
+        status_code=str(status_code) if status_code is not None else "none",
+    )
 
 
 def parse_retry_after_delay(
@@ -180,6 +265,25 @@ def log_retry_exhausted(
     )
 
 
+def log_prediction_fail_fast(
+    attempt: int,
+    config: AIClientConfig,
+    fail_fast_reason: FailFastReason,
+    error_code: str,
+    status_code: int | None = None,
+) -> None:
+    logger.warning(
+        "provider_prediction_fail_fast",
+        extra={
+            "attempt": attempt,
+            "max_attempts": config.max_attempts,
+            "fail_fast_reason": fail_fast_reason,
+            "status_code": status_code,
+            "error_code": error_code,
+        },
+    )
+
+
 async def check_provider_health(
     url: str,
     config: AIClientConfig,
@@ -272,7 +376,10 @@ async def request_provider_prediction(
                 ) from exc
             except httpx.HTTPStatusError as exc:
                 status_code = exc.response.status_code
-                retryable_status = is_retryable_provider_status(status_code)
+                retryable_status = (
+                    classify_provider_http_status(status_code)
+                    == "retryable_http_status"
+                )
                 if attempt < config.max_attempts and retryable_status:
                     await wait_before_retry(
                         attempt,
@@ -291,6 +398,14 @@ async def request_provider_prediction(
                         retry_reason="http_status",
                         error_code="ai_provider_http_error",
                         retry_after=exc.response.headers.get("Retry-After"),
+                        status_code=status_code,
+                    )
+                else:
+                    log_prediction_fail_fast(
+                        attempt=attempt,
+                        config=config,
+                        fail_fast_reason="http_status",
+                        error_code="ai_provider_http_error",
                         status_code=status_code,
                     )
                 raise AIClientError(
@@ -318,6 +433,13 @@ async def request_provider_prediction(
                     error_code="ai_provider_request_error",
                 ) from exc
             except (ValueError, ValidationError) as exc:
+                log_prediction_fail_fast(
+                    attempt=attempt,
+                    config=config,
+                    fail_fast_reason="invalid_response",
+                    error_code="ai_provider_invalid_response",
+                    status_code=response.status_code,
+                )
                 raise AIClientError(
                     message="The AI provider returned an invalid prediction response.",
                     error_code="ai_provider_invalid_response",

@@ -529,6 +529,50 @@
             <a href="lessons/0047-retry-exhaustion.html">进入课程</a>
             <a href="reference/0047-retry-exhaustion-cheatsheet.html">查看速查</a>
             <a href="lessons/0046-retry-observability.html">上一课</a>
+            <a href="lessons/0048-fail-fast-observability.html">下一课</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Lesson 0048 - Fail-fast Observability</h3>
+          <p>给不可重试 HTTP 错误和非法 provider 响应补上结构化日志，区分快速失败和 retry exhausted。</p>
+          <div class="links">
+            <a href="lessons/0048-fail-fast-observability.html">进入课程</a>
+            <a href="reference/0048-fail-fast-observability-cheatsheet.html">查看速查</a>
+            <a href="lessons/0047-retry-exhaustion.html">上一课</a>
+            <a href="lessons/0049-provider-error-taxonomy.html">下一课</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Lesson 0049 - Provider Error Taxonomy</h3>
+          <p>把 provider timeout、request error、HTTP 状态错误和非法响应整理成稳定分类表，连接 retry、fail fast、日志事件和错误码。</p>
+          <div class="links">
+            <a href="lessons/0049-provider-error-taxonomy.html">进入课程</a>
+            <a href="reference/0049-provider-error-taxonomy-cheatsheet.html">查看速查</a>
+            <a href="lessons/0048-fail-fast-observability.html">上一课</a>
+            <a href="lessons/0050-provider-metrics-basics.html">下一课</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Lesson 0050 - Provider Metrics Basics</h3>
+          <p>理解 logs 和 metrics 的分工，设计 provider prediction 的低基数指标标签，并用测试保护标签形状。</p>
+          <div class="links">
+            <a href="lessons/0050-provider-metrics-basics.html">进入课程</a>
+            <a href="reference/0050-provider-metrics-basics-cheatsheet.html">查看速查</a>
+            <a href="lessons/0049-provider-error-taxonomy.html">上一课</a>
+            <a href="lessons/0051-provider-metrics-counters.html">下一课</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Lesson 0051 - Provider Metrics Counters</h3>
+          <p>用教学用进程内 counter 理解相同 label set 如何累加成 provider prediction 的 outcome 计数。</p>
+          <div class="links">
+            <a href="lessons/0051-provider-metrics-counters.html">进入课程</a>
+            <a href="reference/0051-provider-metrics-counters-cheatsheet.html">查看速查</a>
+            <a href="lessons/0050-provider-metrics-basics.html">上一课</a>
           </div>
         </article>
       </div>
@@ -983,6 +1027,50 @@
             <a href="reference/0047-retry-exhaustion-cheatsheet.html">打开速查</a>
             <a href="lessons/0047-retry-exhaustion.html">回到课程</a>
             <a href="reference/0046-retry-observability-cheatsheet.html">上一张速查</a>
+            <a href="reference/0048-fail-fast-observability-cheatsheet.html">下一张速查</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Reference 0048 - Fail-fast Observability</h3>
+          <p>fail fast、不可重试错误、非法响应体、结构化日志字段和 caplog 断言。</p>
+          <div class="links">
+            <a href="reference/0048-fail-fast-observability-cheatsheet.html">打开速查</a>
+            <a href="lessons/0048-fail-fast-observability.html">回到课程</a>
+            <a href="reference/0047-retry-exhaustion-cheatsheet.html">上一张速查</a>
+            <a href="reference/0049-provider-error-taxonomy-cheatsheet.html">下一张速查</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Reference 0049 - Provider Error Taxonomy</h3>
+          <p>provider 失败分类、HTTP 状态 taxonomy、类别与日志事件边界、稳定错误码和测试保护。</p>
+          <div class="links">
+            <a href="reference/0049-provider-error-taxonomy-cheatsheet.html">打开速查</a>
+            <a href="lessons/0049-provider-error-taxonomy.html">回到课程</a>
+            <a href="reference/0048-fail-fast-observability-cheatsheet.html">上一张速查</a>
+            <a href="reference/0050-provider-metrics-basics-cheatsheet.html">下一张速查</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Reference 0050 - Provider Metrics Basics</h3>
+          <p>logs vs metrics、低基数 label、ProviderMetricLabels、成功/失败标签形状和测试保护。</p>
+          <div class="links">
+            <a href="reference/0050-provider-metrics-basics-cheatsheet.html">打开速查</a>
+            <a href="lessons/0050-provider-metrics-basics.html">回到课程</a>
+            <a href="reference/0049-provider-error-taxonomy-cheatsheet.html">上一张速查</a>
+            <a href="reference/0051-provider-metrics-counters-cheatsheet.html">下一张速查</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Reference 0051 - Provider Metrics Counters</h3>
+          <p>counter 心智模型、label set 聚合、snapshot 形状、进程内教学边界和测试重点。</p>
+          <div class="links">
+            <a href="reference/0051-provider-metrics-counters-cheatsheet.html">打开速查</a>
+            <a href="lessons/0051-provider-metrics-counters.html">回到课程</a>
+            <a href="reference/0050-provider-metrics-basics-cheatsheet.html">上一张速查</a>
           </div>
         </article>
       </div>

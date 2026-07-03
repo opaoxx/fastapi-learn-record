@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Provider Metrics Counters Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0051</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0051-provider-metrics-counters.html">回到第 51 课</a>
+        <a href="./0050-provider-metrics-basics-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0051</p>
+      <h1>Provider Metrics Counters 速查</h1>
+      <p class="lead">Counter 用来记录事件发生次数；相同 label set 的事件累加到同一条计数。</p>
+    </header>
+
+    <h2>心智模型</h2>
+    <pre><code>counter = only goes up
+same labels = same time series
+different labels = different count</code></pre>
+
+    <h2>代码形状</h2>
+    <pre><code>@dataclass
+class ProviderMetricsCounter:
+    _counts: Counter[ProviderMetricLabels] = field(default_factory=Counter)</code></pre>
+
+    <h2>递增规则</h2>
+    <pre><code>counter.increment(success_labels)
+counter.increment(success_labels)
+counter.increment(fail_fast_labels)</code></pre>
+
+    <h2>Snapshot 形状</h2>
+    <pre><code>[
+  {"labels": fail_fast_labels.as_dict(), "count": 1},
+  {"labels": success_labels.as_dict(), "count": 2},
+]</code></pre>
+
+    <h2>边界</h2>
+    <ul>
+      <li>这是教学用进程内 counter。</li>
+      <li>进程重启后数据会消失。</li>
+      <li>多进程、多实例不会自动聚合。</li>
+      <li>真实生产需要 Prometheus、OpenTelemetry 或云监控等后端。</li>
+    </ul>
+
+    <h2>测试重点</h2>
+    <pre><code>assert counter.snapshot()[1]["count"] == 2
+
+try:
+    counter.increment(labels, amount=0)
+except ValueError:
+    ...</code></pre>
+
+    <h2>常见错误</h2>
+    <ul>
+      <li>用 counter 表达会上下变化的值。</li>
+      <li>把进程内 counter 当生产方案。</li>
+      <li>把 request id 放进 label。</li>
+      <li>snapshot 顺序不稳定导致测试脆弱。</li>
+    </ul>
+
+    <h2>面试短答</h2>
+    <blockquote>
+      <p>Counter 适合统计事件次数，只递增不递减。provider prediction 可以按 outcome、failure_category、error_code、status_code 等低基数 label 聚合；单次请求上下文仍然放在结构化日志里。</p>
+    </blockquote>
+
+    <footer>
+      来源：<a href="https://prometheus.io/docs/concepts/metric_types/">Prometheus metric types</a>、
+      <a href="https://opentelemetry.io/docs/concepts/signals/metrics/">OpenTelemetry Metrics</a>、
+      <a href="https://docs.python.org/3/library/collections.html#collections.Counter">Python Counter</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0051-provider-metrics-counters.html">回到第 51 课</a>
+        <a href="./0050-provider-metrics-basics-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

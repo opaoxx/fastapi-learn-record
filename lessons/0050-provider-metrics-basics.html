@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0050 - Provider Metrics Basics</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0050</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0049-provider-error-taxonomy.html">上一课</a>
+        <a href="./0051-provider-metrics-counters.html">下一课</a>
+        <a href="../reference/0050-provider-metrics-basics-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0050</p>
+      <h1>Provider Metrics Basics：把错误分类变成可统计的指标标签</h1>
+      <p class="lead">上一课我们建立了 provider error taxonomy。本节继续向生产可观测性靠近：日志适合解释单次请求，metrics 适合回答“发生了多少次、比例是多少、最近有没有变多”。我们先不引入监控平台，只把指标标签的形状设计清楚并用测试保护。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解 logs 和 metrics 的职责差异。</li>
+        <li>知道什么是 metric label，以及为什么 label 必须低基数。</li>
+        <li>掌握 provider prediction 指标标签应包含哪些稳定字段。</li>
+        <li>理解为什么不能把用户输入、响应体或异常全文放进指标标签。</li>
+        <li>学会用测试保护 metrics label 的形状。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 背景：日志回答“这一次”，指标回答“一段时间”</h2>
+      <p>前几节课我们已经给 provider retry、retry exhausted 和 fail fast 加了结构化日志。日志非常适合排查某一次请求：第几次 attempt 失败、状态码是多少、有没有 Retry-After、最终是 exhausted 还是 fail fast。</p>
+      <p>但当你想回答“今天 provider 503 比昨天多了吗？”、“fail fast 主要来自 400 还是 invalid response？”、“retry exhausted 占所有 provider 失败多少比例？”时，逐条翻日志就不够高效了。这类问题更适合 metrics。</p>
+      <p><strong>Metrics</strong> 可以先理解成随时间记录的数值信号，例如计数器、耗时分布、当前队列长度。本节只做最基础的一步：设计 provider prediction 指标的标签。</p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 核心概念：Metric Label 必须稳定且低基数</h2>
+      <p>Metric label 是附在指标上的维度。例如同一个计数器可以按 <code>outcome</code>、<code>failure_category</code>、<code>status_code</code> 分组统计。</p>
+      <pre><code>provider_prediction_total{
+  operation="prediction",
+  outcome="fail_fast",
+  failure_category="non_retryable_http_status",
+  error_code="ai_provider_http_error",
+  status_code="400"
+} 17</code></pre>
+      <p>标签最重要的规则是低基数。<strong>基数</strong>可以理解为一个标签可能出现多少种不同值。<code>status_code</code> 只有有限几个值，基数低；用户输入文本几乎每次都不同，基数极高。</p>
+      <p>高基数标签会让监控系统存储和查询成本暴涨，也可能泄露隐私。因此指标标签只应该放稳定、有限、可聚合的分类值。</p>
+    </section>
+
+    <section>
+      <h2>3. 本节不直接接 Prometheus 的原因</h2>
+      <p>你可能会问：既然讲 metrics，为什么不直接安装 Prometheus client？原因是课程当前重点是 FastAPI、provider 边界、错误分类和可观测性思维。过早接入监控平台会把注意力转移到部署、抓取配置和格式暴露上。</p>
+      <p>本节先做更底层也更稳定的事：把“应该记录哪些 label”设计成一个小 helper。以后无论接 Prometheus、OpenTelemetry、StatsD，还是云厂商监控，这组 label 都能作为输入。</p>
+    </section>
+
+    <section>
+      <h2>4. 代码精读一：ProviderMetricLabels</h2>
+      <p>本节新增了一个小 dataclass，表达一次 provider prediction 指标应该携带的标签：</p>
+      <pre><code>@dataclass(frozen=True)
+class ProviderMetricLabels:
+    operation: ProviderMetricOperation
+    outcome: ProviderMetricOutcome
+    failure_category: ProviderMetricFailureCategory
+    error_code: str
+    status_code: str</code></pre>
+      <p>这些字段都刻意保持低基数：</p>
+      <ul>
+        <li><code>operation</code>：当前只有 <code>prediction</code>。</li>
+        <li><code>outcome</code>：成功、准备重试、重试耗尽、快速失败。</li>
+        <li><code>failure_category</code>：沿用上一课 taxonomy，成功时为 <code>none</code>。</li>
+        <li><code>error_code</code>：稳定错误码，成功时为 <code>none</code>。</li>
+        <li><code>status_code</code>：HTTP 状态码字符串，没有时为 <code>none</code>。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>5. 代码精读二：as_dict()</h2>
+      <p>很多 metrics client 最终都需要字典形式的 labels，所以 dataclass 提供了 <code>as_dict()</code>：</p>
+      <pre><code>def as_dict(self) -> dict[str, str]:
+    return {
+        "operation": self.operation,
+        "outcome": self.outcome,
+        "failure_category": self.failure_category,
+        "error_code": self.error_code,
+        "status_code": self.status_code,
+    }</code></pre>
+      <p>这让测试也更直接。我们不需要启动监控服务，只要断言字典形状，就能保护后续接入 metrics backend 时最容易变乱的部分。</p>
+    </section>
+
+    <section>
+      <h2>6. 代码精读三：build_provider_metric_labels()</h2>
+      <p>helper 的职责是把默认值收拢起来，让成功场景和失败场景都能生成稳定标签：</p>
+      <pre><code>def build_provider_metric_labels(
+    outcome: ProviderMetricOutcome,
+    failure_category: ProviderMetricFailureCategory = "none",
+    error_code: str = "none",
+    status_code: int | None = None,
+) -> ProviderMetricLabels:
+    return ProviderMetricLabels(
+        operation="prediction",
+        outcome=outcome,
+        failure_category=failure_category,
+        error_code=error_code,
+        status_code=str(status_code) if status_code is not None else "none",
+    )</code></pre>
+      <p>注意这里把 <code>status_code</code> 转成字符串。很多 metrics 系统的 label 值都是字符串；在 helper 边界统一转换，后面调用方就不用反复处理。</p>
+    </section>
+
+    <section>
+      <h2>7. 成功和失败的标签形状</h2>
+      <p>成功场景应该没有 failure category、error code 和 status code：</p>
+      <pre><code>{
+  "operation": "prediction",
+  "outcome": "success",
+  "failure_category": "none",
+  "error_code": "none",
+  "status_code": "none",
+}</code></pre>
+      <p>HTTP 400 快速失败则可以这样表达：</p>
+      <pre><code>{
+  "operation": "prediction",
+  "outcome": "fail_fast",
+  "failure_category": "non_retryable_http_status",
+  "error_code": "ai_provider_http_error",
+  "status_code": "400",
+}</code></pre>
+      <p>这两个例子展示了 metrics 和 logs 的分工：metrics 不保存完整上下文，只保存适合聚合的维度；具体某一次请求发生了什么，仍然交给结构化日志。</p>
+    </section>
+
+    <section class="practice">
+      <h2>8. 动手实验：运行 provider HTTP 测试</h2>
+      <p>在项目根目录运行：</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q</code></pre>
+      <p>本节新增两个测试。第一个测试成功标签默认值：</p>
+      <pre><code>labels = build_provider_metric_labels(outcome="success")
+
+assert labels.as_dict()["failure_category"] == "none"
+assert labels.as_dict()["error_code"] == "none"</code></pre>
+      <p>第二个测试失败标签不会包含用户请求文本：</p>
+      <pre><code>assert "FastAPI is great and pleasant." not in labels.as_dict().values()</code></pre>
+      <p>这行断言不是为了检查某个具体功能，而是在提醒一个生产规则：指标标签不应该携带高基数、敏感或不可控的业务文本。</p>
+    </section>
+
+    <section>
+      <h2>9. 常见错误</h2>
+      <ul>
+        <li>把日志和指标当成同一个东西：日志解释单次请求，指标统计一段时间。</li>
+        <li>把用户输入放进 label：高基数且可能泄露隐私。</li>
+        <li>把完整异常消息放进 label：异常文本可能包含动态内容，基数不可控。</li>
+        <li>label 名随手变化：仪表盘和告警会失效。</li>
+        <li>成功场景没有统一默认值：查询时要同时处理空值、缺字段和 none。</li>
+        <li>过早引入监控平台：还没想清楚 label 形状，就先背上部署复杂度。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>10. 面试视角：如何解释 logs 和 metrics 的分工</h2>
+      <blockquote>
+        <p>我会用结构化日志解释单次 provider 请求发生了什么，例如 attempt、Retry-After、delay 和 fail-fast reason；用 metrics 聚合一段时间内的趋势，例如 success、retry_exhausted、fail_fast 的数量和比例。metrics label 必须低基数，所以我只放 outcome、failure_category、error_code、status_code 这类稳定字段，不放用户输入或完整响应体。</p>
+      </blockquote>
+      <p>这个回答能体现你不仅知道“要监控”，还知道监控数据的形状会影响成本、隐私和后续查询质量。</p>
+    </section>
+
+    <section>
+      <h2>11. 记忆练习</h2>
+      <details>
+        <summary>1. logs 和 metrics 的核心区别是什么？</summary>
+        <p class="answer">日志适合解释单次事件的上下文；指标适合统计一段时间内的数量、比例和趋势。</p>
+      </details>
+      <details>
+        <summary>2. 什么是高基数 label？为什么危险？</summary>
+        <p class="answer">高基数 label 有大量不同取值，例如用户输入文本。它会增加监控系统成本，也可能泄露隐私。</p>
+      </details>
+      <details>
+        <summary>3. 为什么成功场景也要有 none 默认值？</summary>
+        <p class="answer">统一默认值能让指标查询更简单，避免同一个维度出现缺字段、空字符串和 none 混用。</p>
+      </details>
+      <details>
+        <summary>4. 本节为什么不直接接 Prometheus？</summary>
+        <p class="answer">因为当前学习重点是指标标签设计。先把低基数、稳定标签想清楚，再接具体监控平台更稳。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>12. 本节总结</h2>
+      <p>本节把 provider error taxonomy 继续推进到 metrics label 设计。我们新增了 <code>ProviderMetricLabels</code> 和 <code>build_provider_metric_labels()</code>，用测试保护成功和失败场景的标签形状，并明确禁止把用户文本放进指标标签。</p>
+      <p>下一课建议学习：Provider Metrics Counters。可以在不引入外部依赖的前提下，做一个轻量的进程内计数器，观察不同 outcome 的次数如何累积。</p>
+      <p>推荐主资源：<a href="https://opentelemetry.io/docs/concepts/signals/metrics/">OpenTelemetry Metrics concepts</a>、<a href="https://prometheus.io/docs/practices/naming/">Prometheus metric and label naming</a>、<a href="https://docs.python.org/3/library/dataclasses.html">Python dataclasses</a>。</p>
+      <p class="small">如果你想继续追问，可以问我：“哪些字段适合放进日志但不适合放进 metrics label？”这个问题很适合用真实生产案例练习。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0049-provider-error-taxonomy.html">上一课：Provider Error Taxonomy</a>
+        <a href="./0051-provider-metrics-counters.html">下一课：Provider Metrics Counters</a>
+        <a href="../reference/0050-provider-metrics-basics-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Provider Error Taxonomy Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0049</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0049-provider-error-taxonomy.html">回到第 49 课</a>
+        <a href="./0048-fail-fast-observability-cheatsheet.html">上一张速查</a>
+        <a href="./0050-provider-metrics-basics-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0049</p>
+      <h1>Provider Error Taxonomy 速查</h1>
+      <p class="lead">Provider 错误分类让 retry、fail fast、日志事件和稳定错误码使用同一套语言。</p>
+    </header>
+
+    <h2>核心分类</h2>
+    <pre><code>timeout
+request_error
+retryable_http_status
+non_retryable_http_status
+invalid_response</code></pre>
+
+    <h2>HTTP 状态分类</h2>
+    <pre><code>RETRYABLE_PROVIDER_STATUS_CODES = {429, 500, 502, 503, 504}
+
+def classify_provider_http_status(status_code: int):
+    if status_code in RETRYABLE_PROVIDER_STATUS_CODES:
+        return "retryable_http_status"
+    return "non_retryable_http_status"</code></pre>
+
+    <h2>分类总表</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>类别</th>
+          <th>例子</th>
+          <th>策略</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>timeout</code></td>
+          <td>等待 provider 超时</td>
+          <td>有限重试</td>
+        </tr>
+        <tr>
+          <td><code>request_error</code></td>
+          <td>连接失败、网络错误</td>
+          <td>有限重试</td>
+        </tr>
+        <tr>
+          <td><code>retryable_http_status</code></td>
+          <td>429、500、502、503、504</td>
+          <td>有限重试</td>
+        </tr>
+        <tr>
+          <td><code>non_retryable_http_status</code></td>
+          <td>400、401、404、422</td>
+          <td>fail fast</td>
+        </tr>
+        <tr>
+          <td><code>invalid_response</code></td>
+          <td>非法 JSON、字段越界</td>
+          <td>fail fast</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>类别 vs 事件</h2>
+    <pre><code>category = what failed
+event = what the adapter did
+
+retryable_http_status + attempts left -> retry_scheduled
+retryable_http_status + no attempts left -> retry_exhausted
+non_retryable_http_status -> fail_fast
+invalid_response -> fail_fast</code></pre>
+
+    <h2>稳定错误码</h2>
+    <ul>
+      <li><code>ai_provider_timeout</code>：timeout。</li>
+      <li><code>ai_provider_request_error</code>：request error。</li>
+      <li><code>ai_provider_http_error</code>：HTTP 状态码错误。</li>
+      <li><code>ai_provider_invalid_response</code>：响应体不符合内部模型。</li>
+    </ul>
+
+    <h2>测试保护</h2>
+    <pre><code>assert classify_provider_http_status(429) == "retryable_http_status"
+assert classify_provider_http_status(503) == "retryable_http_status"
+assert classify_provider_http_status(400) == "non_retryable_http_status"
+assert classify_provider_http_status(404) == "non_retryable_http_status"</code></pre>
+
+    <h2>常见错误</h2>
+    <ul>
+      <li>只说 provider error，不继续分类。</li>
+      <li>把错误类别和日志事件混用。</li>
+      <li>把所有 HTTP 错误都重试。</li>
+      <li>把所有 4xx 都当成调用方一定有错。</li>
+      <li>分类名没有测试，后续重构随意改散。</li>
+    </ul>
+
+    <h2>面试短答</h2>
+    <blockquote>
+      <p>我会把 provider 失败分成 timeout、request error、retryable HTTP status、non-retryable HTTP status 和 invalid response。分类之后再决定 retry、exhausted 或 fail fast；对外保持稳定错误码，对内用结构化日志保留诊断细节。</p>
+    </blockquote>
+
+    <footer>
+      来源：<a href="https://www.python-httpx.org/exceptions/">HTTPX exceptions</a>、
+      <a href="https://docs.python.org/3/library/logging.html">Python logging</a>、
+      <a href="https://docs.pytest.org/en/stable/how-to/logging.html">pytest logging</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0049-provider-error-taxonomy.html">回到第 49 课</a>
+        <a href="./0048-fail-fast-observability-cheatsheet.html">上一张速查</a>
+        <a href="./0050-provider-metrics-basics-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

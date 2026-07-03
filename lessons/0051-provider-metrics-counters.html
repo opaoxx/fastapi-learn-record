@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0051 - Provider Metrics Counters</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0051</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0050-provider-metrics-basics.html">上一课</a>
+        <a href="../reference/0051-provider-metrics-counters-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0051</p>
+      <h1>Provider Metrics Counters：用计数器理解 provider 结果分布</h1>
+      <p class="lead">上一课我们设计了低基数 metrics label。本节继续补上最基础的 counter 心智模型：相同 label set 的事件会累加成一个计数。我们实现一个教学用的进程内计数器，用它观察 success、fail_fast 等 provider prediction outcome 如何聚合。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解 counter 是只能递增的指标类型。</li>
+        <li>理解 label set 相同的事件会累加到同一条时间序列。</li>
+        <li>掌握教学用 <code>ProviderMetricsCounter</code> 的结构。</li>
+        <li>知道为什么进程内计数器不是生产级多进程 metrics 方案。</li>
+        <li>学会用测试验证计数累计和非法增量保护。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 背景：有 label 之后，还要知道怎么数</h2>
+      <p>上一课我们没有直接接入 Prometheus 或 OpenTelemetry，而是先把 provider prediction 的 label 形状设计清楚。现在可以继续问一个更具体的问题：如果每次 provider prediction 完成后都产生一组 label，系统应该如何把它们统计起来？</p>
+      <p>最基础的答案是 counter。Counter 适合记录“发生了多少次”。例如 success 发生 120 次，fail_fast 发生 8 次，retry_exhausted 发生 2 次。它不负责解释某一次请求细节，那仍然是日志的工作。</p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 核心概念：同一组 Labels 对应同一条计数</h2>
+      <p>在 metrics 里，指标名加上一组 label 会形成一条可统计的序列。你可以把它理解成一张表里的复合 key：</p>
+      <pre><code>metric: provider_prediction_total
+labels:
+  operation="prediction"
+  outcome="success"
+  failure_category="none"
+  error_code="none"
+  status_code="none"
+count: 2</code></pre>
+      <p>如果下一次 provider prediction 还是同一组 label，那么 count 继续加 1。如果 label 不同，例如 <code>outcome="fail_fast"</code>，就进入另一条计数。</p>
+    </section>
+
+    <section>
+      <h2>3. 教学边界：这是进程内 Counter，不是生产监控系统</h2>
+      <p>本节实现的 <code>ProviderMetricsCounter</code> 是为了讲清楚 counter 与 label set 的关系。它存在 Python 进程内存中，测试结束或进程重启后就会消失。</p>
+      <p>真实生产环境还要考虑多进程、多实例、抓取端点、聚合窗口、重启后数据、权限和存储成本。因此本节不要把它当成最终监控方案，而是把它当成理解 metrics backend 之前的最小模型。</p>
+    </section>
+
+    <section>
+      <h2>4. 代码精读一：用 Counter 存储 label set</h2>
+      <p>实现代码很短：</p>
+      <pre><code>@dataclass
+class ProviderMetricsCounter:
+    _counts: Counter[ProviderMetricLabels] = field(default_factory=Counter)</code></pre>
+      <p><code>ProviderMetricLabels</code> 是 frozen dataclass，因此可以作为 <code>Counter</code> 的 key。相同 label set 会命中同一个 key，计数自然累加。</p>
+    </section>
+
+    <section>
+      <h2>5. 代码精读二：increment 只允许正数</h2>
+      <p>Counter 的核心动作是递增：</p>
+      <pre><code>def increment(self, labels: ProviderMetricLabels, amount: int = 1) -> None:
+    if amount &lt; 1:
+        raise ValueError("Metric increment amount must be positive.")
+    self._counts[labels] += amount</code></pre>
+      <p>这里拒绝 0 和负数，是为了保持 counter 的语义清楚。Counter 不是 gauge，不用来表达“当前值可以上下变化”。如果以后要记录队列长度或当前连接数，那会是另一类指标。</p>
+    </section>
+
+    <section>
+      <h2>6. 代码精读三：snapshot 输出可读形状</h2>
+      <p>测试和教学材料不应该直接暴露内部 <code>Counter</code>，所以提供 <code>snapshot()</code>：</p>
+      <pre><code>def snapshot(self) -> list[dict[str, object]]:
+    return [
+        {
+            "labels": labels.as_dict(),
+            "count": count,
+        }
+        for labels, count in samples
+    ]</code></pre>
+      <p>输出形状接近真实 metrics 样本：一组 labels 加一个 count。课程里用 list/dict 展示，比引入外部监控格式更容易理解。</p>
+    </section>
+
+    <section>
+      <h2>7. 运行示例：两次成功，一次快速失败</h2>
+      <pre><code>counter.increment(success_labels)
+counter.increment(success_labels)
+counter.increment(fail_fast_labels)</code></pre>
+      <p>得到的 snapshot 是两条样本：</p>
+      <pre><code>[
+  {"labels": fail_fast_labels.as_dict(), "count": 1},
+  {"labels": success_labels.as_dict(), "count": 2},
+]</code></pre>
+      <p>这就是 counter 的核心：不是记录三行事件明细，而是把相同标签的事件聚合起来。</p>
+    </section>
+
+    <section class="practice">
+      <h2>8. 动手实验：运行 provider HTTP 测试</h2>
+      <p>在项目根目录运行：</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q</code></pre>
+      <p>重点看两个测试：</p>
+      <ul>
+        <li>重复 increment 同一组 success labels 后，count 变成 2。</li>
+        <li>使用 <code>amount=0</code> 会抛出 <code>ValueError</code>，防止 counter 语义变脏。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>9. 常见错误</h2>
+      <ul>
+        <li>把 counter 当 gauge 用：counter 应该递增，不适合表达上下变化的当前值。</li>
+        <li>把进程内 counter 当生产方案：多进程、多实例下会丢失全局视角。</li>
+        <li>每次请求都生成新 label：会导致计数无法聚合。</li>
+        <li>把 request id 放进 label：每次都不同，等于制造高基数序列。</li>
+        <li>snapshot 顺序不稳定：测试容易变脆，所以代码里做了排序。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>10. 面试视角：如何解释 counter</h2>
+      <blockquote>
+        <p>Counter 用来记录事件发生次数，只递增不递减。对于 provider prediction，我会用低基数 labels 区分 success、retry_exhausted、fail_fast 等 outcome，相同 label set 的事件累加到同一条序列。单次请求细节仍然放日志里，counter 只负责趋势和数量。</p>
+      </blockquote>
+    </section>
+
+    <section>
+      <h2>11. 记忆练习</h2>
+      <details>
+        <summary>1. Counter 和日志有什么区别？</summary>
+        <p class="answer">Counter 聚合事件次数，日志保留单次事件上下文。</p>
+      </details>
+      <details>
+        <summary>2. 为什么 increment 不允许负数？</summary>
+        <p class="answer">因为 counter 语义是单调递增；会上下变化的值应该用 gauge 等其他指标类型。</p>
+      </details>
+      <details>
+        <summary>3. 为什么进程内 counter 不是生产级方案？</summary>
+        <p class="answer">它无法自动跨进程、跨实例聚合，进程重启后数据也会丢失。</p>
+      </details>
+      <details>
+        <summary>4. 相同 label set 为什么重要？</summary>
+        <p class="answer">相同 label set 才能聚合到同一条计数；如果 label 每次都变，就无法得到有意义的趋势。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>12. 本节总结</h2>
+      <p>本节用一个教学用 <code>ProviderMetricsCounter</code> 解释 counter 的核心语义：相同 labels 的事件会累加，counter 只允许正向递增，snapshot 输出 labels 和 count。它不是生产监控系统，但能帮助你理解后续接入 Prometheus 或 OpenTelemetry 时发生了什么。</p>
+      <p>下一课建议学习：Provider Metrics Endpoint。可以把当前教学 counter 或 metrics snapshot 通过一个只读 endpoint 暴露出来，进一步理解 FastAPI 如何服务内部观测数据。</p>
+      <p>推荐主资源：<a href="https://prometheus.io/docs/concepts/metric_types/">Prometheus metric types</a>、<a href="https://opentelemetry.io/docs/concepts/signals/metrics/">OpenTelemetry Metrics</a>、<a href="https://docs.python.org/3/library/collections.html#collections.Counter">Python Counter</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0050-provider-metrics-basics.html">上一课：Provider Metrics Basics</a>
+        <a href="../reference/0051-provider-metrics-counters-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

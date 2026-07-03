@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0049 - Provider Error Taxonomy</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0049</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0048-fail-fast-observability.html">上一课</a>
+        <a href="./0050-provider-metrics-basics.html">下一课</a>
+        <a href="../reference/0049-provider-error-taxonomy-cheatsheet.html">本课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0049</p>
+      <h1>Provider Error Taxonomy：给外部 AI 调用错误建立分类表</h1>
+      <p class="lead">前几节课分别处理了 retry、backoff、Retry-After、jitter、retry observability、retry exhaustion 和 fail fast。本节把这些分散概念收束成一个错误分类表，让你能稳定回答：这个 provider 错误是什么类型，能不能重试，会记录什么日志，最终上抛什么错误码。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解 taxonomy 在后端错误处理里的作用。</li>
+        <li>区分 transport failure、HTTP status failure 和 response contract failure。</li>
+        <li>掌握 provider prediction adapter 里的稳定错误分类名称。</li>
+        <li>理解为什么 429/5xx 和 400/404 应进入不同路径。</li>
+        <li>学会用测试保护分类名称，避免后续重构把日志语义改散。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 背景：错误处理最怕“看起来都差不多”</h2>
+      <p>当项目刚开始时，我们常把外部服务失败统一写成“provider error”。这在 demo 阶段还能接受，但一旦接口进入真实使用，统一错误名会让排查变得很痛苦：timeout、DNS/连接错误、HTTP 429、HTTP 503、HTTP 400、JSON 格式错误，它们的处理方式完全不同。</p>
+      <p>例如，HTTP 503 可能是 provider 临时不可用，适合有限重试；HTTP 400 通常说明请求本身不对，继续重试只会重复制造错误；HTTP 200 加非法 JSON 则说明状态码成功了，但响应体没有遵守内部契约。</p>
+      <p>所以本节要做的不是增加更多异常类，而是建立一张清楚的 taxonomy：每类失败都有名字、含义、重试策略、日志事件和稳定错误码。</p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 核心概念：Taxonomy 是可维护的分类语言</h2>
+      <p><strong>Taxonomy</strong> 在这里可以理解为“分类表”或“命名体系”。它的价值不是听起来高级，而是让团队在代码、测试、日志、文档和面试表达里使用同一套词。</p>
+      <pre><code>timeout
+request_error
+retryable_http_status
+non_retryable_http_status
+invalid_response</code></pre>
+      <p>这些名字比“bad provider thing”有用得多。它们能直接告诉你失败发生在哪一层：是没等到响应、请求发不出去、HTTP 状态码失败，还是响应体契约失败。</p>
+      <p>分类稳定以后，后续才能继续做 metrics、告警、错误看板和更细的服务层传播。否则每次重构都可能换一套说法，日志查询也会失效。</p>
+    </section>
+
+    <section>
+      <h2>3. Provider 失败的三层地图</h2>
+      <p>provider prediction adapter 里的失败可以先按层分成三组：</p>
+      <table>
+        <thead>
+          <tr>
+            <th>层</th>
+            <th>典型失败</th>
+            <th>含义</th>
+            <th>处理方向</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>传输层</td>
+            <td>timeout、request error</td>
+            <td>请求没有稳定完成</td>
+            <td>通常可有限重试</td>
+          </tr>
+          <tr>
+            <td>HTTP 状态层</td>
+            <td>429、5xx、400、404</td>
+            <td>provider 给了 HTTP 响应，但状态码表示失败</td>
+            <td>按状态码分类</td>
+          </tr>
+          <tr>
+            <td>响应契约层</td>
+            <td>非法 JSON、字段不合法</td>
+            <td>状态码可能成功，但 body 不符合内部模型</td>
+            <td>fail fast</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>这张表能帮初学者避免一个常见误区：不要只看最终 HTTP 503。上层 router 可能把不同 provider 错误都转成 503 返回给调用方，但内部日志和 adapter 分类必须保留更细的诊断事实。</p>
+    </section>
+
+    <section>
+      <h2>4. HTTP 状态码为什么要再分类</h2>
+      <p>HTTP 状态码失败不是一个整体。我们在项目里把 429、500、502、503、504 视为可重试 provider 状态：</p>
+      <pre><code>RETRYABLE_PROVIDER_STATUS_CODES = {429, 500, 502, 503, 504}</code></pre>
+      <p>它们大多表达“provider 现在处理不了”，可能过一小段时间就恢复。相反，400、401、404、422 更像请求、鉴权、路径或参数契约问题，重复同一个请求通常不会自动变好。</p>
+      <p>本节新增的 helper 把这个判断命名出来：</p>
+      <pre><code>def classify_provider_http_status(status_code: int) -> ProviderFailureCategory:
+    if is_retryable_provider_status(status_code):
+        return "retryable_http_status"
+    return "non_retryable_http_status"</code></pre>
+      <p>这段代码没有改变行为，但让分类语言进入了代码。以后读到 <code>retryable_http_status</code>，就能直接知道这类错误会进入 retry policy；读到 <code>non_retryable_http_status</code>，就知道它应该走 fail fast。</p>
+    </section>
+
+    <section>
+      <h2>5. 代码精读一：ProviderFailureCategory</h2>
+      <p>本节新增了一个小的类型别名：</p>
+      <pre><code>ProviderFailureCategory = Literal[
+    "timeout",
+    "request_error",
+    "retryable_http_status",
+    "non_retryable_http_status",
+    "invalid_response",
+]</code></pre>
+      <p>它把 provider adapter 当前关心的失败类别集中写在一个地方。这里暂时不是复杂的 enum，因为课程项目仍以简单可读为优先；但它已经给出了稳定分类边界。</p>
+      <p>注意这个列表不是日志事件名。它是失败类别。日志事件描述流程节点，例如 scheduled retry、retry exhausted、fail fast；失败类别描述错误性质，例如 timeout、invalid response。</p>
+    </section>
+
+    <section>
+      <h2>6. 代码精读二：分类和流程节点不要混在一起</h2>
+      <p>一个 provider 错误至少有两个维度：</p>
+      <ul>
+        <li>错误是什么：<code>timeout</code>、<code>retryable_http_status</code>、<code>invalid_response</code>。</li>
+        <li>系统做了什么：scheduled retry、retry exhausted、fail fast。</li>
+      </ul>
+      <p>例如 HTTP 503 的类别是 <code>retryable_http_status</code>。如果它发生在第 1 次 attempt，系统可能记录 scheduled retry；如果它发生在最后一次 attempt，系统记录 retry exhausted。</p>
+      <pre><code>HTTP 503
+  category: retryable_http_status
+  attempt 1 of 3: provider_prediction_retry_scheduled
+  attempt 3 of 3: provider_prediction_retry_exhausted</code></pre>
+      <p>HTTP 400 则不同：</p>
+      <pre><code>HTTP 400
+  category: non_retryable_http_status
+  attempt 1 of 3: provider_prediction_fail_fast</code></pre>
+      <p>这个区分非常重要。否则你会把“错误是什么”和“系统做了什么”混成一团，日志语义就会越来越乱。</p>
+    </section>
+
+    <section>
+      <h2>7. 代码精读三：adapter 分支如何使用 taxonomy</h2>
+      <p>在 HTTP 状态错误分支里，现在先拿到分类，再决定是否可重试：</p>
+      <pre><code>status_code = exc.response.status_code
+retryable_status = (
+    classify_provider_http_status(status_code)
+    == "retryable_http_status"
+)</code></pre>
+      <p>后面的逻辑仍然遵守原来的策略：</p>
+      <ol>
+        <li>如果可重试，并且还有 attempt，记录 scheduled retry 后等待。</li>
+        <li>如果可重试，但 attempt 用完，记录 retry exhausted。</li>
+        <li>如果不可重试，记录 fail fast。</li>
+      </ol>
+      <p>这就是一个稳定 adapter 的样子：先分类，再决策，再记录，再上抛稳定错误。每一步的名字都应该尽量明确。</p>
+    </section>
+
+    <section>
+      <h2>8. 错误分类总表</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>类别</th>
+            <th>例子</th>
+            <th>是否可重试</th>
+            <th>可能日志事件</th>
+            <th>稳定错误码</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>timeout</code></td>
+            <td><code>httpx.TimeoutException</code></td>
+            <td>是</td>
+            <td>scheduled / exhausted</td>
+            <td><code>ai_provider_timeout</code></td>
+          </tr>
+          <tr>
+            <td><code>request_error</code></td>
+            <td>连接失败、DNS、网络错误</td>
+            <td>是</td>
+            <td>scheduled / exhausted</td>
+            <td><code>ai_provider_request_error</code></td>
+          </tr>
+          <tr>
+            <td><code>retryable_http_status</code></td>
+            <td>429、500、502、503、504</td>
+            <td>是</td>
+            <td>scheduled / exhausted</td>
+            <td><code>ai_provider_http_error</code></td>
+          </tr>
+          <tr>
+            <td><code>non_retryable_http_status</code></td>
+            <td>400、401、404、422</td>
+            <td>否</td>
+            <td>fail fast</td>
+            <td><code>ai_provider_http_error</code></td>
+          </tr>
+          <tr>
+            <td><code>invalid_response</code></td>
+            <td>非法 JSON、score 超出范围</td>
+            <td>否</td>
+            <td>fail fast</td>
+            <td><code>ai_provider_invalid_response</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="practice">
+      <h2>9. 动手实验：运行 taxonomy 测试</h2>
+      <p>在项目根目录运行：</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q</code></pre>
+      <p>本节新增测试会保护 HTTP 状态码分类名称：</p>
+      <pre><code>retryable_statuses = [429, 500, 502, 503, 504]
+non_retryable_statuses = [400, 401, 404, 422]
+
+assert [
+    classify_provider_http_status(status_code)
+    for status_code in retryable_statuses
+] == ["retryable_http_status"] * len(retryable_statuses)</code></pre>
+      <p>这个测试看起来很小，但它保护的是教学项目里的语言一致性。后续如果有人把返回值改成 <code>"retryable"</code> 或 <code>"server_error"</code>，测试会提醒我们：这不只是字符串变化，也会影响课程材料、日志解释和面试表达。</p>
+    </section>
+
+    <section>
+      <h2>10. 常见错误</h2>
+      <ul>
+        <li>把所有 provider 失败都叫 provider error：排查时没有方向。</li>
+        <li>只按最终上层 HTTP 503 分类：丢失 adapter 内部真实失败原因。</li>
+        <li>把错误类别和日志事件混在一起：503 的类别不变，但不同 attempt 上的事件会变。</li>
+        <li>认为所有 5xx 都永远可重试：课程里只是有限重试，还受 max_attempts 控制。</li>
+        <li>认为 400 永远是前端错：它也可能是 adapter/provider 契约不一致，但重复重试仍然通常没有意义。</li>
+        <li>分类名称没有测试保护：后续改名会让日志查询、课程文档和学习记录脱节。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>11. 面试视角：如何讲清楚 provider 错误处理</h2>
+      <blockquote>
+        <p>我会先给外部 provider 失败建立 taxonomy。传输层有 timeout 和 request error；HTTP 状态层会把 429/5xx 归为可重试状态，把 400/401/404/422 归为不可重试状态；响应契约层有 invalid response。分类之后再决定流程：可重试错误在预算内 scheduled retry，预算用完 retry exhausted；不可重试错误 fail fast。对外仍返回稳定错误码，对内用结构化日志保留诊断细节。</p>
+      </blockquote>
+      <p>这段回答能体现你不是只会写 try/except，而是知道错误分类、重试策略、公共契约和内部可观测性之间的边界。</p>
+    </section>
+
+    <section>
+      <h2>12. 记忆练习</h2>
+      <details>
+        <summary>1. taxonomy 在错误处理中解决什么问题？</summary>
+        <p class="answer">它给不同失败建立稳定命名，让代码、日志、测试和文档都能用同一套分类语言。</p>
+      </details>
+      <details>
+        <summary>2. 为什么 HTTP 503 和 HTTP 400 不应该走同一条策略？</summary>
+        <p class="answer">503 通常表示 provider 暂时不可用，适合有限重试；400 通常表示请求或契约问题，重复请求通常不会自动恢复。</p>
+      </details>
+      <details>
+        <summary>3. 错误类别和日志事件有什么区别？</summary>
+        <p class="answer">错误类别描述失败性质，例如 retryable_http_status；日志事件描述系统动作或流程节点，例如 retry_scheduled、retry_exhausted、fail_fast。</p>
+      </details>
+      <details>
+        <summary>4. 为什么要测试分类名称？</summary>
+        <p class="answer">因为这些名称会被课程、日志解释和后续排查依赖，随意改名会破坏一致性。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>13. 本节总结</h2>
+      <p>本节把 provider adapter 的失败路径整理成 taxonomy：timeout、request_error、retryable_http_status、non_retryable_http_status 和 invalid_response。我们新增了 <code>classify_provider_http_status()</code>，用测试保护 429/5xx 与 400/4xx 的分类名称，并把分散的 retry/fail-fast 逻辑放回同一张地图里理解。</p>
+      <p>下一课建议学习：Provider Metrics Basics。日志能解释单次请求发生了什么，metrics 则帮助我们回答“这类错误发生了多少次、比例是多少、最近有没有变多”。</p>
+      <p>推荐主资源：<a href="https://www.python-httpx.org/exceptions/">HTTPX exceptions</a>、<a href="https://docs.python.org/3/library/logging.html">Python logging</a>、<a href="https://docs.pytest.org/en/stable/how-to/logging.html">pytest logging/caplog</a>。</p>
+      <p class="small">如果你想继续追问，可以问我：“错误码、异常类型、日志事件名和指标 label 应该怎么分工？”这个问题会继续把我们带向生产级后端设计。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0048-fail-fast-observability.html">上一课：Fail-fast Observability</a>
+        <a href="./0050-provider-metrics-basics.html">下一课：Provider Metrics Basics</a>
+        <a href="../reference/0049-provider-error-taxonomy-cheatsheet.html">查看本课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

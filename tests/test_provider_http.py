@@ -8,8 +8,11 @@ import httpx
 
 from first_api.services.ai_clients import AIClientConfig, AIClientError
 from first_api.services.provider_http import (
+    ProviderMetricsCounter,
+    build_provider_metric_labels,
     calculate_retry_jitter,
     calculate_retry_delay,
+    classify_provider_http_status,
     check_provider_health,
     parse_retry_after_delay,
     request_provider_prediction,
@@ -76,6 +79,90 @@ def test_calculate_retry_delay_uses_exponential_backoff_with_cap() -> None:
     delays = [calculate_retry_delay(attempt, config) for attempt in range(1, 5)]
 
     assert delays == [1.0, 2.0, 3.0, 3.0]
+
+
+def test_classify_provider_http_status_names_retry_taxonomy() -> None:
+    retryable_statuses = [429, 500, 502, 503, 504]
+    non_retryable_statuses = [400, 401, 404, 422]
+
+    assert [
+        classify_provider_http_status(status_code)
+        for status_code in retryable_statuses
+    ] == ["retryable_http_status"] * len(retryable_statuses)
+    assert [
+        classify_provider_http_status(status_code)
+        for status_code in non_retryable_statuses
+    ] == ["non_retryable_http_status"] * len(non_retryable_statuses)
+
+
+def test_build_provider_metric_labels_uses_bounded_success_labels() -> None:
+    labels = build_provider_metric_labels(outcome="success")
+
+    assert labels.as_dict() == {
+        "operation": "prediction",
+        "outcome": "success",
+        "failure_category": "none",
+        "error_code": "none",
+        "status_code": "none",
+    }
+
+
+def test_build_provider_metric_labels_uses_failure_taxonomy_without_request_text() -> None:
+    labels = build_provider_metric_labels(
+        outcome="fail_fast",
+        failure_category="non_retryable_http_status",
+        error_code="ai_provider_http_error",
+        status_code=400,
+    )
+
+    assert labels.as_dict() == {
+        "operation": "prediction",
+        "outcome": "fail_fast",
+        "failure_category": "non_retryable_http_status",
+        "error_code": "ai_provider_http_error",
+        "status_code": "400",
+    }
+    assert "FastAPI is great and pleasant." not in labels.as_dict().values()
+
+
+def test_provider_metrics_counter_accumulates_samples_by_label_set() -> None:
+    counter = ProviderMetricsCounter()
+    success_labels = build_provider_metric_labels(outcome="success")
+    fail_fast_labels = build_provider_metric_labels(
+        outcome="fail_fast",
+        failure_category="non_retryable_http_status",
+        error_code="ai_provider_http_error",
+        status_code=400,
+    )
+
+    counter.increment(success_labels)
+    counter.increment(success_labels)
+    counter.increment(fail_fast_labels)
+
+    assert counter.snapshot() == [
+        {
+            "labels": fail_fast_labels.as_dict(),
+            "count": 1,
+        },
+        {
+            "labels": success_labels.as_dict(),
+            "count": 2,
+        },
+    ]
+
+
+def test_provider_metrics_counter_rejects_non_positive_increment() -> None:
+    counter = ProviderMetricsCounter()
+    labels = build_provider_metric_labels(outcome="success")
+
+    try:
+        counter.increment(labels, amount=0)
+    except ValueError as exc:
+        error = exc
+    else:
+        raise AssertionError("Expected ValueError")
+
+    assert str(error) == "Metric increment amount must be positive."
 
 
 def test_calculate_retry_jitter_uses_bounded_random_fraction() -> None:
@@ -574,13 +661,15 @@ def test_request_provider_prediction_stops_after_max_attempts(caplog) -> None:
     assert exhausted_records[0].error_code == "ai_provider_http_error"
 
 
-def test_request_provider_prediction_does_not_retry_non_retryable_http_error() -> None:
+def test_request_provider_prediction_does_not_retry_non_retryable_http_error(caplog) -> None:
     attempts = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal attempts
         attempts += 1
         return httpx.Response(status_code=400, request=request)
+
+    caplog.set_level(logging.WARNING, logger="first_api.services.provider_http")
 
     transport = httpx.MockTransport(handler)
     client = httpx.AsyncClient(transport=transport)
@@ -594,12 +683,30 @@ def test_request_provider_prediction_does_not_retry_non_retryable_http_error() -
     finally:
         asyncio.run(client.aclose())
 
+    fail_fast_records = [
+        record
+        for record in caplog.records
+        if record.getMessage() == "provider_prediction_fail_fast"
+    ]
+    exhausted_records = [
+        record
+        for record in caplog.records
+        if record.getMessage() == "provider_prediction_retry_exhausted"
+    ]
+
     assert attempts == 1
     assert error.error_code == "ai_provider_http_error"
     assert error.message == "The AI provider returned HTTP 400."
+    assert len(fail_fast_records) == 1
+    assert fail_fast_records[0].attempt == 1
+    assert fail_fast_records[0].max_attempts == 3
+    assert fail_fast_records[0].fail_fast_reason == "http_status"
+    assert fail_fast_records[0].status_code == 400
+    assert fail_fast_records[0].error_code == "ai_provider_http_error"
+    assert exhausted_records == []
 
 
-def test_request_provider_prediction_does_not_retry_invalid_response() -> None:
+def test_request_provider_prediction_does_not_retry_invalid_response(caplog) -> None:
     attempts = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -611,6 +718,8 @@ def test_request_provider_prediction_does_not_retry_invalid_response() -> None:
             request=request,
         )
 
+    caplog.set_level(logging.WARNING, logger="first_api.services.provider_http")
+
     transport = httpx.MockTransport(handler)
     client = httpx.AsyncClient(transport=transport)
     try:
@@ -623,5 +732,23 @@ def test_request_provider_prediction_does_not_retry_invalid_response() -> None:
     finally:
         asyncio.run(client.aclose())
 
+    fail_fast_records = [
+        record
+        for record in caplog.records
+        if record.getMessage() == "provider_prediction_fail_fast"
+    ]
+    exhausted_records = [
+        record
+        for record in caplog.records
+        if record.getMessage() == "provider_prediction_retry_exhausted"
+    ]
+
     assert attempts == 1
     assert error.error_code == "ai_provider_invalid_response"
+    assert len(fail_fast_records) == 1
+    assert fail_fast_records[0].attempt == 1
+    assert fail_fast_records[0].max_attempts == 3
+    assert fail_fast_records[0].fail_fast_reason == "invalid_response"
+    assert fail_fast_records[0].status_code == 200
+    assert fail_fast_records[0].error_code == "ai_provider_invalid_response"
+    assert exhausted_records == []
