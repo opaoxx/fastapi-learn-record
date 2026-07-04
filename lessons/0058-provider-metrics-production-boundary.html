@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0058 - Provider Metrics Production Boundary</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0058</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0057-provider-metrics-snapshot-boundary.html">上一课</a>
+        <a href="../reference/0058-provider-metrics-production-boundary-cheatsheet.html">本课速查</a>
+        <a href="./0059-provider-metrics-naming-contract.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0058</p>
+      <h1>Provider Metrics Production Boundary：教学指标离生产监控还差什么</h1>
+      <p class="lead">我们已经有 provider metrics counter、JSON snapshot、Prometheus text 风格导出、边界测试和 snapshot 隔离。现在必须停下来讲清楚一件事：这些能力很适合教学和本地调试，但还不是生产级监控系统。本课用 OpenAPI 契约测试把这个边界写进接口文档，防止学习项目被误读成生产方案。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解教学用 in-process counter 和生产级 metrics pipeline 的区别。</li>
+        <li>能说清多进程、多实例、重启、scrape、存储和告警分别是什么问题。</li>
+        <li>理解为什么 API 文档也需要写清“不是生产方案”。</li>
+        <li>学会用 OpenAPI 测试保护 endpoint 的用途说明和边界说明。</li>
+        <li>形成从学习项目过渡到真实后端项目时的工程判断力。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 背景：有 Prometheus text 输出，不等于接入了 Prometheus</h2>
+      <p>上一批课程把 <code>GET /provider/metrics/prometheus</code> 做成了 Prometheus text 风格输出。这个输出形状很像真实监控系统会 scrape 的内容，所以它很适合教学。</p>
+      <p>但“输出形状像”不等于“生产能力完整”。生产监控不是一个字符串 endpoint 就结束了，它还包含采集器配置、服务发现、实例标签、重启后的数据连续性、长期存储、查询、仪表盘、告警和权限边界。</p>
+      <p>本节的核心心智模型是：<strong>教学实现可以模拟生产形状，但必须诚实标注生产缺口。</strong></p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 当前实现到底能做什么</h2>
+      <p>当前 provider metrics 实现能帮助你学习这些概念：</p>
+      <ul>
+        <li>如何为 provider prediction 设计低基数 labels。</li>
+        <li>如何把 success、retry_scheduled、retry_exhausted、fail_fast 变成可计数 outcome。</li>
+        <li>如何在 FastAPI 中暴露 JSON snapshot 和 text export endpoint。</li>
+        <li>如何用测试保护 metrics 文本格式、失败 outcome、转义规则和 snapshot 边界。</li>
+      </ul>
+      <p>这些能力足够支撑课程目标：理解后端 API、AI provider 边界和 observability 基础。但它仍然是单进程内存计数器。</p>
+    </section>
+
+    <section>
+      <h2>3. 生产缺口一：多进程和多实例</h2>
+      <p>开发环境里通常只有一个 Python 进程。但生产环境可能有多个 worker，也可能有多台机器或多个容器实例。当前 counter 放在 Python 进程内：</p>
+      <pre><code>provider_prediction_metrics = ProviderMetricsCounter()</code></pre>
+      <p>这意味着每个进程都有自己的计数。实例 A 看到的 count 不包含实例 B 的请求；worker 1 的 count 不包含 worker 2 的请求。生产监控通常需要采集每个实例的指标，并在查询层做聚合，而不是让某个单进程 endpoint 假装自己代表全局。</p>
+    </section>
+
+    <section>
+      <h2>4. 生产缺口二：重启和长期存储</h2>
+      <p>当前 counter 保存在内存里。服务重启后，计数会归零。这在教学中没问题，因为我们关心的是请求路径和指标形状；但生产环境不能只依赖进程内内存来回答长期问题，例如：</p>
+      <ul>
+        <li>过去 24 小时 provider 503 比例是否升高？</li>
+        <li>上一次发布后 retry_exhausted 是否明显增加？</li>
+        <li>某个 provider 的失败率是否触发告警阈值？</li>
+      </ul>
+      <p>这些问题需要采集器、时间序列存储和查询系统，而不是单次读取内存 snapshot。</p>
+    </section>
+
+    <section>
+      <h2>5. 生产缺口三：scrape、权限和告警</h2>
+      <p>真实监控还要回答“谁来读、多久读一次、读哪些实例、失败了怎么办、谁能访问指标”这些问题。比如 Prometheus 需要配置 scrape target；云平台可能需要 service discovery；安全团队可能要求 metrics endpoint 不暴露敏感业务信息。</p>
+      <p>我们的课程 endpoint 没有解决这些部署问题。它只是让你在一个小 FastAPI 项目里看懂指标如何从 provider outcome 变成机器可读输出。</p>
+    </section>
+
+    <section>
+      <h2>6. 为什么要把边界写进 OpenAPI</h2>
+      <p>API 文档是团队沟通的一部分。如果 endpoint 文档只写“Prometheus metrics”，读者很容易误以为它已经具备生产监控能力。因此当前 router description 明确写了教学边界：</p>
+      <pre><code>description=(
+    "Returns a Prometheus text-style rendering of the current in-process provider "
+    "prediction metric counter. This is an educational export shape, not a "
+    "production multi-instance metrics pipeline."
+)</code></pre>
+      <p>这不是啰嗦，而是契约诚实。文档应该告诉调用者这个 endpoint 能做什么，也应该告诉调用者它不能承担什么责任。</p>
+    </section>
+
+    <section>
+      <h2>7. 代码精读：OpenAPI 测试保护生产边界说明</h2>
+      <p>本节新增的可验证改动在 <code>tests/test_openapi_contract.py</code>：</p>
+      <pre><code>def test_openapi_documents_provider_metrics_production_boundary() -> None:
+    with TestClient(app) as client:
+        response = client.get("/openapi.json")
+
+    schema = response.json()
+    json_operation = schema["paths"]["/provider/metrics"]["get"]
+    text_operation = schema["paths"]["/provider/metrics/prometheus"]["get"]</code></pre>
+      <p>测试先读取 OpenAPI schema，然后定位两个 provider metrics endpoint。接着检查 JSON endpoint 的用途说明：</p>
+      <pre><code>assert json_operation["summary"] == "Read teaching provider prediction metrics"
+assert "in-process provider prediction metric counter snapshot" in json_operation["description"]
+assert "not for production multi-instance aggregation" in json_operation["description"]</code></pre>
+      <p>最后检查 text endpoint 的生产边界：</p>
+      <pre><code>assert "Prometheus text-style rendering" in text_operation["description"]
+assert "educational export shape" in text_operation["description"]
+assert "not a production multi-instance metrics pipeline" in text_operation["description"]
+assert "text/plain" in text_operation["responses"]["200"]["content"]</code></pre>
+      <p>这个测试保护的不是业务逻辑，而是接口文档中的工程判断：这里是教学导出形状，不是生产多实例 metrics pipeline。</p>
+    </section>
+
+    <section>
+      <h2>8. 机制复盘：一次请求到文档契约的链路</h2>
+      <ol>
+        <li>代码在 router 装饰器里声明 endpoint 的 summary、description、response model 或 response class。</li>
+        <li>FastAPI 根据这些声明生成 <code>/openapi.json</code>。</li>
+        <li>测试读取 <code>/openapi.json</code>，定位对应 path 和 method。</li>
+        <li>测试断言文档包含教学、进程内、非生产、多实例边界等关键词。</li>
+        <li>未来如果有人删掉这些说明，测试会失败，提醒这是契约变化。</li>
+      </ol>
+      <p>这就是“文档也是契约”的实践方式。</p>
+    </section>
+
+    <section class="practice">
+      <h2>9. 动手实验</h2>
+      <p>运行本节新增的 OpenAPI 契约测试：</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_openapi_contract.py -q</code></pre>
+      <p>然后打开：</p>
+      <pre><code>http://127.0.0.1:8000/openapi.json</code></pre>
+      <p>搜索 <code>/provider/metrics/prometheus</code>，观察它的 description 是否明确说明 <code>educational export shape</code> 和 <code>not a production multi-instance metrics pipeline</code>。</p>
+    </section>
+
+    <section>
+      <h2>10. 常见错误</h2>
+      <ul>
+        <li>看到 Prometheus text 风格输出，就以为已经接入生产 Prometheus。</li>
+        <li>把单进程内存 count 当成全局请求 count。</li>
+        <li>忽略服务重启后内存计数归零的问题。</li>
+        <li>只写实现，不在 API 文档里说明用途和限制。</li>
+        <li>认为文档测试没价值。对外暴露的说明文字也会影响调用者决策。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>11. 面试视角：如何解释这个边界</h2>
+      <blockquote>
+        <p>我会说当前项目实现的是教学级 metrics path：它能记录 provider prediction outcome，能暴露 JSON snapshot 和 Prometheus text 风格输出，也有测试保护格式和边界。但它不是生产监控系统，因为计数在单进程内存中，不解决多 worker、多实例、重启、scrape、长期存储、告警和权限。为了避免误用，我会把这些限制写进 OpenAPI，并用契约测试保护文档说明。</p>
+      </blockquote>
+    </section>
+
+    <section>
+      <h2>12. 记忆练习</h2>
+      <details>
+        <summary>1. 为什么有 text export 还不等于生产 Prometheus 接入？</summary>
+        <p class="answer">因为生产接入还需要 scrape 配置、实例发现、时间序列存储、查询、告警、权限和部署边界。text export 只是其中一个输出形状。</p>
+      </details>
+      <details>
+        <summary>2. 当前 in-process counter 在多实例环境里有什么问题？</summary>
+        <p class="answer">每个进程或实例都有自己的内存计数，单个 endpoint 只能代表当前进程，不能代表全局请求量。</p>
+      </details>
+      <details>
+        <summary>3. 为什么要测试 OpenAPI description？</summary>
+        <p class="answer">因为 description 是 API 契约的一部分。它影响调用者对 endpoint 能力和限制的理解，删除边界说明也是一种契约变化。</p>
+      </details>
+      <details>
+        <summary>4. 本课新增测试保护了哪两类 metrics endpoint？</summary>
+        <p class="answer">它保护 <code>GET /provider/metrics</code> 的 JSON snapshot 文档，以及 <code>GET /provider/metrics/prometheus</code> 的 text export 文档。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>13. 本节总结</h2>
+      <p>本节把 provider metrics 从“能导出”推进到“知道边界”。你现在应该能清楚区分教学级 in-process metrics 和生产级 metrics pipeline，并理解为什么这种边界需要写进 OpenAPI 文档，还需要测试保护。</p>
+      <p>下一课建议学习：Provider Metrics Naming Contract。可以继续保护 metric name、label name 和 low-cardinality 约束，让指标命名更接近长期可维护的生产习惯。</p>
+      <p>推荐主资源：<a href="https://prometheus.io/docs/introduction/overview/">Prometheus overview</a>、<a href="https://prometheus.io/docs/prometheus/latest/configuration/configuration/">Prometheus configuration</a>、<a href="https://fastapi.tiangolo.com/tutorial/metadata/">FastAPI metadata and docs</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0057-provider-metrics-snapshot-boundary.html">上一课：Provider Metrics Snapshot Boundary</a>
+        <a href="../reference/0058-provider-metrics-production-boundary-cheatsheet.html">查看本课速查</a>
+        <a href="./0059-provider-metrics-naming-contract.html">下一课：Provider Metrics Naming Contract</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

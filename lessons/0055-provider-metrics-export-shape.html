@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0055 - Provider Metrics Export Shape</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0055</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0054-provider-metrics-test-isolation.html">上一课</a>
+        <a href="../reference/0055-provider-metrics-export-shape-cheatsheet.html">本课速查</a>
+        <a href="./0056-provider-metrics-export-tests.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0055</p>
+      <h1>Provider Metrics Export Shape：从 JSON 快照到文本导出</h1>
+      <p class="lead">上一组课程已经完成 provider metrics 的记录、读取、失败 outcome 和测试隔离。本节开启新批次，先讨论一个现实问题：监控系统通常不会读取我们教学用的 JSON snapshot，而是读取更接近 Prometheus text format 的导出文本。我们会新增一个教学用文本渲染 helper 和 <code>GET /provider/metrics/prometheus</code> endpoint。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解 metrics 的内部 snapshot 和外部 export shape 不是一回事。</li>
+        <li>读懂 Prometheus text 风格输出中的 HELP、TYPE、metric name、labels 和 value。</li>
+        <li>掌握为什么 label 输出要有稳定顺序和转义规则。</li>
+        <li>理解 FastAPI 如何用 <code>PlainTextResponse</code> 返回文本指标。</li>
+        <li>继续区分教学导出形状和生产级 metrics pipeline。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 背景：为什么 JSON snapshot 还不够</h2>
+      <p><code>GET /provider/metrics</code> 返回的是很好读的 JSON：</p>
+      <pre><code>[
+  {
+    "labels": {
+      "operation": "prediction",
+      "outcome": "success",
+      "failure_category": "none",
+      "error_code": "none",
+      "status_code": "none"
+    },
+    "count": 1
+  }
+]</code></pre>
+      <p>这个形状适合教学、调试和前端展示。但许多监控系统更习惯拉取文本格式，尤其是 Prometheus 生态。文本格式能把指标名、标签和值组织成一行一行的样本，采集器可以周期性 scrape。</p>
+      <p>本节不接入真实 Prometheus，也不解决多进程聚合。我们只做第一步：把已有 snapshot 渲染成一个 Prometheus text 风格的教学输出，让你看懂 export shape。</p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 核心概念：同一份指标可以有多个表现形状</h2>
+      <p>metrics 的核心事实是“某个 label set 的 count 是多少”。这个事实可以用 JSON 表达，也可以用文本表达：</p>
+      <pre><code>provider_prediction_total{error_code="none",failure_category="none",operation="prediction",outcome="success",status_code="none"} 1</code></pre>
+      <p>这里有三个层次：</p>
+      <ul>
+        <li><strong>内部状态</strong>：<code>ProviderMetricsCounter</code> 里的计数。</li>
+        <li><strong>教学 snapshot</strong>：<code>labels + count</code> 的 JSON 列表。</li>
+        <li><strong>导出形状</strong>：面向外部采集器或人类检查的文本。</li>
+      </ul>
+      <p>把这三层分开，后续才容易从教学实现迁移到真正的监控后端。</p>
+    </section>
+
+    <section>
+      <h2>3. 文本格式的组成</h2>
+      <p>本节新增的文本输出由三部分组成：</p>
+      <pre><code># HELP provider_prediction_total Provider prediction outcomes recorded by the teaching metrics counter.
+# TYPE provider_prediction_total counter
+provider_prediction_total{error_code="none",failure_category="none",operation="prediction",outcome="success",status_code="none"} 1</code></pre>
+      <ul>
+        <li><code># HELP</code> 描述指标含义。</li>
+        <li><code># TYPE</code> 描述指标类型，本例是 counter。</li>
+        <li>样本行由 metric name、labels 和数值组成。</li>
+      </ul>
+      <p>metric name 使用 <code>provider_prediction_total</code>，因为 counter 通常表达累计总数，<code>_total</code> 后缀能提醒读者它只增不减。</p>
+    </section>
+
+    <section>
+      <h2>4. 代码精读一：指标名称和帮助文本</h2>
+      <p><code>first_api/services/provider_http.py</code> 里新增了两个常量：</p>
+      <pre><code>PROVIDER_PREDICTION_METRIC_NAME = "provider_prediction_total"
+PROVIDER_PREDICTION_METRIC_HELP = (
+    "Provider prediction outcomes recorded by the teaching metrics counter."
+)</code></pre>
+      <p>把名称和帮助文本抽成常量，是为了避免测试、endpoint 和课程讲义各写一份字符串。指标名一旦对外暴露，就会成为监控查询、告警和文档的一部分，随便改名就是契约变更。</p>
+    </section>
+
+    <section>
+      <h2>5. 代码精读二：label value 为什么要转义</h2>
+      <p>文本格式里的 label value 放在双引号中。如果值里也有双引号、反斜杠或换行，就必须转义：</p>
+      <pre><code>def escape_prometheus_label_value(value: object) -> str:
+    return str(value).replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')</code></pre>
+      <p>当前 provider metric labels 都是低基数字符串，通常不会包含这些特殊字符。但 helper 仍然做转义，是为了让导出函数具备基本的格式安全意识。测试里也故意放了 <code>provider_"quoted"_error</code>，证明双引号会被转成 <code>\"</code>。</p>
+    </section>
+
+    <section>
+      <h2>6. 代码精读三：从 snapshot 渲染文本</h2>
+      <p>核心渲染函数是：</p>
+      <pre><code>def render_provider_metrics_prometheus_text(
+    samples: list[dict[str, object]],
+) -> str:
+    lines = [
+        f"# HELP {PROVIDER_PREDICTION_METRIC_NAME} {PROVIDER_PREDICTION_METRIC_HELP}",
+        f"# TYPE {PROVIDER_PREDICTION_METRIC_NAME} counter",
+    ]
+    for sample in samples:
+        labels = sample["labels"]
+        label_text = ",".join(
+            f'{name}="{escape_prometheus_label_value(value)}"'
+            for name, value in sorted(labels.items())
+        )
+        lines.append(
+            f"{PROVIDER_PREDICTION_METRIC_NAME}{{{label_text}}} {sample['count']}"
+        )
+    return "\n".join(lines) + "\n"</code></pre>
+      <p>这里有两个细节很重要：</p>
+      <ul>
+        <li><code>sorted(labels.items())</code> 让 label 输出顺序稳定，测试和人工阅读都更可靠。</li>
+        <li>函数最后补一个换行，文本导出更像常见的行式格式。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>7. 代码精读四：FastAPI 文本 endpoint</h2>
+      <p>router 新增了一个只读文本 endpoint：</p>
+      <pre><code>@router.get(
+    "/provider/metrics/prometheus",
+    response_class=PlainTextResponse,
+    summary="Read teaching provider prediction metrics as text",
+)
+async def get_provider_metrics_prometheus() -> str:
+    return get_provider_metrics_prometheus_text()</code></pre>
+      <p><code>response_class=PlainTextResponse</code> 告诉 FastAPI 这里返回的是文本，不是 JSON。客户端会收到 <code>text/plain</code> 类型的响应。这个 endpoint 和 JSON endpoint 读取同一个 counter snapshot，只是导出形状不同。</p>
+    </section>
+
+    <section>
+      <h2>8. 代码精读五：endpoint 测试保护导出契约</h2>
+      <p>测试先制造一次 provider success，然后请求文本 endpoint：</p>
+      <pre><code>metrics_response = client.get("/provider/metrics/prometheus")
+
+assert metrics_response.headers["content-type"].startswith("text/plain")
+assert metrics_response.text == (
+    "# HELP provider_prediction_total ...\n"
+    "# TYPE provider_prediction_total counter\n"
+    'provider_prediction_total{error_code="none",...} 1\n'
+)</code></pre>
+      <p>这个测试保护了三件事：路径存在、content type 是文本、输出内容稳定。对于 export shape 来说，字符串就是契约，不能只检查 status code。</p>
+    </section>
+
+    <section class="practice">
+      <h2>9. 动手实验：读取文本指标</h2>
+      <p>先运行相关测试：</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py tests\test_ai_client_dependency.py -q</code></pre>
+      <p>如果手动启动项目，可以先调用 <code>POST /provider/predict</code>，再访问：</p>
+      <pre><code>http://127.0.0.1:8000/provider/metrics/prometheus</code></pre>
+      <p>你应该看到类似下面的文本：</p>
+      <pre><code># HELP provider_prediction_total Provider prediction outcomes recorded by the teaching metrics counter.
+# TYPE provider_prediction_total counter
+provider_prediction_total{error_code="none",failure_category="none",operation="prediction",outcome="success",status_code="none"} 1</code></pre>
+      <p>这和 JSON snapshot 表达的是同一份计数，只是更接近监控系统常见的 scrape 输出。</p>
+    </section>
+
+    <section>
+      <h2>10. 常见错误</h2>
+      <ul>
+        <li>把文本 endpoint 当成生产监控方案：它仍然读取进程内教学 counter，不解决多实例聚合。</li>
+        <li>输出 label 顺序不稳定：测试容易抖动，人工 diff 也难读。</li>
+        <li>忘记转义 label value：一旦出现引号或换行，文本格式会被破坏。</li>
+        <li>把 JSON response model 用在文本 endpoint 上：文本 endpoint 应该使用文本响应类。</li>
+        <li>随便改 metric name：监控查询和告警规则会被破坏。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>11. 面试视角：如何解释 export shape</h2>
+      <blockquote>
+        <p>我会把 metrics 的内部存储、调试 snapshot 和外部导出形状分开。内部 counter 负责累计，JSON snapshot 适合教学和调试，Prometheus text 风格输出适合展示采集器会读取的行式指标。即使当前是教学实现，也要保持稳定 metric name、稳定 label 顺序和基本转义规则，因为这些都是监控契约的一部分。</p>
+      </blockquote>
+    </section>
+
+    <section>
+      <h2>12. 记忆练习</h2>
+      <details>
+        <summary>1. JSON snapshot 和 text export 的核心区别是什么？</summary>
+        <p class="answer">JSON snapshot 更适合教学和程序调试；text export 更接近监控采集器读取的行式指标格式。</p>
+      </details>
+      <details>
+        <summary>2. 为什么 counter 指标名使用 <code>_total</code> 后缀？</summary>
+        <p class="answer">它提醒读者这是累计计数，语义上只增不减，符合 counter 心智模型。</p>
+      </details>
+      <details>
+        <summary>3. 为什么 label 要排序输出？</summary>
+        <p class="answer">排序让输出稳定，测试、diff 和人工检查都更可靠。</p>
+      </details>
+      <details>
+        <summary>4. 为什么本节仍然不是生产级 metrics pipeline？</summary>
+        <p class="answer">因为数据仍然来自单进程内存 counter，没有解决多进程、多实例、抓取部署、权限、告警和长期存储。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>13. 本节总结</h2>
+      <p>本节把 provider metrics 从 JSON snapshot 推进到文本导出形状。你现在可以看到同一份 provider prediction count 如何被渲染成 <code># HELP</code>、<code># TYPE</code> 和样本行。关键心智模型是：metrics 事实和 export shape 要分开设计，导出格式本身也是契约。</p>
+      <p>下一课建议学习：Provider Metrics Export Tests。可以继续深化文本导出的边界测试，例如空 snapshot、多个失败 outcome、label 转义和 endpoint 响应头。</p>
+      <p>推荐主资源：<a href="https://prometheus.io/docs/instrumenting/exposition_formats/">Prometheus exposition formats</a>、<a href="https://prometheus.io/docs/practices/naming/">Prometheus metric naming</a>、<a href="https://fastapi.tiangolo.com/advanced/custom-response/">FastAPI custom responses</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0054-provider-metrics-test-isolation.html">上一课：Provider Metrics Test Isolation</a>
+        <a href="../reference/0055-provider-metrics-export-shape-cheatsheet.html">查看本课速查</a>
+        <a href="./0056-provider-metrics-export-tests.html">下一课：Provider Metrics Export Tests</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

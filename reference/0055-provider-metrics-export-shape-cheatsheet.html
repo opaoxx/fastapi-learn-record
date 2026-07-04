@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Provider Metrics Export Shape Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0055</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0055-provider-metrics-export-shape.html">回到第 55 课</a>
+        <a href="./0054-provider-metrics-test-isolation-cheatsheet.html">上一张速查</a>
+        <a href="./0056-provider-metrics-export-tests-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0055</p>
+      <h1>Provider Metrics Export Shape 速查</h1>
+      <p class="lead">同一份 provider metrics 可以用 JSON snapshot 调试，也可以渲染成 Prometheus text 风格输出供采集器读取。</p>
+    </header>
+
+    <h2>三层模型</h2>
+    <pre><code>ProviderMetricsCounter
+  -> JSON snapshot: [{"labels": ..., "count": 1}]
+  -> text export: provider_prediction_total{...} 1</code></pre>
+
+    <h2>Endpoint</h2>
+    <pre><code>GET /provider/metrics/prometheus</code></pre>
+    <p>返回 <code>text/plain</code>，不是 JSON。</p>
+
+    <h2>文本输出</h2>
+    <pre><code># HELP provider_prediction_total Provider prediction outcomes recorded by the teaching metrics counter.
+# TYPE provider_prediction_total counter
+provider_prediction_total{error_code="none",failure_category="none",operation="prediction",outcome="success",status_code="none"} 1</code></pre>
+
+    <h2>核心 helper</h2>
+    <pre><code>def render_provider_metrics_prometheus_text(samples: list[dict[str, object]]) -> str:
+    lines = [
+        f"# HELP {PROVIDER_PREDICTION_METRIC_NAME} {PROVIDER_PREDICTION_METRIC_HELP}",
+        f"# TYPE {PROVIDER_PREDICTION_METRIC_NAME} counter",
+    ]
+    for sample in samples:
+        labels = sample["labels"]
+        label_text = ",".join(
+            f'{name}="{escape_prometheus_label_value(value)}"'
+            for name, value in sorted(labels.items())
+        )
+        lines.append(f"{PROVIDER_PREDICTION_METRIC_NAME}{{{label_text}}} {sample['count']}")
+    return "\n".join(lines) + "\n"</code></pre>
+
+    <h2>FastAPI router</h2>
+    <pre><code>@router.get(
+    "/provider/metrics/prometheus",
+    response_class=PlainTextResponse,
+)
+async def get_provider_metrics_prometheus() -> str:
+    return get_provider_metrics_prometheus_text()</code></pre>
+
+    <h2>格式规则</h2>
+    <ul>
+      <li><code># HELP</code> 描述指标含义。</li>
+      <li><code># TYPE</code> 描述指标类型。</li>
+      <li><code>provider_prediction_total</code> 是 counter 名称。</li>
+      <li>labels 用稳定顺序输出。</li>
+      <li>label value 里的反斜杠、换行和双引号要转义。</li>
+    </ul>
+
+    <h2>测试重点</h2>
+    <pre><code>response = client.get("/provider/metrics/prometheus")
+
+assert response.status_code == 200
+assert response.headers["content-type"].startswith("text/plain")
+assert response.text == expected_text</code></pre>
+
+    <h2>常见错误</h2>
+    <ul>
+      <li>把教学 text endpoint 当生产监控系统。</li>
+      <li>label 顺序不稳定。</li>
+      <li>没有转义 label value。</li>
+      <li>对文本 endpoint 套 JSON response model。</li>
+      <li>随意修改已经暴露的 metric name。</li>
+    </ul>
+
+    <h2>面试短答</h2>
+    <blockquote>
+      <p>metrics 的事实和导出形状要分开。内部 counter 负责累计，JSON snapshot 适合调试，Prometheus text 风格输出适合展示采集器读取的行式样本。即使是教学实现，也要保证 metric name、label 顺序和转义规则稳定。</p>
+    </blockquote>
+
+    <footer>
+      来源：<a href="https://prometheus.io/docs/instrumenting/exposition_formats/">Prometheus exposition formats</a>、
+      <a href="https://prometheus.io/docs/practices/naming/">Prometheus metric naming</a>、
+      <a href="https://fastapi.tiangolo.com/advanced/custom-response/">FastAPI custom responses</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0055-provider-metrics-export-shape.html">回到第 55 课</a>
+        <a href="./0054-provider-metrics-test-isolation-cheatsheet.html">上一张速查</a>
+        <a href="./0056-provider-metrics-export-tests-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

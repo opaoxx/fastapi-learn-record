@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Provider Metrics Failure Outcomes Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0053</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0053-provider-metrics-failure-outcomes.html">回到第 53 课</a>
+        <a href="./0052-provider-metrics-endpoint-cheatsheet.html">上一张速查</a>
+        <a href="./0054-provider-metrics-test-isolation-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0053</p>
+      <h1>Provider Metrics Failure Outcomes 速查</h1>
+      <p class="lead">失败 metrics 要区分系统动作：安排重试、重试耗尽、快速失败。不要把所有失败压成一个模糊的 failed。</p>
+    </header>
+
+    <h2>Outcome 表</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>outcome</th>
+          <th>含义</th>
+          <th>典型场景</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>retry_scheduled</code></td>
+          <td>可重试失败后安排下一次尝试</td>
+          <td>第 1 次 HTTP 503，且还有剩余尝试次数</td>
+        </tr>
+        <tr>
+          <td><code>retry_exhausted</code></td>
+          <td>最大尝试次数用完</td>
+          <td>连续 HTTP 503 后最终失败</td>
+        </tr>
+        <tr>
+          <td><code>fail_fast</code></td>
+          <td>错误不适合重试，立即停止</td>
+          <td>HTTP 400 或非法 provider response</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>503 Snapshot</h2>
+    <pre><code>[
+  {
+    "labels": {
+      "operation": "prediction",
+      "outcome": "retry_exhausted",
+      "failure_category": "retryable_http_status",
+      "error_code": "ai_provider_http_error",
+      "status_code": "503"
+    },
+    "count": 1
+  },
+  {
+    "labels": {
+      "operation": "prediction",
+      "outcome": "retry_scheduled",
+      "failure_category": "retryable_http_status",
+      "error_code": "ai_provider_http_error",
+      "status_code": "503"
+    },
+    "count": 1
+  }
+]</code></pre>
+
+    <h2>400 Snapshot</h2>
+    <pre><code>[
+  {
+    "labels": {
+      "operation": "prediction",
+      "outcome": "fail_fast",
+      "failure_category": "non_retryable_http_status",
+      "error_code": "ai_provider_http_error",
+      "status_code": "400"
+    },
+    "count": 1
+  }
+]</code></pre>
+
+    <h2>测试流程</h2>
+    <pre><code>reset_provider_metrics()
+client.post("/provider/predict", json=payload)
+response = client.get("/provider/metrics")
+
+assert response.status_code == 200
+assert response.json() == expected_samples</code></pre>
+
+    <h2>关键规则</h2>
+    <ul>
+      <li><code>retry_scheduled</code> 是中间事件，不等于最终失败。</li>
+      <li><code>retry_exhausted</code> 是可重试错误的最终失败。</li>
+      <li><code>fail_fast</code> 表示不应该继续尝试。</li>
+      <li>provider 原始状态码放在 metrics 的 <code>status_code</code> label 里。</li>
+      <li>当前项目对外 HTTP 响应状态和 provider 原始状态不一定相同。</li>
+    </ul>
+
+    <h2>常见错误</h2>
+    <ul>
+      <li>所有失败都叫 <code>failed</code>。</li>
+      <li>把 provider 400 和本项目对外 503 混为一谈。</li>
+      <li>请求 metrics endpoint 前没有先制造 provider 事件。</li>
+      <li>测试失败路径时忘记重置 in-process counter。</li>
+      <li>把异常全文、请求文本或 request id 放进 labels。</li>
+    </ul>
+
+    <h2>面试短答</h2>
+    <blockquote>
+      <p>失败 metrics 应该区分系统动作。retry_scheduled 表示系统正在恢复，retry_exhausted 表示重试已用完，fail_fast 表示继续尝试没有意义。这样排查时能分清临时抖动、最终不可用和契约错误。</p>
+    </blockquote>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/testing/">FastAPI testing</a>、
+      <a href="https://www.python-httpx.org/advanced/transports/#mock-transports">HTTPX MockTransport</a>、
+      <a href="https://prometheus.io/docs/practices/naming/">Prometheus naming best practices</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0053-provider-metrics-failure-outcomes.html">回到第 53 课</a>
+        <a href="./0052-provider-metrics-endpoint-cheatsheet.html">上一张速查</a>
+        <a href="./0054-provider-metrics-test-isolation-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

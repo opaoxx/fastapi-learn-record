@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Provider Metrics Naming Refactor Boundary Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0060</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0060-provider-metrics-naming-refactor-boundary.html">回到第 60 课</a>
+        <a href="./0059-provider-metrics-naming-contract-cheatsheet.html">上一张速查</a>
+        <a href="./0061-provider-metrics-documentation-index-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0060</p>
+      <h1>Provider Metrics Naming Refactor Boundary 速查</h1>
+      <p class="lead">metrics rename 是兼容性迁移，不是普通变量重命名。</p>
+    </header>
+
+    <h2>一句话模型</h2>
+    <blockquote>
+      <p>先盘点契约字段，再设计兼容窗口，最后迁移消费者。</p>
+    </blockquote>
+
+    <h2>契约字段</h2>
+    <pre><code>PROVIDER_PREDICTION_METRIC_LABEL_NAMES = (
+    "operation",
+    "outcome",
+    "failure_category",
+    "error_code",
+    "status_code",
+)</code></pre>
+
+    <h2>Contract snapshot</h2>
+    <pre><code>def get_provider_prediction_metric_contract() -> dict[str, object]:
+    return {
+        "metric_name": PROVIDER_PREDICTION_METRIC_NAME,
+        "help": PROVIDER_PREDICTION_METRIC_HELP,
+        "label_names": list(PROVIDER_PREDICTION_METRIC_LABEL_NAMES),
+    }</code></pre>
+
+    <h2>测试模板</h2>
+    <pre><code>contract = get_provider_prediction_metric_contract()
+
+assert contract == {
+    "metric_name": "provider_prediction_total",
+    "help": "Provider prediction outcomes recorded by the teaching metrics counter.",
+    "label_names": list(PROVIDER_PREDICTION_METRIC_LABEL_NAMES),
+}</code></pre>
+
+    <h2>安全改名五步</h2>
+    <ol>
+      <li>新增新名字。</li>
+      <li>并行导出旧新名字。</li>
+      <li>迁移 Dashboard、告警、文档和查询。</li>
+      <li>验证旧名字没有关键消费者。</li>
+      <li>下线旧名字并更新测试。</li>
+    </ol>
+
+    <h2>什么时候不要加旧别名</h2>
+    <ul>
+      <li>没有真实外部消费者。</li>
+      <li>只是教学项目里的契约讲解。</li>
+      <li>新增别名会让课程代码复杂度高于收益。</li>
+    </ul>
+
+    <h2>运行命令</h2>
+    <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q</code></pre>
+
+    <h2>常见错误</h2>
+    <ul>
+      <li>直接改 metric name 字符串。</li>
+      <li>没有兼容窗口。</li>
+      <li>忘记迁移 Dashboard 和告警。</li>
+      <li>忘记文档和课程材料。</li>
+      <li>改 label name 后没有意识到时间序列身份变化。</li>
+    </ul>
+
+    <h2>面试短答</h2>
+    <blockquote>
+      <p>metrics rename 应作为兼容性迁移处理。先盘点 metric_name、help、label_names，再并行导出旧新名字，迁移消费者，验证旧名字不再被依赖，最后下线。</p>
+    </blockquote>
+
+    <footer>
+      来源：<a href="https://prometheus.io/docs/practices/naming/">Prometheus metric and label naming</a>、
+      <a href="https://prometheus.io/docs/concepts/data_model/">Prometheus data model</a>、
+      <a href="https://prometheus.io/docs/practices/instrumentation/">Prometheus instrumentation practices</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0060-provider-metrics-naming-refactor-boundary.html">回到第 60 课</a>
+        <a href="./0059-provider-metrics-naming-contract-cheatsheet.html">上一张速查</a>
+        <a href="./0061-provider-metrics-documentation-index-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

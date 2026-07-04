@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Provider Metrics Endpoint Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0052</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0052-provider-metrics-endpoint.html">回到第 52 课</a>
+        <a href="./0051-provider-metrics-counters-cheatsheet.html">上一张速查</a>
+        <a href="./0053-provider-metrics-failure-outcomes-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0052</p>
+      <h1>Provider Metrics Endpoint 速查</h1>
+      <p class="lead">metrics endpoint 是只读观测接口：service 层记录 provider prediction 事件，router 读取 counter snapshot 并输出稳定 JSON。</p>
+    </header>
+
+    <h2>心智模型</h2>
+    <pre><code>business event happens
+service records metric labels
+counter aggregates same label set
+GET /provider/metrics reads snapshot</code></pre>
+
+    <h2>Endpoint</h2>
+    <pre><code>GET /provider/metrics</code></pre>
+    <p>只读，不调用 provider，不改变业务状态。</p>
+
+    <h2>响应形状</h2>
+    <pre><code>[
+  {
+    "labels": {
+      "operation": "prediction",
+      "outcome": "success",
+      "failure_category": "none",
+      "error_code": "none",
+      "status_code": "none"
+    },
+    "count": 1
+  }
+]</code></pre>
+
+    <h2>核心代码</h2>
+    <pre><code>def record_provider_metric(labels: ProviderMetricLabels, amount: int = 1) -> None:
+    provider_prediction_metrics.increment(labels, amount=amount)
+
+def get_provider_metrics_snapshot() -> list[dict[str, object]]:
+    return provider_prediction_metrics.snapshot()</code></pre>
+
+    <h2>Router 形状</h2>
+    <pre><code>@router.get(
+    "/provider/metrics",
+    response_model=list[ProviderMetricSampleResponse],
+)
+async def get_provider_metrics() -> list[dict[str, object]]:
+    return get_provider_metrics_snapshot()</code></pre>
+
+    <h2>Outcome 来源</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>outcome</th>
+          <th>什么时候记录</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>success</code></td>
+          <td>provider 返回合法 prediction body</td>
+        </tr>
+        <tr>
+          <td><code>retry_scheduled</code></td>
+          <td>timeout、request error 或可重试 HTTP 状态准备重试</td>
+        </tr>
+        <tr>
+          <td><code>retry_exhausted</code></td>
+          <td>可重试失败用完最大尝试次数</td>
+        </tr>
+        <tr>
+          <td><code>fail_fast</code></td>
+          <td>非重试 HTTP 状态或非法 provider 响应</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>测试重点</h2>
+    <pre><code>reset_provider_metrics()
+client.post("/provider/predict", json=payload)
+response = client.get("/provider/metrics")
+
+assert response.json()[0]["labels"]["outcome"] == "success"
+assert response.json()[0]["count"] == 1</code></pre>
+
+    <h2>常见错误</h2>
+    <ul>
+      <li>读取 metrics 时又调用 provider。</li>
+      <li>测试之间不重置进程内 counter。</li>
+      <li>把 request text、request id 放进 labels。</li>
+      <li>把教学用 in-process counter 当成生产监控。</li>
+      <li>在 router 里堆统计规则，导致 HTTP 层过重。</li>
+    </ul>
+
+    <h2>边界</h2>
+    <ul>
+      <li>适合教学 metrics 形状、response model 和测试隔离。</li>
+      <li>不解决多进程、多实例、重启后丢失和标准抓取格式。</li>
+      <li>生产项目应接入 Prometheus、OpenTelemetry 或云监控系统。</li>
+    </ul>
+
+    <h2>面试短答</h2>
+    <blockquote>
+      <p>metrics endpoint 应该是只读观测接口。provider prediction 的成功、重试、耗尽和 fail fast 在 service 层记录成低基数 labels，router 只返回 snapshot，并用 response model 固定 JSON 契约。当前 in-process counter 是教学实现，生产环境需要外部 metrics 后端聚合。</p>
+    </blockquote>
+
+    <footer>
+      来源：<a href="https://fastapi.tiangolo.com/tutorial/response-model/">FastAPI response model</a>、
+      <a href="https://prometheus.io/docs/instrumenting/exposition_formats/">Prometheus exposition formats</a>、
+      <a href="https://opentelemetry.io/docs/concepts/signals/metrics/">OpenTelemetry Metrics</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0052-provider-metrics-endpoint.html">回到第 52 课</a>
+        <a href="./0051-provider-metrics-counters-cheatsheet.html">上一张速查</a>
+        <a href="./0053-provider-metrics-failure-outcomes-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0052 - Provider Metrics Endpoint</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0052</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0051-provider-metrics-counters.html">上一课</a>
+        <a href="../reference/0052-provider-metrics-endpoint-cheatsheet.html">本课速查</a>
+        <a href="./0053-provider-metrics-failure-outcomes.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0052</p>
+      <h1>Provider Metrics Endpoint：把观测计数暴露成只读 API</h1>
+      <p class="lead">上一课我们有了教学用 <code>ProviderMetricsCounter</code>。本节把它接入 provider prediction 流程，并通过 <code>GET /provider/metrics</code> 暴露只读 snapshot。重点不是做生产监控系统，而是理解一个 FastAPI endpoint 如何把服务内部状态安全地整理成可读 JSON。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解 metrics endpoint 和普通业务 endpoint 的差异。</li>
+        <li>掌握“业务事件记录 metrics，router 只读取 snapshot”的分层方式。</li>
+        <li>读懂 provider prediction 成功、重试、耗尽和 fail fast 如何转成计数标签。</li>
+        <li>学会用 Pydantic response model 约束 metrics snapshot 的 JSON 形状。</li>
+        <li>明确进程内 metrics endpoint 的教学边界：可学习、可测试，但不是多实例生产聚合。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 背景：为什么要有 metrics endpoint</h2>
+      <p>日志适合回答“某一次请求发生了什么”。metrics 更适合回答“这段时间整体发生了多少次”。如果 provider prediction 偶尔失败，只看日志当然能查到细节；但如果面试官或线上值班同学问：“最近 provider 成功多少次，重试多少次，最终失败多少次？”这时 metrics 更直接。</p>
+      <p>在真正生产环境里，常见做法是由 Prometheus、OpenTelemetry Collector 或云监控系统抓取指标。本课程还不引入这些组件，因为初学阶段更重要的是先看见数据形状：内部 counter 如何累加，HTTP endpoint 如何输出 snapshot，测试如何保护这个输出契约。</p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 核心概念：metrics endpoint 是观测接口</h2>
+      <p>业务接口通常改变业务状态，例如创建 item、提交 summary task、调用 provider predict。metrics endpoint 不应该触发业务动作，它只读取已经发生的观测数据。本节的 <code>GET /provider/metrics</code> 就是只读接口：</p>
+      <pre><code>GET /provider/metrics
+
+[
+  {
+    "labels": {
+      "operation": "prediction",
+      "outcome": "success",
+      "failure_category": "none",
+      "error_code": "none",
+      "status_code": "none"
+    },
+    "count": 1
+  }
+]</code></pre>
+      <p>这段 JSON 的重点是“聚合后的样本”，不是单次请求明细。单次请求文本、request id、完整异常堆栈仍然属于日志，不应该放进 metrics label。</p>
+    </section>
+
+    <section>
+      <h2>3. 本节运行机制</h2>
+      <ol>
+        <li>provider prediction 被调用。</li>
+        <li>请求成功、安排重试、重试耗尽或 fail fast 时，service 层构造一组低基数 labels。</li>
+        <li><code>ProviderMetricsCounter</code> 根据相同 label set 累加 count。</li>
+        <li>浏览器或测试请求 <code>GET /provider/metrics</code>。</li>
+        <li>router 调用 service 层的 <code>get_provider_metrics_snapshot()</code>。</li>
+        <li>FastAPI 按 <code>response_model</code> 把 snapshot 序列化成稳定 JSON。</li>
+      </ol>
+      <p>注意这个方向：业务流程负责记录事实，观测 endpoint 负责读取事实。不要让 <code>GET /provider/metrics</code> 重新调用 provider，也不要为了展示 metrics 去伪造一次业务请求。</p>
+    </section>
+
+    <section>
+      <h2>4. 代码精读一：全局教学 counter 与 snapshot 函数</h2>
+      <p>在 <code>first_api/services/provider_http.py</code> 中，课程新增了一个模块级教学 counter：</p>
+      <pre><code>provider_prediction_metrics = ProviderMetricsCounter()
+
+def record_provider_metric(labels: ProviderMetricLabels, amount: int = 1) -> None:
+    provider_prediction_metrics.increment(labels, amount=amount)
+
+def get_provider_metrics_snapshot() -> list[dict[str, object]]:
+    return provider_prediction_metrics.snapshot()</code></pre>
+      <p>这里把写入和读取各自包了一层函数。好处是 router 不需要知道内部用的是 <code>Counter</code>、dict 还是未来别的 metrics 后端；它只知道“我要读 snapshot”。</p>
+      <p><code>reset_provider_metrics()</code> 主要服务测试隔离。因为这是进程内教学 counter，如果测试之间不清空，前一个测试产生的 count 可能污染后一个测试。</p>
+    </section>
+
+    <section>
+      <h2>5. 代码精读二：把 provider 结果记录成 metrics</h2>
+      <p>成功路径很直接。provider 返回合法响应并通过 Pydantic 校验后，记录一条 success：</p>
+      <pre><code>body = ProviderPredictionBody.model_validate(response.json())
+record_provider_metric(build_provider_metric_labels(outcome="success"))
+return PredictionResult(
+    label=body.label,
+    score=round(body.score, 2),
+    source=f"{config.provider}-provider",
+)</code></pre>
+      <p>重试和失败路径复用了之前的观测函数。安排重试时记录 <code>retry_scheduled</code>，最终耗尽时记录 <code>retry_exhausted</code>，非重试型失败记录 <code>fail_fast</code>。这样日志和 metrics 不是两套互相矛盾的语言，而是围绕同一套 outcome 和 failure category 展开。</p>
+      <pre><code>record_provider_metric(
+    build_provider_metric_labels(
+        outcome="retry_exhausted",
+        failure_category=classify_retry_metric_failure(...),
+        error_code=error_code,
+        status_code=status_code,
+    )
+)</code></pre>
+    </section>
+
+    <section>
+      <h2>6. 代码精读三：响应模型约束输出契约</h2>
+      <p>metrics endpoint 也需要响应模型。否则今天返回 <code>count</code>，明天有人改成 <code>value</code>，前端、文档或测试就会悄悄漂移。</p>
+      <pre><code>class ProviderMetricLabelsResponse(BaseModel):
+    operation: str
+    outcome: str
+    failure_category: str
+    error_code: str
+    status_code: str
+
+class ProviderMetricSampleResponse(BaseModel):
+    labels: ProviderMetricLabelsResponse
+    count: int = PydanticField(ge=0)</code></pre>
+      <p>这里没有把每个字段都写成很窄的 <code>Literal</code>，是为了让教学项目后续扩展 outcome 或 failure category 时更轻。真正生产项目可以根据团队稳定性要求选择更严格或更宽松的 schema。</p>
+    </section>
+
+    <section>
+      <h2>7. 代码精读四：router 只负责展示 snapshot</h2>
+      <p><code>first_api/routers/predictions.py</code> 新增了只读 endpoint：</p>
+      <pre><code>@router.get(
+    "/provider/metrics",
+    response_model=list[ProviderMetricSampleResponse],
+    summary="Read teaching provider prediction metrics",
+)
+async def get_provider_metrics() -> list[dict[str, object]]:
+    return get_provider_metrics_snapshot()</code></pre>
+      <p>这段代码刻意很薄。它不遍历内部 counter，不拼 labels，不判断 provider 错误类型。router 的职责是 HTTP：路径、方法、response model、summary、description。metrics 语义留在 service 层。</p>
+    </section>
+
+    <section class="practice">
+      <h2>8. 动手实验：先产生一次 provider prediction，再读取 metrics</h2>
+      <p>先运行受影响测试：</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py tests\test_ai_client_dependency.py -q</code></pre>
+      <p>测试里会用 <code>httpx.MockTransport</code> 模拟 provider 成功响应，然后请求 <code>/provider/metrics</code>。预期结果是：</p>
+      <pre><code>[
+  {
+    "labels": {
+      "operation": "prediction",
+      "outcome": "success",
+      "failure_category": "none",
+      "error_code": "none",
+      "status_code": "none"
+    },
+    "count": 1
+  }
+]</code></pre>
+      <p>如果你手动启动项目，也可以先调用 <code>POST /provider/predict</code>，再打开 <code>http://127.0.0.1:8000/provider/metrics</code> 观察当前进程里的计数。</p>
+    </section>
+
+    <section>
+      <h2>9. 常见错误</h2>
+      <ul>
+        <li>让 metrics endpoint 触发真实 provider 调用：观测接口应该只读，不应该制造新的业务事件。</li>
+        <li>忘记测试隔离：进程内 counter 会保留之前的 count，测试前后要重置。</li>
+        <li>把用户文本放进 metrics label：这会造成高基数，也可能泄露敏感内容。</li>
+        <li>把教学 endpoint 当生产监控：多进程、多实例、重启和抓取格式都还没有解决。</li>
+        <li>router 里写太多统计逻辑：会让 HTTP 层和业务观测规则耦合，后续难迁移。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>10. 面试视角：如何解释这个设计</h2>
+      <blockquote>
+        <p>我会把 provider prediction 的 metrics 记录放在 service 层，因为 service 层最接近成功、重试、耗尽和 fail fast 的真实事件。FastAPI router 只暴露一个只读 snapshot endpoint，并用 response model 固定 JSON 契约。当前实现是教学用进程内 counter，适合理解指标形状和测试分层；生产环境还需要 Prometheus 或 OpenTelemetry 这类能跨进程、跨实例聚合的方案。</p>
+      </blockquote>
+    </section>
+
+    <section>
+      <h2>11. 记忆练习</h2>
+      <details>
+        <summary>1. 为什么 <code>GET /provider/metrics</code> 不应该调用 provider？</summary>
+        <p class="answer">因为它是观测接口，职责是读取已经发生的统计结果；如果读取 metrics 还触发业务调用，会污染计数，也会让排查变复杂。</p>
+      </details>
+      <details>
+        <summary>2. 为什么 metrics 记录逻辑放在 service 层更合适？</summary>
+        <p class="answer">service 层最清楚 provider 调用的真实结果，可以准确判断 success、retry_scheduled、retry_exhausted 和 fail_fast；router 只负责 HTTP 展示。</p>
+      </details>
+      <details>
+        <summary>3. 为什么测试里要调用 <code>reset_provider_metrics()</code>？</summary>
+        <p class="answer">因为本节 counter 存在当前 Python 进程内，不重置会让前一个测试的计数影响后一个测试。</p>
+      </details>
+      <details>
+        <summary>4. 这个 endpoint 离生产级 metrics 还差什么？</summary>
+        <p class="answer">还缺少跨进程和跨实例聚合、标准抓取格式、持久化或外部采集器、权限控制、告警和仪表盘等能力。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>12. 本节总结</h2>
+      <p>本节把上一课的教学 counter 接到了真实 provider prediction 流程里，并新增 <code>GET /provider/metrics</code> 读取 snapshot。你现在可以把 metrics endpoint 理解成一个只读观测窗口：service 层记录事件，counter 聚合 label set，router 用 response model 输出稳定 JSON。</p>
+      <p>下一课建议学习：Provider Metrics Failure Outcomes。可以进一步补充失败路径的测试和实验，观察 retry_scheduled、retry_exhausted、fail_fast 在 snapshot 中如何同时出现。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/response-model/">FastAPI response model</a>、<a href="https://prometheus.io/docs/instrumenting/exposition_formats/">Prometheus exposition formats</a>、<a href="https://opentelemetry.io/docs/concepts/signals/metrics/">OpenTelemetry Metrics</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0051-provider-metrics-counters.html">上一课：Provider Metrics Counters</a>
+        <a href="../reference/0052-provider-metrics-endpoint-cheatsheet.html">查看本课速查</a>
+        <a href="./0053-provider-metrics-failure-outcomes.html">下一课：Provider Metrics Failure Outcomes</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

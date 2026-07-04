@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Provider Metrics Export Tests Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0056</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0056-provider-metrics-export-tests.html">回到第 56 课</a>
+        <a href="./0055-provider-metrics-export-shape-cheatsheet.html">上一张速查</a>
+        <a href="./0057-provider-metrics-snapshot-boundary-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0056</p>
+      <h1>Provider Metrics Export Tests 速查</h1>
+      <p class="lead">metrics text export 是机器读取的契约，测试要覆盖空状态、失败状态、转义规则和 HTTP 响应边界。</p>
+    </header>
+
+    <h2>核心心智模型</h2>
+    <blockquote>
+      <p>不要把 text export 当成普通字符串展示。HELP、TYPE、metric name、label 顺序、label 转义、count 和 Content-Type 都是契约。</p>
+    </blockquote>
+
+    <h2>测试分层</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>层级</th>
+          <th>测试对象</th>
+          <th>保护重点</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>helper</td>
+          <td><code>render_provider_metrics_prometheus_text()</code></td>
+          <td>文本格式、空 snapshot、排序、转义</td>
+        </tr>
+        <tr>
+          <td>endpoint</td>
+          <td><code>GET /provider/metrics/prometheus</code></td>
+          <td>路由、状态码、Content-Type、真实请求流程</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>空 snapshot</h2>
+    <pre><code># HELP provider_prediction_total Provider prediction outcomes recorded by the teaching metrics counter.
+# TYPE provider_prediction_total counter</code></pre>
+    <p>没有样本时仍然保留 HELP 和 TYPE。空状态不是空字符串。</p>
+
+    <h2>失败 outcome</h2>
+    <pre><code>provider_prediction_total{error_code="ai_provider_http_error",failure_category="retryable_http_status",operation="prediction",outcome="retry_exhausted",status_code="503"} 1
+provider_prediction_total{error_code="ai_provider_http_error",failure_category="retryable_http_status",operation="prediction",outcome="retry_scheduled",status_code="503"} 1</code></pre>
+
+    <h2>转义规则</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>字符</th>
+          <th>输出</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>反斜杠</td>
+          <td><code>\\</code></td>
+        </tr>
+        <tr>
+          <td>换行</td>
+          <td><code>\n</code></td>
+        </tr>
+        <tr>
+          <td>双引号</td>
+          <td><code>\"</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>endpoint 断言模板</h2>
+    <pre><code>response = client.get("/provider/metrics/prometheus")
+
+assert response.status_code == 200
+assert response.headers["content-type"].startswith("text/plain")
+assert response.text == expected_text</code></pre>
+
+    <h2>常见错误</h2>
+    <ul>
+      <li>只断言 status code，不断言响应正文。</li>
+      <li>把空 metrics 导出写成空字符串。</li>
+      <li>忘记测试失败 outcome。</li>
+      <li>忘记 label value 转义。</li>
+      <li>endpoint 测试没有清空全局 counter。</li>
+    </ul>
+
+    <h2>运行命令</h2>
+    <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py tests\test_ai_client_dependency.py -q</code></pre>
+
+    <footer>
+      来源：<a href="https://prometheus.io/docs/instrumenting/exposition_formats/">Prometheus exposition formats</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/testing/">FastAPI testing</a>、
+      <a href="https://docs.pytest.org/en/stable/how-to/fixtures.html">pytest fixtures</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0056-provider-metrics-export-tests.html">回到第 56 课</a>
+        <a href="./0055-provider-metrics-export-shape-cheatsheet.html">上一张速查</a>
+        <a href="./0057-provider-metrics-snapshot-boundary-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

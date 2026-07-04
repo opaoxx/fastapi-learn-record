@@ -28,6 +28,19 @@ class ProviderHealthResponse(BaseModel):
     message: str
 
 
+class ProviderMetricLabelsResponse(BaseModel):
+    operation: str
+    outcome: str
+    failure_category: str
+    error_code: str
+    status_code: str
+
+
+class ProviderMetricSampleResponse(BaseModel):
+    labels: ProviderMetricLabelsResponse
+    count: int = PydanticField(ge=0)
+
+
 class PublicConfigResponse(BaseModel):
     app_name: str
     environment: str

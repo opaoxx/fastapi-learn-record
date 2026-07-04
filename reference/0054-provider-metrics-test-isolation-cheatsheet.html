@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Provider Metrics Test Isolation Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0054</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0054-provider-metrics-test-isolation.html">回到第 54 课</a>
+        <a href="./0053-provider-metrics-failure-outcomes-cheatsheet.html">上一张速查</a>
+        <a href="./0055-provider-metrics-export-shape-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0054</p>
+      <h1>Provider Metrics Test Isolation 速查</h1>
+      <p class="lead">进程内 metrics counter 是共享状态。测试前后都 reset，才能让 endpoint 测试互不污染。</p>
+    </header>
+
+    <h2>核心问题</h2>
+    <pre><code>provider_prediction_metrics = ProviderMetricsCounter()
+
+# Same Python process
+test A records success
+test B can still see test A's count unless reset</code></pre>
+
+    <h2>Fixture 写法</h2>
+    <pre><code>@pytest.fixture(autouse=True)
+def reset_provider_metrics_counter() -> object:
+    reset_provider_metrics()
+    yield
+    reset_provider_metrics()</code></pre>
+
+    <h2>时间线</h2>
+    <ol>
+      <li>测试开始前：清空 counter。</li>
+      <li>测试运行：制造 provider 事件并读取 metrics。</li>
+      <li>测试结束后：再次清空 counter。</li>
+    </ol>
+
+    <h2>什么时候用 autouse</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>情况</th>
+          <th>选择</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>整个测试文件都共享同一环境规则</td>
+          <td><code>autouse=True</code></td>
+        </tr>
+        <tr>
+          <td>只有少数测试需要</td>
+          <td>显式 fixture 参数</td>
+        </tr>
+        <tr>
+          <td>规则会影响不相关测试</td>
+          <td>缩小 fixture 作用域</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>测试主体</h2>
+    <pre><code>def test_provider_metrics_endpoint_exposes_fail_fast_outcome() -> None:
+    # fixture already reset metrics
+    client.post("/provider/predict", json=payload)
+    response = client.get("/provider/metrics")
+    assert response.json() == expected_samples</code></pre>
+
+    <h2>不要混淆的清理</h2>
+    <ul>
+      <li><code>reset_provider_metrics()</code> 清 provider metrics counter。</li>
+      <li><code>app.dependency_overrides.clear()</code> 清 FastAPI dependency overrides。</li>
+      <li><code>AsyncClient.aclose()</code> 关闭测试 HTTP client。</li>
+    </ul>
+
+    <h2>常见错误</h2>
+    <ul>
+      <li>只在测试前 reset，不在测试后 reset。</li>
+      <li>只在测试后 reset，不在测试前 reset。</li>
+      <li>把 autouse fixture 放到过大的作用域。</li>
+      <li>用 fixture 隐藏太多不相关环境行为。</li>
+      <li>误以为 metrics reset 会清理 dependency overrides。</li>
+    </ul>
+
+    <h2>面试短答</h2>
+    <blockquote>
+      <p>全局进程内状态会跨测试保留，所以我会用 yield fixture 在每个测试前后清理。这里 autouse fixture 表达的是当前测试文件的共同环境规则：provider metrics counter 必须为空开始，也必须在测试后清理。</p>
+    </blockquote>
+
+    <footer>
+      来源：<a href="https://docs.pytest.org/en/stable/how-to/fixtures.html">pytest fixtures</a>、
+      <a href="https://docs.pytest.org/en/stable/how-to/fixtures.html#autouse-fixtures-fixtures-you-dont-have-to-request">pytest autouse fixtures</a>、
+      <a href="https://fastapi.tiangolo.com/advanced/testing-dependencies/">FastAPI testing dependencies</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0054-provider-metrics-test-isolation.html">回到第 54 课</a>
+        <a href="./0053-provider-metrics-failure-outcomes-cheatsheet.html">上一张速查</a>
+        <a href="./0055-provider-metrics-export-shape-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

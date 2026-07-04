@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0053 - Provider Metrics Failure Outcomes</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0053</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0052-provider-metrics-endpoint.html">上一课</a>
+        <a href="../reference/0053-provider-metrics-failure-outcomes-cheatsheet.html">本课速查</a>
+        <a href="./0054-provider-metrics-test-isolation.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0053</p>
+      <h1>Provider Metrics Failure Outcomes：从 snapshot 看懂失败路径</h1>
+      <p class="lead">上一课我们让 <code>GET /provider/metrics</code> 能读到 provider prediction 的计数。本节继续补齐失败路径：同样是 provider 调用失败，<code>retry_scheduled</code>、<code>retry_exhausted</code> 和 <code>fail_fast</code> 代表完全不同的系统含义。我们用 endpoint 级测试把这些区别固定下来。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解失败 metrics 不应该只叫一个笼统的 <code>failed</code>。</li>
+        <li>区分 <code>retry_scheduled</code>、<code>retry_exhausted</code>、<code>fail_fast</code> 三类 outcome。</li>
+        <li>读懂 retryable HTTP 503 和 non-retryable HTTP 400 在 metrics snapshot 中的差异。</li>
+        <li>学会用 endpoint 级测试保护观测契约，而不是只测内部函数。</li>
+        <li>继续保持低基数 label，不把请求文本、异常明细或 request id 放进 metrics。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 背景：失败不是一种失败</h2>
+      <p>初学者很容易把失败统一理解成“请求失败了”。但在真实后端和 AI provider 集成里，失败至少要继续拆开：</p>
+      <ul>
+        <li>暂时失败，系统准备重试。</li>
+        <li>暂时失败一直没恢复，所有尝试次数用完。</li>
+        <li>请求本身或 provider 响应语义不对，不应该重试。</li>
+      </ul>
+      <p>这三类情况的处理方式完全不同。第一类通常表示系统还有自愈机会；第二类表示用户已经拿到失败响应，可能需要告警或降级；第三类通常说明调用方参数、provider contract 或数据格式有问题，继续重试只会浪费资源。</p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 核心概念：outcome 是系统动作，不只是错误码</h2>
+      <p>本课程的 provider metrics 用 <code>outcome</code> 描述系统动作或最终结果：</p>
+      <table>
+        <thead>
+          <tr>
+            <th>outcome</th>
+            <th>含义</th>
+            <th>是否最终失败</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>retry_scheduled</code></td>
+            <td>本次失败可重试，系统已经安排下一次尝试</td>
+            <td>不是</td>
+          </tr>
+          <tr>
+            <td><code>retry_exhausted</code></td>
+            <td>可重试失败持续发生，最大尝试次数已用完</td>
+            <td>是</td>
+          </tr>
+          <tr>
+            <td><code>fail_fast</code></td>
+            <td>失败不适合重试，系统立即停止</td>
+            <td>是</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>这就是为什么只用 <code>failed</code> 不够。<code>failed</code> 会把“正在恢复中的临时失败”和“已经返回给用户的最终失败”混在一起。</p>
+    </section>
+
+    <section>
+      <h2>3. 运行机制：一次 503 会产生哪些样本</h2>
+      <p>当 provider 连续返回 HTTP 503，并且 <code>ai_max_attempts=2</code> 时，流程是：</p>
+      <ol>
+        <li>第 1 次请求收到 503。</li>
+        <li>503 属于 retryable HTTP status。</li>
+        <li>系统记录 <code>retry_scheduled</code>，然后进入下一次尝试。</li>
+        <li>第 2 次请求仍然收到 503。</li>
+        <li>最大尝试次数用完，系统记录 <code>retry_exhausted</code>。</li>
+        <li>API 返回 503 给调用方。</li>
+      </ol>
+      <p>因此 metrics snapshot 会同时出现两条样本：一条表示“曾经安排过重试”，一条表示“最终还是耗尽了”。它们不是重复计数，而是在描述同一次业务流程中的两个不同观测事件。</p>
+    </section>
+
+    <section>
+      <h2>4. 运行机制：一次 400 为什么只产生 fail_fast</h2>
+      <p>HTTP 400 代表调用方请求不符合 provider 的预期，通常不是暂时性系统故障。我们的 taxonomy 把它归为 <code>non_retryable_http_status</code>。当 provider 返回 400 时：</p>
+      <ol>
+        <li>第 1 次请求收到 400。</li>
+        <li>分类函数判断它不是 retryable status。</li>
+        <li>系统不等待、不重试，直接记录 <code>fail_fast</code>。</li>
+        <li>API 返回稳定的 503 错误响应给当前项目调用方，错误码仍是 <code>ai_provider_http_error</code>。</li>
+      </ol>
+      <p>这里有个容易混淆的点：provider 返回 400，但我们的 API 对外返回 503，是因为从本项目调用方视角看，AI provider 能力不可用；metrics 里的 <code>status_code="400"</code> 则保留 provider 原始状态类别，方便排查。</p>
+    </section>
+
+    <section>
+      <h2>5. 代码精读一：失败标签仍然来自统一 helper</h2>
+      <p>测试不手写 dict，而是继续使用 <code>build_provider_metric_labels()</code> 构造期望值：</p>
+      <pre><code>build_provider_metric_labels(
+    outcome="retry_exhausted",
+    failure_category="retryable_http_status",
+    error_code="ai_provider_http_error",
+    status_code=503,
+).as_dict()</code></pre>
+      <p>这样测试保护的是课程里真正公开的 label contract。如果以后 label 字段顺序或默认值调整，测试会跟着 helper 的语义走；如果 outcome、failure category 或 status code 错了，测试仍然能发现。</p>
+    </section>
+
+    <section>
+      <h2>6. 代码精读二：endpoint 测试为什么要先调用 provider/predict</h2>
+      <p>metrics endpoint 本身只读，所以测试不能直接请求 <code>/provider/metrics</code> 然后期待它凭空出现失败样本。测试要先制造一个业务事件：</p>
+      <pre><code>prediction_response = client.post(
+    "/provider/predict",
+    json={
+        "text": "FastAPI is great and pleasant.",
+        "mode": "careful",
+        "temperature": 0.2,
+    },
+)
+metrics_response = client.get("/provider/metrics")</code></pre>
+      <p>这段顺序非常重要。先发生 provider prediction，service 层记录 metrics；再读取 metrics，router 输出 snapshot。它对应了真实系统里的因果关系。</p>
+    </section>
+
+    <section>
+      <h2>7. 代码精读三：503 重试失败测试</h2>
+      <p>测试用 <code>MockTransport</code> 让 provider 每次都返回 503，并把最大尝试次数设为 2：</p>
+      <pre><code>def override_retry_settings() -> Settings:
+    return Settings(
+        ai_max_attempts=2,
+        ai_retry_base_delay_seconds=0.0,
+        ai_retry_max_delay_seconds=0.0,
+    )</code></pre>
+      <p>把重试延迟设为 0，是为了测试不需要真实等待。这个测试不是在验证 backoff，backoff 已经在前面课程测过了；本节只关心失败 outcome 是否出现在 endpoint snapshot 里。</p>
+      <pre><code>assert metrics_response.json() == [
+    {
+        "labels": retry_exhausted_labels,
+        "count": 1,
+    },
+    {
+        "labels": retry_scheduled_labels,
+        "count": 1,
+    },
+]</code></pre>
+      <p>顺序来自 <code>ProviderMetricsCounter.snapshot()</code> 的稳定排序。稳定排序让测试和讲义都能展示固定输出。</p>
+    </section>
+
+    <section>
+      <h2>8. 代码精读四：400 快速失败测试</h2>
+      <p>第二个测试让 provider 返回 400：</p>
+      <pre><code>def handler(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(status_code=400, request=request)</code></pre>
+      <p>预期 snapshot 只有一条 <code>fail_fast</code>：</p>
+      <pre><code>[
+  {
+    "labels": {
+      "operation": "prediction",
+      "outcome": "fail_fast",
+      "failure_category": "non_retryable_http_status",
+      "error_code": "ai_provider_http_error",
+      "status_code": "400"
+    },
+    "count": 1
+  }
+]</code></pre>
+      <p>如果这里出现 <code>retry_scheduled</code>，就说明系统把不该重试的错误拿去重试了；如果出现 <code>retry_exhausted</code>，就说明 fail-fast 边界被破坏了。</p>
+    </section>
+
+    <section class="practice">
+      <h2>9. 动手实验：运行 endpoint 级测试</h2>
+      <p>在项目根目录执行：</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_ai_client_dependency.py -q</code></pre>
+      <p>重点观察三条 metrics endpoint 测试：</p>
+      <ul>
+        <li>成功 provider prediction 产生 <code>success</code> 样本。</li>
+        <li>连续 503 产生 <code>retry_scheduled</code> 和 <code>retry_exhausted</code> 样本。</li>
+        <li>400 产生 <code>fail_fast</code> 样本。</li>
+      </ul>
+      <p>这说明同一个 <code>GET /provider/metrics</code> endpoint 可以表达多种 provider failure outcome，而不是只返回一个模糊的失败总数。</p>
+    </section>
+
+    <section>
+      <h2>10. 常见错误</h2>
+      <ul>
+        <li>把所有失败都记成 <code>failed</code>：会丢失是否重试、是否最终失败、是否 fail fast 的关键信息。</li>
+        <li>把 provider status code 当成本项目 HTTP status code：provider 400 可以被本项目映射成对外 503，但 metrics 里仍保留 provider 原始状态。</li>
+        <li>测试 metrics endpoint 时不先制造业务事件：只读 endpoint 不应该自己产生样本。</li>
+        <li>忘记把重试延迟设为 0：endpoint 测试可能变慢，而且测试目标会被等待时间干扰。</li>
+        <li>在 labels 里加入异常全文：这会制造高基数，也可能泄露 provider 或用户数据。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>11. 面试视角：如何解释失败 outcome</h2>
+      <blockquote>
+        <p>我不会把 provider 调用失败统一记成 failed。可重试错误的第一次失败应该记录 retry_scheduled，表示系统正在尝试恢复；如果最大尝试次数用完，再记录 retry_exhausted，表示最终失败；非重试错误或非法响应记录 fail_fast，表示继续尝试没有意义。这样 metrics 能区分临时抖动、最终不可用和契约错误，排查时比一个失败总数更有用。</p>
+      </blockquote>
+    </section>
+
+    <section>
+      <h2>12. 记忆练习</h2>
+      <details>
+        <summary>1. 为什么 retry_scheduled 不等于最终失败？</summary>
+        <p class="answer">因为它只表示系统安排了下一次尝试，后续请求仍可能成功；最终是否失败要看是否出现 retry_exhausted 或 fail_fast。</p>
+      </details>
+      <details>
+        <summary>2. 连续 503、最大尝试次数为 2 时，为什么有两条 metrics 样本？</summary>
+        <p class="answer">第一次 503 触发 retry_scheduled，第二次 503 用完尝试次数触发 retry_exhausted；它们代表两个不同观测事件。</p>
+      </details>
+      <details>
+        <summary>3. provider 返回 400 时，failure_category 应该是什么？</summary>
+        <p class="answer"><code>non_retryable_http_status</code>，因为 400 通常不是临时 provider 故障，不应该重试。</p>
+      </details>
+      <details>
+        <summary>4. 为什么 endpoint 测试要重置 metrics counter？</summary>
+        <p class="answer">因为当前 counter 是进程内教学实现，不重置会让其他测试产生的样本混进本测试的 snapshot。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>13. 本节总结</h2>
+      <p>本节把 provider metrics 从“能看到 success”推进到“能看懂失败语义”。<code>retry_scheduled</code> 表示系统正在恢复，<code>retry_exhausted</code> 表示重试已经用完，<code>fail_fast</code> 表示不该重试。通过 endpoint 级测试，我们保护的不只是内部 helper，而是调用者真正能从 <code>GET /provider/metrics</code> 看到的 JSON 契约。</p>
+      <p>下一课建议学习：Provider Metrics Reset for Tests。可以把当前测试里的 reset 模式整理得更清楚，进一步理解全局进程内状态为什么需要测试隔离。</p>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/testing/">FastAPI testing</a>、<a href="https://www.python-httpx.org/advanced/transports/#mock-transports">HTTPX MockTransport</a>、<a href="https://prometheus.io/docs/practices/naming/">Prometheus naming best practices</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0052-provider-metrics-endpoint.html">上一课：Provider Metrics Endpoint</a>
+        <a href="../reference/0053-provider-metrics-failure-outcomes-cheatsheet.html">查看本课速查</a>
+        <a href="./0054-provider-metrics-test-isolation.html">下一课：Provider Metrics Test Isolation</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

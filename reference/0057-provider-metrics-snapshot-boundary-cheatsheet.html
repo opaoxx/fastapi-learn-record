@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Provider Metrics Snapshot Boundary Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0057</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0057-provider-metrics-snapshot-boundary.html">回到第 57 课</a>
+        <a href="./0056-provider-metrics-export-tests-cheatsheet.html">上一张速查</a>
+        <a href="./0058-provider-metrics-production-boundary-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0057</p>
+      <h1>Provider Metrics Snapshot Boundary 速查</h1>
+      <p class="lead">snapshot 是内部 counter 状态的外部投影，不应该成为修改内部状态的入口。</p>
+    </header>
+
+    <h2>四层边界</h2>
+    <pre><code>ProviderMetricsCounter._counts
+  -> counter.snapshot()
+  -> GET /provider/metrics
+  -> GET /provider/metrics/prometheus</code></pre>
+
+    <h2>核心原则</h2>
+    <blockquote>
+      <p>读取函数也要保护封装。返回给外部的 snapshot 应该是一份数据表示，而不是内部可变对象。</p>
+    </blockquote>
+
+    <h2>关键代码</h2>
+    <pre><code>return [
+    {
+        "labels": labels.as_dict(),
+        "count": count,
+    }
+    for labels, count in samples
+]</code></pre>
+    <p><code>labels.as_dict()</code> 会生成新的字典，外部修改它不会改变原始 label 对象。</p>
+
+    <h2>边界测试</h2>
+    <pre><code>snapshot = counter.snapshot()
+snapshot[0]["count"] = 999
+snapshot[0]["labels"]["outcome"] = "fail_fast"
+
+assert counter.snapshot() == [
+    {"labels": labels.as_dict(), "count": 1}
+]</code></pre>
+
+    <h2>它保护什么</h2>
+    <ul>
+      <li>防止调用方通过 snapshot 修改真实计数。</li>
+      <li>防止导出层依赖内部 <code>Counter</code> 实现细节。</li>
+      <li>防止未来重构把内部可变对象泄漏出去。</li>
+      <li>让 JSON endpoint 和 text export 都建立在稳定快照上。</li>
+    </ul>
+
+    <h2>它不解决什么</h2>
+    <ul>
+      <li>不解决多进程指标合并。</li>
+      <li>不解决多实例聚合。</li>
+      <li>不解决服务重启后的计数丢失。</li>
+      <li>不替代 Prometheus 或 OpenTelemetry。</li>
+    </ul>
+
+    <h2>运行命令</h2>
+    <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q</code></pre>
+
+    <h2>面试短答</h2>
+    <blockquote>
+      <p>snapshot 是模块边界对象。它把内部 counter 投影成外部可读结构，但不能泄漏内部可变状态。测试可以故意修改返回的 snapshot，再确认真实 counter 仍然不变。</p>
+    </blockquote>
+
+    <footer>
+      来源：<a href="https://docs.python.org/3/library/collections.html#collections.Counter">Python Counter</a>、
+      <a href="https://docs.python.org/3/library/dataclasses.html">Python dataclasses</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/response-model/">FastAPI response models</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0057-provider-metrics-snapshot-boundary.html">回到第 57 课</a>
+        <a href="./0056-provider-metrics-export-tests-cheatsheet.html">上一张速查</a>
+        <a href="./0058-provider-metrics-production-boundary-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

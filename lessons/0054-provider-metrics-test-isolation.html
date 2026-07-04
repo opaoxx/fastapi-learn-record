@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0054 - Provider Metrics Test Isolation</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0054</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0053-provider-metrics-failure-outcomes.html">上一课</a>
+        <a href="../reference/0054-provider-metrics-test-isolation-cheatsheet.html">本课速查</a>
+        <a href="./0055-provider-metrics-export-shape.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0054</p>
+      <h1>Provider Metrics Test Isolation：让进程内指标测试互不污染</h1>
+      <p class="lead">前几课为了教学方便，我们把 provider metrics 放在进程内 counter 里。这个设计适合讲清 metrics 形状，但它也带来一个测试问题：全局状态会跨测试保留。本节把重复的 <code>reset_provider_metrics()</code> 整理成 pytest fixture，让每个 endpoint 测试都从干净状态开始，也在结束后清理现场。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解测试隔离为什么是自动化测试可信度的基础。</li>
+        <li>理解进程内全局状态为什么容易污染后续测试。</li>
+        <li>掌握 pytest fixture 的 setup / teardown 心智模型。</li>
+        <li>读懂 <code>autouse=True</code> 和 <code>yield</code> 在本项目里的用法。</li>
+        <li>学会判断什么时候应该用 fixture，什么时候显式调用 reset 更清楚。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 背景：测试失败有时不是业务失败</h2>
+      <p>上一节我们写了多个 metrics endpoint 测试：成功路径、连续 503、400 fail fast。每个测试都会让 provider prediction 记录一组 metrics。如果这些 count 保留到下一个测试里，下一个测试看到的 snapshot 就不再只属于自己。</p>
+      <p>这类问题很烦，因为它不一定每次都稳定复现。单独运行一个测试可能通过，整组运行可能失败；换个测试顺序也可能结果不同。这不是业务逻辑变复杂，而是测试没有隔离好共享状态。</p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 核心概念：测试应该拥有自己的世界</h2>
+      <p>一个可靠的测试应该尽量满足三个条件：</p>
+      <ul>
+        <li>开始时环境可预测。</li>
+        <li>执行时只验证自己关心的行为。</li>
+        <li>结束后不把临时状态留给别人。</li>
+      </ul>
+      <p>数据库测试常用事务回滚，文件测试常用临时目录，依赖测试常用 dependency override 清理。本节的 provider metrics counter 是进程内全局对象，所以隔离手段就是在测试前后调用 <code>reset_provider_metrics()</code>。</p>
+    </section>
+
+    <section>
+      <h2>3. 为什么这里会有全局状态</h2>
+      <p><code>first_api/services/provider_http.py</code> 里有一个模块级 counter：</p>
+      <pre><code>provider_prediction_metrics = ProviderMetricsCounter()</code></pre>
+      <p>模块级对象会在当前 Python 进程里持续存在。测试 A 让它记录了 success，测试 B 如果不清理，读取 snapshot 时也能看到测试 A 的 success。这正是我们要隔离的状态。</p>
+      <p>注意，问题不在于“全局对象一定不好”。教学项目用它能降低概念复杂度，让我们先讲清 counter、label set 和 endpoint snapshot。问题在于：一旦它进入测试，就必须配套清理规则。</p>
+    </section>
+
+    <section>
+      <h2>4. 代码精读一：原来的重复 reset 模式</h2>
+      <p>上一节的测试最直接的写法是在每个 metrics 测试里手动 reset：</p>
+      <pre><code>def test_provider_metrics_endpoint_returns_prediction_counter_snapshot() -> None:
+    reset_provider_metrics()
+    ...
+    try:
+        ...
+    finally:
+        reset_provider_metrics()</code></pre>
+      <p>这种写法很直观，但重复多了以后会有两个问题：第一，容易漏掉某个测试；第二，测试主体被清理样板代码包围，不容易一眼看出测试真正关心什么。</p>
+    </section>
+
+    <section>
+      <h2>5. 代码精读二：用 fixture 表达测试边界</h2>
+      <p>现在我们把 reset 规则提升成 pytest fixture：</p>
+      <pre><code>@pytest.fixture(autouse=True)
+def reset_provider_metrics_counter() -> object:
+    reset_provider_metrics()
+    yield
+    reset_provider_metrics()</code></pre>
+      <p>这段代码可以按时间顺序读：</p>
+      <ol>
+        <li>每个测试开始前，先执行 <code>yield</code> 前面的代码。</li>
+        <li>先调用一次 <code>reset_provider_metrics()</code>，让 counter 清空。</li>
+        <li>测试函数开始运行。</li>
+        <li>测试结束后，继续执行 <code>yield</code> 后面的代码。</li>
+        <li>再调用一次 <code>reset_provider_metrics()</code>，清理测试留下的样本。</li>
+      </ol>
+      <p>这就是 pytest fixture 的 setup / teardown 模型。<code>yield</code> 前是准备环境，<code>yield</code> 后是收尾清理。</p>
+    </section>
+
+    <section>
+      <h2>6. 代码精读三：autouse=True 的含义</h2>
+      <p><code>autouse=True</code> 表示测试不需要在参数列表里显式声明这个 fixture，它会自动应用到当前作用域里的测试：</p>
+      <pre><code>@pytest.fixture(autouse=True)
+def reset_provider_metrics_counter() -> object:
+    ...</code></pre>
+      <p>本项目把 fixture 放在 <code>tests/test_ai_client_dependency.py</code> 文件里，所以它会影响这个文件里的测试。这样做的理由是：这个文件有多个 provider endpoint 测试会通过真实请求路径触发 metrics，全文件清理比逐个测试手写更稳。</p>
+      <p>如果某个 fixture 只服务一两个测试，显式写在测试参数里可能更清楚；如果它是这个测试文件的共同环境规则，<code>autouse=True</code> 就很合适。</p>
+    </section>
+
+    <section>
+      <h2>7. 代码精读四：测试主体变得更聚焦</h2>
+      <p>清理规则进入 fixture 后，测试可以只描述行为：</p>
+      <pre><code>def test_provider_metrics_endpoint_exposes_fail_fast_outcome() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code=400, request=request)
+
+    ...
+    metrics_response = client.get("/provider/metrics")
+
+    assert metrics_response.json() == [
+        {
+            "labels": build_provider_metric_labels(
+                outcome="fail_fast",
+                failure_category="non_retryable_http_status",
+                error_code="ai_provider_http_error",
+                status_code=400,
+            ).as_dict(),
+            "count": 1,
+        },
+    ]</code></pre>
+      <p>这段测试现在更容易读：模拟 provider 400，调用业务 endpoint，读取 metrics endpoint，断言 fail-fast 样本。隔离细节仍然存在，但不再干扰测试主体。</p>
+    </section>
+
+    <section class="practice">
+      <h2>8. 动手实验：验证整组测试顺序无关</h2>
+      <p>运行 provider endpoint 和 provider HTTP 测试：</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_ai_client_dependency.py tests\test_provider_http.py -q</code></pre>
+      <p>如果 fixture 正常工作，多个 metrics 测试可以连续运行，并且每个测试看到的 count 都只来自自己制造的 provider 请求。你可以重点观察：</p>
+      <ul>
+        <li>success 测试仍然只看到 <code>count=1</code>。</li>
+        <li>503 测试仍然只看到一条 scheduled 和一条 exhausted。</li>
+        <li>400 测试仍然只看到一条 fail_fast。</li>
+      </ul>
+      <p>如果去掉 fixture，测试结果可能被前一个测试留下的 snapshot 污染。</p>
+    </section>
+
+    <section>
+      <h2>9. 常见错误</h2>
+      <ul>
+        <li>只在测试后清理，不在测试前清理：如果前一个测试崩在中途，后一个测试仍可能被污染。</li>
+        <li>只在测试前清理，不在测试后清理：当前测试会把状态留给文件外或后续调试代码。</li>
+        <li>把 fixture 放到过大的作用域：会影响不相关测试，增加理解成本。</li>
+        <li>滥用 <code>autouse=True</code>：自动行为太多时，测试环境会变得隐式。</li>
+        <li>忘记清理 dependency overrides：metrics reset 只能清 counter，不能替你清 FastAPI overrides。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>10. 面试视角：如何解释测试隔离</h2>
+      <blockquote>
+        <p>当测试涉及进程内全局状态时，我会用 fixture 保证每个测试前后都回到干净状态。这里 provider metrics counter 是教学用全局对象，适合降低课程复杂度，但测试必须隔离它。pytest 的 yield fixture 可以把 setup 和 teardown 放在同一个地方，autouse fixture 则适合表达当前测试文件的共同环境规则。</p>
+      </blockquote>
+    </section>
+
+    <section>
+      <h2>11. 记忆练习</h2>
+      <details>
+        <summary>1. 为什么只在测试函数开头 reset 还不够完整？</summary>
+        <p class="answer">它能保护当前测试不受之前状态影响，但测试结束后仍会把自己产生的状态留给后续代码；前后都 reset 更稳。</p>
+      </details>
+      <details>
+        <summary>2. fixture 里的 <code>yield</code> 前后分别代表什么？</summary>
+        <p class="answer"><code>yield</code> 前是 setup，测试运行前执行；<code>yield</code> 后是 teardown，测试结束后执行。</p>
+      </details>
+      <details>
+        <summary>3. <code>autouse=True</code> 的优点和风险是什么？</summary>
+        <p class="answer">优点是自动应用共同环境规则，减少重复；风险是行为变隐式，作用域太大时会影响不相关测试。</p>
+      </details>
+      <details>
+        <summary>4. metrics reset 能替代 <code>app.dependency_overrides.clear()</code> 吗？</summary>
+        <p class="answer">不能。它们清理的是不同状态：metrics reset 清 counter，dependency overrides clear 清 FastAPI 依赖覆盖。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>12. 本节总结</h2>
+      <p>本节没有改变业务功能，而是提高了测试结构质量。进程内 metrics counter 是教学便利，但全局状态必须被严格隔离。通过 <code>reset_provider_metrics_counter</code> fixture，每个 provider endpoint 测试都从空 counter 开始，并在结束后清理状态。测试主体因此更聚焦，也更不容易受执行顺序影响。</p>
+      <p>本节完成后，0052-0054 这个三课小批次已经完整：先暴露 metrics endpoint，再验证失败 outcome，最后整理测试隔离。下一轮可以从新的 checkpoint 继续，进入下一个 provider observability 或 production metrics 主题。</p>
+      <p>推荐主资源：<a href="https://docs.pytest.org/en/stable/how-to/fixtures.html">pytest fixtures</a>、<a href="https://docs.pytest.org/en/stable/how-to/fixtures.html#autouse-fixtures-fixtures-you-dont-have-to-request">pytest autouse fixtures</a>、<a href="https://fastapi.tiangolo.com/advanced/testing-dependencies/">FastAPI testing dependencies</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0053-provider-metrics-failure-outcomes.html">上一课：Provider Metrics Failure Outcomes</a>
+        <a href="../reference/0054-provider-metrics-test-isolation-cheatsheet.html">查看本课速查</a>
+        <a href="./0055-provider-metrics-export-shape.html">下一课：Provider Metrics Export Shape</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

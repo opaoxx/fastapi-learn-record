@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Provider Metrics Documentation Index Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0061</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0061-provider-metrics-documentation-index.html">回到第 61 课</a>
+        <a href="./0060-provider-metrics-naming-refactor-boundary-cheatsheet.html">上一张速查</a>
+        <a href="./provider-metrics-index.html">文档入口</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0061</p>
+      <h1>Provider Metrics Documentation Index 速查</h1>
+      <p class="lead">文档入口负责把端点、契约、边界、课程和测试连成一张可维护地图。</p>
+    </header>
+
+    <h2>一句话模型</h2>
+    <blockquote>
+      <p>关键文档不要只写给人看，也要用测试保护它没有漏掉项目契约。</p>
+    </blockquote>
+
+    <h2>本课新增文件</h2>
+    <ul>
+      <li><code>reference/provider-metrics-index.html</code>：provider metrics 长期文档入口。</li>
+      <li><code>tests/test_course_docs_contract.py</code>：保护文档入口内容和链接。</li>
+      <li><code>lessons/0061-provider-metrics-documentation-index.html</code>：解释 docs-as-contract 的设计。</li>
+    </ul>
+
+    <h2>文档入口必须包含</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>类别</th>
+          <th>必须出现的内容</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Endpoint</td>
+          <td><code>/provider/metrics</code>、<code>/provider/metrics/prometheus</code></td>
+        </tr>
+        <tr>
+          <td>Metric</td>
+          <td><code>provider_prediction_total</code></td>
+        </tr>
+        <tr>
+          <td>Rename</td>
+          <td><code>get_provider_prediction_metric_contract</code></td>
+        </tr>
+        <tr>
+          <td>Boundary</td>
+          <td><code>not a production multi-instance metrics pipeline</code></td>
+        </tr>
+        <tr>
+          <td>Tests</td>
+          <td><code>test_provider_http.py</code>、<code>test_openapi_contract.py</code>、<code>test_course_docs_contract.py</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>测试命令</h2>
+    <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q</code></pre>
+
+    <h2>测试形状</h2>
+    <pre><code>parser = parse_html(Path("reference/provider-metrics-index.html"))
+
+assert "/provider/metrics" in parser.text
+assert "provider_prediction_total" in parser.text
+assert "../tests/test_provider_http.py" in parser.links</code></pre>
+
+    <h2>常见错误</h2>
+    <ul>
+      <li>把入口写成重复讲义，而不是检索地图。</li>
+      <li>只链接课程，不链接测试。</li>
+      <li>漏掉生产边界，误导读者使用教学 counter。</li>
+      <li>用测试锁死全部文案，造成维护噪音。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://docs.python.org/3/library/html.parser.html">Python html.parser</a>、
+      <a href="https://docs.pytest.org/en/stable/how-to/assert.html">pytest assertions</a>、
+      <a href="https://prometheus.io/docs/practices/instrumentation/">Prometheus instrumentation practices</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0061-provider-metrics-documentation-index.html">回到第 61 课</a>
+        <a href="./0060-provider-metrics-naming-refactor-boundary-cheatsheet.html">上一张速查</a>
+        <a href="./provider-metrics-index.html">打开文档入口</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

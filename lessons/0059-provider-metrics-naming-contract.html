@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0059 - Provider Metrics Naming Contract</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0059</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0058-provider-metrics-production-boundary.html">上一课</a>
+        <a href="../reference/0059-provider-metrics-naming-contract-cheatsheet.html">本课速查</a>
+        <a href="./0060-provider-metrics-naming-refactor-boundary.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0059</p>
+      <h1>Provider Metrics Naming Contract：指标名和标签名也是 API</h1>
+      <p class="lead">上一课讲清楚了当前 metrics endpoint 仍然是教学级实现。本课继续推进一个更细的契约：metric name、HELP 文本和 label names 不能随手改。它们会出现在文本导出、Dashboard、告警规则和排障查询里。我们会用小测试把这些命名固定下来。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解指标名和标签名为什么属于监控契约，而不只是变量名。</li>
+        <li>知道 counter 指标为什么常用 <code>_total</code> 后缀。</li>
+        <li>理解 label name 和 label value 的分工：名字表达维度，值表达分类。</li>
+        <li>用测试保护 provider metrics 的 metric name、HELP 文本和 label key 顺序。</li>
+        <li>继续强化低基数 labels 对长期查询和告警稳定性的意义。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 背景：为什么改一个名字可能会破坏监控</h2>
+      <p>在普通 Python 代码里，改变量名通常只影响代码内部。但 metrics name 不一样。一旦它被导出，外部系统就可能开始依赖它：</p>
+      <ul>
+        <li>Dashboard 面板查询 <code>provider_prediction_total</code>。</li>
+        <li>告警规则计算 <code>retry_exhausted</code> 的增长率。</li>
+        <li>值班同学用 <code>failure_category</code> 过滤某类 provider 失败。</li>
+        <li>录屏、文档和课程材料引用固定的指标名。</li>
+      </ul>
+      <p>所以 metrics naming 的核心不是“看起来顺眼”，而是“长期可查询、可聚合、可沟通”。名字一旦暴露，就接近 API。</p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 官方命名建议如何映射到本项目</h2>
+      <p>Prometheus 官方文档把 metric and label naming 描述为最佳实践集合。对本项目来说，最重要的是三点：</p>
+      <ul>
+        <li>metric name 应该表达同一种被测量对象。</li>
+        <li>累积计数类 counter 常用 <code>_total</code> 结尾。</li>
+        <li>labels 用来区分维度，但不能放入用户 ID、邮箱、原始文本这类高基数值。</li>
+      </ul>
+      <p>我们的 <code>provider_prediction_total</code> 表达的是 provider prediction outcome 的累计次数；labels 则区分 operation、outcome、failure_category、error_code 和 status_code。</p>
+    </section>
+
+    <section>
+      <h2>3. 当前 metric name 的含义</h2>
+      <p>当前代码里有两个常量：</p>
+      <pre><code>PROVIDER_PREDICTION_METRIC_NAME = "provider_prediction_total"
+PROVIDER_PREDICTION_METRIC_HELP = (
+    "Provider prediction outcomes recorded by the teaching metrics counter."
+)</code></pre>
+      <p><code>provider_prediction_total</code> 可以拆成三段：</p>
+      <ul>
+        <li><code>provider</code>：这不是 demo client，而是外部 provider adapter 这条路径。</li>
+        <li><code>prediction</code>：被测量对象是 prediction 请求结果，不是 health check、文件上传或任务列表。</li>
+        <li><code>total</code>：这是累计计数，语义上只增加，不表达当前并发量或耗时。</li>
+      </ul>
+      <p>HELP 文本则补充人类说明，让读者知道这个 counter 记录的是教学 metrics counter 中的 provider prediction outcomes。</p>
+    </section>
+
+    <section>
+      <h2>4. 当前 label names 的含义</h2>
+      <p>当前 label 字典保持固定 key：</p>
+      <pre><code>{
+    "operation": "prediction",
+    "outcome": "retry_exhausted",
+    "failure_category": "retryable_http_status",
+    "error_code": "ai_provider_http_error",
+    "status_code": "503",
+}</code></pre>
+      <p>这些 label name 的职责不同：</p>
+      <ul>
+        <li><code>operation</code> 表示操作类型。目前只有 prediction，为未来扩展保留维度。</li>
+        <li><code>outcome</code> 表示结果类别，例如 success、retry_scheduled、retry_exhausted、fail_fast。</li>
+        <li><code>failure_category</code> 表示失败分类，例如 timeout、request_error、retryable_http_status。</li>
+        <li><code>error_code</code> 表示对 API 调用者稳定的错误码。</li>
+        <li><code>status_code</code> 表示 HTTP 状态码；没有状态码时使用 none。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>5. 低基数：为什么不把请求文本放进 label</h2>
+      <p>label 的每一组 key/value 组合都会形成一个独立时间序列。高基数 label 会让序列数量爆炸。例如把用户输入文本、用户 ID、邮箱或 request id 放进 label，就可能为每次请求创建一个新序列。</p>
+      <p>本项目前面已经用测试保护过：<code>FastAPI is great and pleasant.</code> 这种请求文本不会进入 metric labels。本课继续保护的是 label names 本身，让这些低基数维度保持稳定。</p>
+    </section>
+
+    <section>
+      <h2>6. 代码精读一：保护 metric name 和 HELP 文本</h2>
+      <p>本节新增第一个测试：</p>
+      <pre><code>def test_provider_metric_name_and_help_text_are_stable_contract() -> None:
+    assert PROVIDER_PREDICTION_METRIC_NAME == "provider_prediction_total"
+    assert PROVIDER_PREDICTION_METRIC_NAME.endswith("_total")
+    assert (
+        PROVIDER_PREDICTION_METRIC_HELP
+        == "Provider prediction outcomes recorded by the teaching metrics counter."
+    )</code></pre>
+      <p>这个测试看起来像是在检查字符串，但它保护的是查询契约。未来如果有人把名字改成 <code>provider_predictions_count</code>，测试会提醒：这不是普通重命名，而是对外 metrics contract 的改变。</p>
+    </section>
+
+    <section>
+      <h2>7. 代码精读二：保护 label key 顺序和值形状</h2>
+      <p>第二个测试构造一个 retry_exhausted 指标标签：</p>
+      <pre><code>labels = build_provider_metric_labels(
+    outcome="retry_exhausted",
+    failure_category="retryable_http_status",
+    error_code="ai_provider_http_error",
+    status_code=503,
+)</code></pre>
+      <p>然后断言 label key 顺序和完整字典：</p>
+      <pre><code>assert list(labels.as_dict()) == [
+    "operation",
+    "outcome",
+    "failure_category",
+    "error_code",
+    "status_code",
+]</code></pre>
+      <p>顺序对 Prometheus 的语义不是核心要求，但对本项目的文本导出、测试快照和课程讲解很有帮助。固定顺序能让输出更容易 diff，也能让初学者更稳定地建立心智模型。</p>
+    </section>
+
+    <section>
+      <h2>8. 机制复盘：名字如何一路进入文本导出</h2>
+      <ol>
+        <li><code>build_provider_metric_labels()</code> 生成稳定 label set。</li>
+        <li><code>ProviderMetricsCounter</code> 按 label set 累积 count。</li>
+        <li><code>snapshot()</code> 返回 labels + count 的外部数据表示。</li>
+        <li><code>render_provider_metrics_prometheus_text()</code> 使用 metric name、HELP 文本和 labels 渲染文本。</li>
+        <li><code>GET /provider/metrics/prometheus</code> 把文本作为 <code>text/plain</code> 返回。</li>
+      </ol>
+      <p>这条链路说明：名字不是最后一层字符串细节，而是从 label builder 到 endpoint export 都会穿透的契约。</p>
+    </section>
+
+    <section class="practice">
+      <h2>9. 动手实验</h2>
+      <p>运行本节相关测试：</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q</code></pre>
+      <p>然后尝试临时把 <code>PROVIDER_PREDICTION_METRIC_NAME</code> 改成 <code>provider_predictions_total</code>，再次运行测试。你会看到命名契约测试失败。这个失败不是坏事，它提醒你：改指标名需要同步文档、Dashboard、告警和课程材料。</p>
+    </section>
+
+    <section>
+      <h2>10. 常见错误</h2>
+      <ul>
+        <li>把 metric name 当作内部变量名，随手改名。</li>
+        <li>把 label name 塞进 metric name，导致查询和聚合冗余。</li>
+        <li>把用户输入、用户 ID 或 request id 放进 label value，造成高基数爆炸。</li>
+        <li>用多个 metric name 表达同一件事，导致 Dashboard 查询分裂。</li>
+        <li>只测试导出文本，不测试构造文本所依赖的命名常量。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>11. 面试视角：如何解释 metrics naming</h2>
+      <blockquote>
+        <p>我会把 metric name 和 label names 当成监控 API。metric name 应该表达同一个被测量对象，counter 使用稳定的 <code>_total</code> 后缀；labels 用来表达低基数维度，比如 outcome、failure category、error code 和 status code。因为 Dashboard、告警和排障查询会依赖这些名字，所以我会用测试保护它们，避免无意识的 contract break。</p>
+      </blockquote>
+    </section>
+
+    <section>
+      <h2>12. 记忆练习</h2>
+      <details>
+        <summary>1. 为什么 metric name 接近 API？</summary>
+        <p class="answer">因为它会被 Dashboard、告警、查询、文档和课程材料依赖。改名会影响外部消费者，不只是内部代码。</p>
+      </details>
+      <details>
+        <summary>2. <code>provider_prediction_total</code> 中的 <code>_total</code> 表达什么？</summary>
+        <p class="answer">它表达这是累计 counter，语义上记录总次数，而不是当前值、耗时或比例。</p>
+      </details>
+      <details>
+        <summary>3. 为什么 label value 要低基数？</summary>
+        <p class="answer">每组 label value 都会形成时间序列。高基数会造成序列数量爆炸，增加存储、查询和运维成本。</p>
+      </details>
+      <details>
+        <summary>4. 本节新增测试保护了哪些命名契约？</summary>
+        <p class="answer">保护 metric name、HELP 文本、label key 顺序，以及 retry_exhausted 失败样本的稳定 label 值形状。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>13. 本节总结</h2>
+      <p>本节把 provider metrics 的命名也纳入了契约保护。你现在应该能解释：指标名和标签名不是随手可改的内部细节，而是长期查询、Dashboard、告警和排障流程会依赖的公共语言。</p>
+      <p>下一课建议学习：Provider Metrics Naming Refactor Boundary。可以继续讨论如果真的要改 metric name 或 label name，应该如何做兼容迁移、测试和文档更新。</p>
+      <p>推荐主资源：<a href="https://prometheus.io/docs/practices/naming/">Prometheus metric and label naming</a>、<a href="https://prometheus.io/docs/concepts/data_model/">Prometheus data model</a>、<a href="https://prometheus.io/docs/practices/instrumentation/">Prometheus instrumentation practices</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0058-provider-metrics-production-boundary.html">上一课：Provider Metrics Production Boundary</a>
+        <a href="../reference/0059-provider-metrics-naming-contract-cheatsheet.html">查看本课速查</a>
+        <a href="./0060-provider-metrics-naming-refactor-boundary.html">下一课：Provider Metrics Naming Refactor Boundary</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

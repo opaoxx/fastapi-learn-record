@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Provider Metrics Naming Contract Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0059</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0059-provider-metrics-naming-contract.html">回到第 59 课</a>
+        <a href="./0058-provider-metrics-production-boundary-cheatsheet.html">上一张速查</a>
+        <a href="./0060-provider-metrics-naming-refactor-boundary-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0059</p>
+      <h1>Provider Metrics Naming Contract 速查</h1>
+      <p class="lead">metric name、HELP 文本和 label names 是监控 API，会被查询、Dashboard、告警和文档依赖。</p>
+    </header>
+
+    <h2>一句话模型</h2>
+    <blockquote>
+      <p>指标命名不是内部细节；一旦导出，它就是可查询的公共契约。</p>
+    </blockquote>
+
+    <h2>当前 metric</h2>
+    <pre><code>PROVIDER_PREDICTION_METRIC_NAME = "provider_prediction_total"
+PROVIDER_PREDICTION_METRIC_HELP = (
+    "Provider prediction outcomes recorded by the teaching metrics counter."
+)</code></pre>
+
+    <h2>命名拆解</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>片段</th>
+          <th>含义</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>provider</code></td>
+          <td>外部 provider adapter 路径。</td>
+        </tr>
+        <tr>
+          <td><code>prediction</code></td>
+          <td>被测量对象是 prediction 请求结果。</td>
+        </tr>
+        <tr>
+          <td><code>total</code></td>
+          <td>累计 counter，总次数。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>固定 label keys</h2>
+    <pre><code>[
+    "operation",
+    "outcome",
+    "failure_category",
+    "error_code",
+    "status_code",
+]</code></pre>
+
+    <h2>样本 label set</h2>
+    <pre><code>{
+    "operation": "prediction",
+    "outcome": "retry_exhausted",
+    "failure_category": "retryable_http_status",
+    "error_code": "ai_provider_http_error",
+    "status_code": "503",
+}</code></pre>
+
+    <h2>契约测试</h2>
+    <pre><code>assert PROVIDER_PREDICTION_METRIC_NAME == "provider_prediction_total"
+assert PROVIDER_PREDICTION_METRIC_NAME.endswith("_total")
+assert list(labels.as_dict()) == [
+    "operation",
+    "outcome",
+    "failure_category",
+    "error_code",
+    "status_code",
+]</code></pre>
+
+    <h2>低基数守则</h2>
+    <ul>
+      <li>可以放：outcome、failure category、稳定 error code、HTTP status code。</li>
+      <li>不要放：用户输入文本、用户 ID、邮箱、request id、完整 URL。</li>
+      <li>原因：每组 label key/value 都会形成独立时间序列。</li>
+    </ul>
+
+    <h2>运行命令</h2>
+    <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q</code></pre>
+
+    <h2>常见错误</h2>
+    <ul>
+      <li>随手改 metric name。</li>
+      <li>把 label name 放进 metric name。</li>
+      <li>把高基数用户数据放进 label value。</li>
+      <li>多个 metric name 表达同一件事。</li>
+      <li>只保护文本输出，不保护命名常量。</li>
+    </ul>
+
+    <h2>面试短答</h2>
+    <blockquote>
+      <p>metric name 和 label names 是监控 API。它们要稳定、低基数、便于聚合，并由测试保护，因为 Dashboard、告警和排障查询会依赖这些名字。</p>
+    </blockquote>
+
+    <footer>
+      来源：<a href="https://prometheus.io/docs/practices/naming/">Prometheus metric and label naming</a>、
+      <a href="https://prometheus.io/docs/concepts/data_model/">Prometheus data model</a>、
+      <a href="https://prometheus.io/docs/practices/instrumentation/">Prometheus instrumentation practices</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0059-provider-metrics-naming-contract.html">回到第 59 课</a>
+        <a href="./0058-provider-metrics-production-boundary-cheatsheet.html">上一张速查</a>
+        <a href="./0060-provider-metrics-naming-refactor-boundary-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

@@ -8,14 +8,21 @@ import httpx
 
 from first_api.services.ai_clients import AIClientConfig, AIClientError
 from first_api.services.provider_http import (
+    PROVIDER_PREDICTION_METRIC_LABEL_NAMES,
+    PROVIDER_PREDICTION_METRIC_HELP,
+    PROVIDER_PREDICTION_METRIC_NAME,
     ProviderMetricsCounter,
     build_provider_metric_labels,
     calculate_retry_jitter,
     calculate_retry_delay,
     classify_provider_http_status,
     check_provider_health,
+    get_provider_prediction_metric_contract,
+    get_provider_metrics_snapshot,
     parse_retry_after_delay,
+    render_provider_metrics_prometheus_text,
     request_provider_prediction,
+    reset_provider_metrics,
 )
 
 
@@ -125,6 +132,56 @@ def test_build_provider_metric_labels_uses_failure_taxonomy_without_request_text
     assert "FastAPI is great and pleasant." not in labels.as_dict().values()
 
 
+def test_provider_metric_name_and_help_text_are_stable_contract() -> None:
+    assert PROVIDER_PREDICTION_METRIC_NAME == "provider_prediction_total"
+    assert PROVIDER_PREDICTION_METRIC_NAME.endswith("_total")
+    assert (
+        PROVIDER_PREDICTION_METRIC_HELP
+        == "Provider prediction outcomes recorded by the teaching metrics counter."
+    )
+
+
+def test_provider_metric_label_names_are_stable_low_cardinality_contract() -> None:
+    labels = build_provider_metric_labels(
+        outcome="retry_exhausted",
+        failure_category="retryable_http_status",
+        error_code="ai_provider_http_error",
+        status_code=503,
+    )
+
+    assert list(labels.as_dict()) == [
+        "operation",
+        "outcome",
+        "failure_category",
+        "error_code",
+        "status_code",
+    ]
+    assert labels.as_dict() == {
+        "operation": "prediction",
+        "outcome": "retry_exhausted",
+        "failure_category": "retryable_http_status",
+        "error_code": "ai_provider_http_error",
+        "status_code": "503",
+    }
+
+
+def test_provider_metric_contract_collects_rename_sensitive_fields() -> None:
+    contract = get_provider_prediction_metric_contract()
+
+    assert contract == {
+        "metric_name": "provider_prediction_total",
+        "help": "Provider prediction outcomes recorded by the teaching metrics counter.",
+        "label_names": list(PROVIDER_PREDICTION_METRIC_LABEL_NAMES),
+    }
+    assert contract["label_names"] == [
+        "operation",
+        "outcome",
+        "failure_category",
+        "error_code",
+        "status_code",
+    ]
+
+
 def test_provider_metrics_counter_accumulates_samples_by_label_set() -> None:
     counter = ProviderMetricsCounter()
     success_labels = build_provider_metric_labels(outcome="success")
@@ -151,6 +208,23 @@ def test_provider_metrics_counter_accumulates_samples_by_label_set() -> None:
     ]
 
 
+def test_provider_metrics_counter_snapshot_is_detached_from_counter_state() -> None:
+    counter = ProviderMetricsCounter()
+    labels = build_provider_metric_labels(outcome="success")
+
+    counter.increment(labels)
+    snapshot = counter.snapshot()
+    snapshot[0]["count"] = 999
+    snapshot[0]["labels"]["outcome"] = "fail_fast"
+
+    assert counter.snapshot() == [
+        {
+            "labels": labels.as_dict(),
+            "count": 1,
+        }
+    ]
+
+
 def test_provider_metrics_counter_rejects_non_positive_increment() -> None:
     counter = ProviderMetricsCounter()
     labels = build_provider_metric_labels(outcome="success")
@@ -163,6 +237,95 @@ def test_provider_metrics_counter_rejects_non_positive_increment() -> None:
         raise AssertionError("Expected ValueError")
 
     assert str(error) == "Metric increment amount must be positive."
+
+
+def test_request_provider_prediction_records_success_metric() -> None:
+    reset_provider_metrics()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            status_code=200,
+            json={"label": "positive", "score": 0.876},
+            request=request,
+        )
+
+    transport = httpx.MockTransport(handler)
+    client = httpx.AsyncClient(transport=transport)
+    try:
+        run_async_prediction(client)
+        snapshot = get_provider_metrics_snapshot()
+    finally:
+        asyncio.run(client.aclose())
+        reset_provider_metrics()
+
+    assert snapshot == [
+        {
+            "labels": build_provider_metric_labels(outcome="success").as_dict(),
+            "count": 1,
+        }
+    ]
+
+
+def test_render_provider_metrics_prometheus_text_uses_stable_text_shape() -> None:
+    samples = [
+        {
+            "labels": build_provider_metric_labels(outcome="success").as_dict(),
+            "count": 2,
+        },
+        {
+            "labels": build_provider_metric_labels(
+                outcome="fail_fast",
+                failure_category="non_retryable_http_status",
+                error_code='provider_"quoted"_error',
+                status_code=400,
+            ).as_dict(),
+            "count": 1,
+        },
+    ]
+
+    text = render_provider_metrics_prometheus_text(samples)
+
+    assert text == (
+        "# HELP provider_prediction_total Provider prediction outcomes recorded by "
+        "the teaching metrics counter.\n"
+        "# TYPE provider_prediction_total counter\n"
+        'provider_prediction_total{error_code="none",failure_category="none",'
+        'operation="prediction",outcome="success",status_code="none"} 2\n'
+        'provider_prediction_total{error_code="provider_\\"quoted\\"_error",'
+        'failure_category="non_retryable_http_status",operation="prediction",'
+        'outcome="fail_fast",status_code="400"} 1\n'
+    )
+
+
+def test_render_provider_metrics_prometheus_text_handles_empty_snapshot() -> None:
+    text = render_provider_metrics_prometheus_text([])
+
+    assert text == (
+        "# HELP provider_prediction_total Provider prediction outcomes recorded by "
+        "the teaching metrics counter.\n"
+        "# TYPE provider_prediction_total counter\n"
+    )
+
+
+def test_render_provider_metrics_prometheus_text_escapes_special_label_values() -> None:
+    samples = [
+        {
+            "labels": build_provider_metric_labels(
+                outcome="fail_fast",
+                failure_category="invalid_response",
+                error_code='line\\one\n"two"',
+                status_code=200,
+            ).as_dict(),
+            "count": 1,
+        }
+    ]
+
+    text = render_provider_metrics_prometheus_text(samples)
+
+    assert (
+        'error_code="line\\\\one\\n\\"two\\""'
+        in text
+    )
 
 
 def test_calculate_retry_jitter_uses_bounded_random_fraction() -> None:

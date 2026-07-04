@@ -59,3 +59,29 @@ def test_openapi_documents_task_list_response_envelope_schema() -> None:
     assert envelope_schema["properties"]["limit"]["minimum"] == 1
     assert envelope_schema["properties"]["limit"]["maximum"] == 100
     assert envelope_schema["properties"]["offset"]["minimum"] == 0
+
+
+def test_openapi_documents_provider_metrics_production_boundary() -> None:
+    with TestClient(app) as client:
+        response = client.get("/openapi.json")
+
+    assert response.status_code == 200
+    schema = response.json()
+
+    json_operation = schema["paths"]["/provider/metrics"]["get"]
+    text_operation = schema["paths"]["/provider/metrics/prometheus"]["get"]
+
+    assert json_operation["summary"] == "Read teaching provider prediction metrics"
+    assert "in-process provider prediction metric counter snapshot" in json_operation["description"]
+    assert "not for production multi-instance aggregation" in json_operation["description"]
+    assert json_operation["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "items": {"$ref": "#/components/schemas/ProviderMetricSampleResponse"},
+        "title": "Response Get Provider Metrics Provider Metrics Get",
+        "type": "array",
+    }
+
+    assert text_operation["summary"] == "Read teaching provider prediction metrics as text"
+    assert "Prometheus text-style rendering" in text_operation["description"]
+    assert "educational export shape" in text_operation["description"]
+    assert "not a production multi-instance metrics pipeline" in text_operation["description"]
+    assert "text/plain" in text_operation["responses"]["200"]["content"]

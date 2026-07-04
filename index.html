@@ -573,6 +573,117 @@
             <a href="lessons/0051-provider-metrics-counters.html">进入课程</a>
             <a href="reference/0051-provider-metrics-counters-cheatsheet.html">查看速查</a>
             <a href="lessons/0050-provider-metrics-basics.html">上一课</a>
+            <a href="lessons/0052-provider-metrics-endpoint.html">下一课</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Lesson 0052 - Provider Metrics Endpoint</h3>
+          <p>把教学用 provider metrics counter 接入预测流程，并通过只读 endpoint 输出稳定 snapshot。</p>
+          <div class="links">
+            <a href="lessons/0052-provider-metrics-endpoint.html">进入课程</a>
+            <a href="reference/0052-provider-metrics-endpoint-cheatsheet.html">查看速查</a>
+            <a href="lessons/0051-provider-metrics-counters.html">上一课</a>
+            <a href="lessons/0053-provider-metrics-failure-outcomes.html">下一课</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Lesson 0053 - Provider Metrics Failure Outcomes</h3>
+          <p>用 endpoint 级测试观察 retry_scheduled、retry_exhausted 和 fail_fast 在 metrics snapshot 中的差异。</p>
+          <div class="links">
+            <a href="lessons/0053-provider-metrics-failure-outcomes.html">进入课程</a>
+            <a href="reference/0053-provider-metrics-failure-outcomes-cheatsheet.html">查看速查</a>
+            <a href="lessons/0052-provider-metrics-endpoint.html">上一课</a>
+            <a href="lessons/0054-provider-metrics-test-isolation.html">下一课</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Lesson 0054 - Provider Metrics Test Isolation</h3>
+          <p>用 pytest fixture 隔离进程内 provider metrics counter，避免 endpoint 测试之间互相污染。</p>
+          <div class="links">
+            <a href="lessons/0054-provider-metrics-test-isolation.html">进入课程</a>
+            <a href="reference/0054-provider-metrics-test-isolation-cheatsheet.html">查看速查</a>
+            <a href="lessons/0053-provider-metrics-failure-outcomes.html">上一课</a>
+            <a href="lessons/0055-provider-metrics-export-shape.html">下一课</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Lesson 0055 - Provider Metrics Export Shape</h3>
+          <p>把 provider metrics JSON snapshot 渲染成 Prometheus text 风格输出，并通过只读文本 endpoint 暴露。</p>
+          <div class="links">
+            <a href="lessons/0055-provider-metrics-export-shape.html">进入课程</a>
+            <a href="reference/0055-provider-metrics-export-shape-cheatsheet.html">查看速查</a>
+            <a href="lessons/0054-provider-metrics-test-isolation.html">上一课</a>
+            <a href="lessons/0056-provider-metrics-export-tests.html">下一课</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Lesson 0056 - Provider Metrics Export Tests</h3>
+          <p>用空 snapshot、失败 outcome、特殊 label 转义和 text/plain endpoint 测试保护 metrics 文本导出契约。</p>
+          <div class="links">
+            <a href="lessons/0056-provider-metrics-export-tests.html">进入课程</a>
+            <a href="reference/0056-provider-metrics-export-tests-cheatsheet.html">查看速查</a>
+            <a href="lessons/0055-provider-metrics-export-shape.html">上一课</a>
+            <a href="lessons/0057-provider-metrics-snapshot-boundary.html">下一课</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Lesson 0057 - Provider Metrics Snapshot Boundary</h3>
+          <p>证明 provider metrics snapshot 是内部 counter 的安全投影，而不是可反向修改内部状态的引用。</p>
+          <div class="links">
+            <a href="lessons/0057-provider-metrics-snapshot-boundary.html">进入课程</a>
+            <a href="reference/0057-provider-metrics-snapshot-boundary-cheatsheet.html">查看速查</a>
+            <a href="lessons/0056-provider-metrics-export-tests.html">上一课</a>
+            <a href="lessons/0058-provider-metrics-production-boundary.html">下一课</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Lesson 0058 - Provider Metrics Production Boundary</h3>
+          <p>说明教学级 in-process metrics 与生产级多实例监控 pipeline 的差异，并用 OpenAPI 测试保护边界文档。</p>
+          <div class="links">
+            <a href="lessons/0058-provider-metrics-production-boundary.html">进入课程</a>
+            <a href="reference/0058-provider-metrics-production-boundary-cheatsheet.html">查看速查</a>
+            <a href="lessons/0057-provider-metrics-snapshot-boundary.html">上一课</a>
+            <a href="lessons/0059-provider-metrics-naming-contract.html">下一课</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Lesson 0059 - Provider Metrics Naming Contract</h3>
+          <p>把 provider metrics 的指标名、HELP 文本和 label keys 当作监控 API 契约，用测试保护稳定命名和低基数维度。</p>
+          <div class="links">
+            <a href="lessons/0059-provider-metrics-naming-contract.html">进入课程</a>
+            <a href="reference/0059-provider-metrics-naming-contract-cheatsheet.html">查看速查</a>
+            <a href="lessons/0058-provider-metrics-production-boundary.html">上一课</a>
+            <a href="lessons/0060-provider-metrics-naming-refactor-boundary.html">下一课</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Lesson 0060 - Provider Metrics Naming Refactor Boundary</h3>
+          <p>把 metrics rename 当作兼容性迁移处理，集中暴露 metric name、HELP 文本和 label names 这类重命名前必须审查的契约字段。</p>
+          <div class="links">
+            <a href="lessons/0060-provider-metrics-naming-refactor-boundary.html">进入课程</a>
+            <a href="reference/0060-provider-metrics-naming-refactor-boundary-cheatsheet.html">查看速查</a>
+            <a href="lessons/0059-provider-metrics-naming-contract.html">上一课</a>
+            <a href="lessons/0061-provider-metrics-documentation-index.html">下一课</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Lesson 0061 - Provider Metrics Documentation Index</h3>
+          <p>把 provider metrics 的端点、指标契约、生产边界、课程来源和测试入口整理成一个可测试的文档索引。</p>
+          <div class="links">
+            <a href="lessons/0061-provider-metrics-documentation-index.html">进入课程</a>
+            <a href="reference/0061-provider-metrics-documentation-index-cheatsheet.html">查看速查</a>
+            <a href="reference/provider-metrics-index.html">文档入口</a>
+            <a href="lessons/0060-provider-metrics-naming-refactor-boundary.html">上一课</a>
           </div>
         </article>
       </div>
@@ -1071,6 +1182,117 @@
             <a href="reference/0051-provider-metrics-counters-cheatsheet.html">打开速查</a>
             <a href="lessons/0051-provider-metrics-counters.html">回到课程</a>
             <a href="reference/0050-provider-metrics-basics-cheatsheet.html">上一张速查</a>
+            <a href="reference/0052-provider-metrics-endpoint-cheatsheet.html">下一张速查</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Reference 0052 - Provider Metrics Endpoint</h3>
+          <p>只读 metrics endpoint、snapshot 响应形状、service/router 分层、测试隔离和教学边界。</p>
+          <div class="links">
+            <a href="reference/0052-provider-metrics-endpoint-cheatsheet.html">打开速查</a>
+            <a href="lessons/0052-provider-metrics-endpoint.html">回到课程</a>
+            <a href="reference/0051-provider-metrics-counters-cheatsheet.html">上一张速查</a>
+            <a href="reference/0053-provider-metrics-failure-outcomes-cheatsheet.html">下一张速查</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Reference 0053 - Provider Metrics Failure Outcomes</h3>
+          <p>失败 outcome 分类、503 retry snapshot、400 fail-fast snapshot、endpoint 测试流程和常见误区。</p>
+          <div class="links">
+            <a href="reference/0053-provider-metrics-failure-outcomes-cheatsheet.html">打开速查</a>
+            <a href="lessons/0053-provider-metrics-failure-outcomes.html">回到课程</a>
+            <a href="reference/0052-provider-metrics-endpoint-cheatsheet.html">上一张速查</a>
+            <a href="reference/0054-provider-metrics-test-isolation-cheatsheet.html">下一张速查</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Reference 0054 - Provider Metrics Test Isolation</h3>
+          <p>pytest autouse fixture、yield setup/teardown、metrics counter reset、测试隔离边界。</p>
+          <div class="links">
+            <a href="reference/0054-provider-metrics-test-isolation-cheatsheet.html">打开速查</a>
+            <a href="lessons/0054-provider-metrics-test-isolation.html">回到课程</a>
+            <a href="reference/0053-provider-metrics-failure-outcomes-cheatsheet.html">上一张速查</a>
+            <a href="reference/0055-provider-metrics-export-shape-cheatsheet.html">下一张速查</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Reference 0055 - Provider Metrics Export Shape</h3>
+          <p>JSON snapshot 与文本导出形状、Prometheus 风格 HELP/TYPE/labels、PlainTextResponse 和测试重点。</p>
+          <div class="links">
+            <a href="reference/0055-provider-metrics-export-shape-cheatsheet.html">打开速查</a>
+            <a href="lessons/0055-provider-metrics-export-shape.html">回到课程</a>
+            <a href="reference/0054-provider-metrics-test-isolation-cheatsheet.html">上一张速查</a>
+            <a href="reference/0056-provider-metrics-export-tests-cheatsheet.html">下一张速查</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Reference 0056 - Provider Metrics Export Tests</h3>
+          <p>text export 契约测试、空状态、失败 outcome、label 转义、Content-Type 和测试分层。</p>
+          <div class="links">
+            <a href="reference/0056-provider-metrics-export-tests-cheatsheet.html">打开速查</a>
+            <a href="lessons/0056-provider-metrics-export-tests.html">回到课程</a>
+            <a href="reference/0055-provider-metrics-export-shape-cheatsheet.html">上一张速查</a>
+            <a href="reference/0057-provider-metrics-snapshot-boundary-cheatsheet.html">下一张速查</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Reference 0057 - Provider Metrics Snapshot Boundary</h3>
+          <p>snapshot 与内部 counter 的边界、可变状态泄漏风险、拷贝式投影和边界测试。</p>
+          <div class="links">
+            <a href="reference/0057-provider-metrics-snapshot-boundary-cheatsheet.html">打开速查</a>
+            <a href="lessons/0057-provider-metrics-snapshot-boundary.html">回到课程</a>
+            <a href="reference/0056-provider-metrics-export-tests-cheatsheet.html">上一张速查</a>
+            <a href="reference/0058-provider-metrics-production-boundary-cheatsheet.html">下一张速查</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Reference 0058 - Provider Metrics Production Boundary</h3>
+          <p>教学 counter 与生产 metrics pipeline 的边界、多进程多实例缺口、OpenAPI 文档契约测试。</p>
+          <div class="links">
+            <a href="reference/0058-provider-metrics-production-boundary-cheatsheet.html">打开速查</a>
+            <a href="lessons/0058-provider-metrics-production-boundary.html">回到课程</a>
+            <a href="reference/0057-provider-metrics-snapshot-boundary-cheatsheet.html">上一张速查</a>
+            <a href="reference/0059-provider-metrics-naming-contract-cheatsheet.html">下一张速查</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Reference 0059 - Provider Metrics Naming Contract</h3>
+          <p>provider_prediction_total、HELP 文本、label keys、低基数标签和命名契约测试。</p>
+          <div class="links">
+            <a href="reference/0059-provider-metrics-naming-contract-cheatsheet.html">打开速查</a>
+            <a href="lessons/0059-provider-metrics-naming-contract.html">回到课程</a>
+            <a href="reference/0058-provider-metrics-production-boundary-cheatsheet.html">上一张速查</a>
+            <a href="reference/0060-provider-metrics-naming-refactor-boundary-cheatsheet.html">下一张速查</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Reference 0060 - Provider Metrics Naming Refactor Boundary</h3>
+          <p>metrics rename 迁移步骤、contract snapshot、兼容窗口、消费者迁移和下线旧名。</p>
+          <div class="links">
+            <a href="reference/0060-provider-metrics-naming-refactor-boundary-cheatsheet.html">打开速查</a>
+            <a href="lessons/0060-provider-metrics-naming-refactor-boundary.html">回到课程</a>
+            <a href="reference/0059-provider-metrics-naming-contract-cheatsheet.html">上一张速查</a>
+            <a href="reference/0061-provider-metrics-documentation-index-cheatsheet.html">下一张速查</a>
+          </div>
+        </article>
+
+        <article class="course-item">
+          <h3>Reference 0061 - Provider Metrics Documentation Index</h3>
+          <p>provider metrics 文档入口、必备契约词、HTMLParser 文档测试、相关课程和测试链接。</p>
+          <div class="links">
+            <a href="reference/0061-provider-metrics-documentation-index-cheatsheet.html">打开速查</a>
+            <a href="lessons/0061-provider-metrics-documentation-index.html">回到课程</a>
+            <a href="reference/provider-metrics-index.html">文档入口</a>
+            <a href="reference/0060-provider-metrics-naming-refactor-boundary-cheatsheet.html">上一张速查</a>
           </div>
         </article>
       </div>

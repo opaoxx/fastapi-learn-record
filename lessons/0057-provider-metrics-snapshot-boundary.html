@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0057 - Provider Metrics Snapshot Boundary</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0057</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0056-provider-metrics-export-tests.html">上一课</a>
+        <a href="../reference/0057-provider-metrics-snapshot-boundary-cheatsheet.html">本课速查</a>
+        <a href="./0058-provider-metrics-production-boundary.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0057</p>
+      <h1>Provider Metrics Snapshot Boundary：快照不是内部状态引用</h1>
+      <p class="lead">前两课把 provider metrics 导出成文本，并补齐了文本导出测试。本课继续向内看一层：<code>ProviderMetricsCounter.snapshot()</code> 返回给外部调用方的应该是当前状态的快照，而不是 counter 内部可变状态本身。这个边界很小，但它决定了调试 endpoint、导出 helper 和测试代码是否会意外污染真实计数。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解 snapshot 在后端代码里的含义：读取当前状态的一份数据表示。</li>
+        <li>区分快照、内部状态、HTTP 响应和文本导出之间的边界。</li>
+        <li>看懂为什么 metrics counter 不能把内部 <code>Counter</code> 直接暴露出去。</li>
+        <li>用测试证明修改返回的 snapshot 不会修改 counter 内部计数。</li>
+        <li>继续保持教学用 in-process metrics 与生产级 metrics pipeline 的边界意识。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 背景：读取状态也可能破坏状态</h2>
+      <p>很多人会觉得“读接口”没有风险，因为它不执行写操作。但在 Python 里，如果一个函数把内部可变对象直接返回，调用方拿到对象后仍然可以改它。这样表面上是读取，实际上绕过了对象自己的方法，直接修改内部状态。</p>
+      <p>对于 metrics counter，这个问题尤其危险。计数应该只能通过 <code>increment()</code> 和 <code>reset()</code> 这些明确方法变化。如果 <code>snapshot()</code> 泄漏内部结构，测试代码、导出代码甚至调试代码都可能无意中把真实计数改坏。</p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 核心概念：snapshot 是边界对象</h2>
+      <p>本项目里的 provider metrics 有四层：</p>
+      <ul>
+        <li><strong>内部状态</strong>：<code>ProviderMetricsCounter</code> 里的 <code>Counter</code>。</li>
+        <li><strong>快照</strong>：<code>snapshot()</code> 返回的 <code>[{"labels": ..., "count": ...}]</code>。</li>
+        <li><strong>JSON endpoint</strong>：<code>GET /provider/metrics</code> 返回 response model 序列化后的 JSON。</li>
+        <li><strong>text export</strong>：<code>GET /provider/metrics/prometheus</code> 返回 Prometheus text 风格字符串。</li>
+      </ul>
+      <p>快照位于内部状态和外部表达之间。它应该携带足够信息，但不应该允许调用方回头修改内部 counter。</p>
+    </section>
+
+    <section>
+      <h2>3. 代码精读一：Counter 的内部状态</h2>
+      <p><code>ProviderMetricsCounter</code> 内部使用 <code>collections.Counter</code> 保存计数：</p>
+      <pre><code>@dataclass
+class ProviderMetricsCounter:
+    _counts: Counter[ProviderMetricLabels] = field(default_factory=Counter)</code></pre>
+      <p><code>_counts</code> 是内部字段。前面的下划线不是安全机制，但它表达了设计意图：外部代码不应该直接依赖或修改它。正常写入路径应该经过 <code>increment()</code>，正常读取路径应该经过 <code>snapshot()</code>。</p>
+    </section>
+
+    <section>
+      <h2>4. 代码精读二：snapshot 重新组装输出对象</h2>
+      <p>当前 <code>snapshot()</code> 没有直接返回 <code>_counts</code>，而是排序后重新构造列表和字典：</p>
+      <pre><code>def snapshot(self) -> list[dict[str, object]]:
+    samples = sorted(
+        self._counts.items(),
+        key=lambda item: (
+            item[0].operation,
+            item[0].outcome,
+            item[0].failure_category,
+            item[0].error_code,
+            item[0].status_code,
+        ),
+    )
+    return [
+        {
+            "labels": labels.as_dict(),
+            "count": count,
+        }
+        for labels, count in samples
+    ]</code></pre>
+      <p>这里的 <code>labels.as_dict()</code> 很关键。<code>ProviderMetricLabels</code> 是不可变 dataclass，而 <code>as_dict()</code> 每次都会生成一个新的普通字典。外部修改这个字典，不会改变原始 label 对象。</p>
+    </section>
+
+    <section>
+      <h2>5. 代码精读三：用测试证明快照隔离</h2>
+      <p>本课新增了一个非常小但很有价值的测试：</p>
+      <pre><code>def test_provider_metrics_counter_snapshot_is_detached_from_counter_state() -> None:
+    counter = ProviderMetricsCounter()
+    labels = build_provider_metric_labels(outcome="success")
+
+    counter.increment(labels)
+    snapshot = counter.snapshot()
+    snapshot[0]["count"] = 999
+    snapshot[0]["labels"]["outcome"] = "fail_fast"
+
+    assert counter.snapshot() == [
+        {
+            "labels": labels.as_dict(),
+            "count": 1,
+        }
+    ]</code></pre>
+      <p>测试故意修改返回的 snapshot：把 count 改成 999，把 outcome 改成 fail_fast。然后再次读取 counter 的真实 snapshot，仍然应该是 success count 1。这说明外部拿到的是一份数据表示，而不是内部状态入口。</p>
+    </section>
+
+    <section>
+      <h2>6. 为什么这不是“过度测试”</h2>
+      <p>从行数看，这个测试很小。但它保护的是模块边界。后续如果有人为了省代码，把 <code>snapshot()</code> 改成直接返回内部 <code>Counter</code>、内部 label 对象或共享字典，测试会立刻失败。</p>
+      <p>在真实项目里，这类边界测试很常见：缓存 snapshot、配置对象、统计结果、分页响应、权限上下文都可能因为“返回了可变内部对象”而出问题。它们不是炫技，而是在保护模块的封装性。</p>
+    </section>
+
+    <section>
+      <h2>7. 和 FastAPI endpoint 的关系</h2>
+      <p><code>GET /provider/metrics</code> 和 <code>GET /provider/metrics/prometheus</code> 都从 snapshot 开始：</p>
+      <pre><code>def get_provider_metrics_snapshot() -> list[dict[str, object]]:
+    return provider_prediction_metrics.snapshot()
+
+def get_provider_metrics_prometheus_text() -> str:
+    return render_provider_metrics_prometheus_text(get_provider_metrics_snapshot())</code></pre>
+      <p>如果 snapshot 边界不干净，JSON endpoint 和 text endpoint 都会继承这个风险。现在我们用测试证明：导出层可以读取和转换 snapshot，但不能通过 snapshot 反向篡改 counter。</p>
+    </section>
+
+    <section>
+      <h2>8. 生产视角：快照仍然不是完整监控系统</h2>
+      <p>这里要继续强调：snapshot 隔离只能解决“不要泄漏内部可变状态”的问题。它不解决多进程聚合、不解决多实例汇总、不解决服务重启后的计数丢失，也不解决 Prometheus scrape 配置和长期存储。</p>
+      <p>所以本项目当前 metrics 仍然是教学实现。它的价值在于帮助你理解 metrics 标签、计数、endpoint、导出格式和测试边界，而不是替代生产监控组件。</p>
+    </section>
+
+    <section class="practice">
+      <h2>9. 动手实验</h2>
+      <p>运行 provider HTTP 相关测试：</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q</code></pre>
+      <p>然后尝试一个小实验：把 <code>snapshot()</code> 临时改成返回共享对象，或者让 <code>labels.as_dict()</code> 复用同一个字典。重新运行测试，观察 <code>test_provider_metrics_counter_snapshot_is_detached_from_counter_state</code> 如何提醒你边界被破坏。</p>
+    </section>
+
+    <section>
+      <h2>10. 常见错误</h2>
+      <ul>
+        <li>认为 getter 一定安全。只要返回可变内部对象，getter 也可能成为写入口。</li>
+        <li>为了少写几行代码直接返回内部 <code>Counter</code>。这样调用方会依赖实现细节。</li>
+        <li>把 snapshot 当成实时视图。snapshot 是读取瞬间的数据表示，不是持续同步的对象。</li>
+        <li>混淆教学隔离和生产隔离。快照拷贝不等于多实例指标聚合。</li>
+        <li>只测试 happy path，不测试调用方修改返回值后的内部状态。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>11. 面试视角：如何解释 snapshot boundary</h2>
+      <blockquote>
+        <p>我会把 snapshot 看成模块边界对象。内部 counter 负责累积计数，snapshot 负责把当前状态投影成外部可读的数据结构。snapshot 不应该暴露内部可变状态，所以我会用测试故意修改返回值，再确认 counter 的真实状态没有变化。这能保护封装性，也能让 JSON endpoint 和 text export 更可靠。</p>
+      </blockquote>
+    </section>
+
+    <section>
+      <h2>12. 记忆练习</h2>
+      <details>
+        <summary>1. snapshot 和内部状态有什么区别？</summary>
+        <p class="answer">内部状态是 counter 真正保存计数的数据结构；snapshot 是读取时生成的外部数据表示，应该可以被读和转换，但不应该反向修改内部状态。</p>
+      </details>
+      <details>
+        <summary>2. 为什么 <code>labels.as_dict()</code> 对边界有帮助？</summary>
+        <p class="answer">它生成新的字典，外部修改这个字典不会改变不可变的 <code>ProviderMetricLabels</code> 对象。</p>
+      </details>
+      <details>
+        <summary>3. snapshot 隔离解决不了哪些生产问题？</summary>
+        <p class="answer">它不解决多进程、多实例、重启丢失、scrape 部署、告警和长期存储等生产级监控问题。</p>
+      </details>
+      <details>
+        <summary>4. 为什么要测试“修改返回值后内部状态不变”？</summary>
+        <p class="answer">因为这能防止未来重构泄漏内部可变对象，保护模块封装边界。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>13. 本节总结</h2>
+      <p>本节完成了 provider metrics 当前批次的边界收束：counter 负责累积，snapshot 负责对外投影，JSON endpoint 和 text export 负责展示不同形状。关键心智模型是：读取接口也要设计边界，快照应该是可读数据，而不是内部状态的后门。</p>
+      <p>下一批建议继续学习：Provider Metrics Production Boundary。可以讨论为什么教学用 in-process counter 不能直接作为生产监控方案，以及真正接入 Prometheus/OpenTelemetry 时需要补哪些工程能力。</p>
+      <p>推荐主资源：<a href="https://docs.python.org/3/library/collections.html#collections.Counter">Python Counter</a>、<a href="https://docs.python.org/3/library/dataclasses.html">Python dataclasses</a>、<a href="https://fastapi.tiangolo.com/tutorial/response-model/">FastAPI response models</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0056-provider-metrics-export-tests.html">上一课：Provider Metrics Export Tests</a>
+        <a href="../reference/0057-provider-metrics-snapshot-boundary-cheatsheet.html">查看本课速查</a>
+        <a href="./0058-provider-metrics-production-boundary.html">下一课：Provider Metrics Production Boundary</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

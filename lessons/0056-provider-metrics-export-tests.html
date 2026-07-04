@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0056 - Provider Metrics Export Tests</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0056</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0055-provider-metrics-export-shape.html">上一课</a>
+        <a href="../reference/0056-provider-metrics-export-tests-cheatsheet.html">本课速查</a>
+        <a href="./0057-provider-metrics-snapshot-boundary.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0056</p>
+      <h1>Provider Metrics Export Tests：把文本导出契约测试牢</h1>
+      <p class="lead">上一课我们把 provider metrics snapshot 渲染成 Prometheus text 风格输出。文本导出看起来只是字符串拼接，但它对监控系统来说就是 API 契约。本课不改业务行为，而是补齐边界测试：空 snapshot、多个失败 outcome、特殊 label 转义，以及 endpoint 的 text/plain 响应。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解为什么文本导出比普通 JSON 更依赖精确的字符串契约测试。</li>
+        <li>能说清空 metrics snapshot 仍然应该返回 HELP 和 TYPE 行。</li>
+        <li>能测试 retry failure outcome 在文本 endpoint 中的完整输出。</li>
+        <li>能解释 label value 中反斜杠、换行和双引号为什么必须转义。</li>
+        <li>学会用 endpoint 测试同时保护状态码、Content-Type 和响应正文。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 背景：为什么 text export 不能只测 200</h2>
+      <p>很多初学者写 endpoint 测试时，只检查 <code>response.status_code == 200</code>。这对普通页面可能勉强够用，但对 metrics text export 远远不够。因为采集器读取的是完整文本格式：HELP 行、TYPE 行、metric name、label 顺序、label 转义和数值都属于契约。</p>
+      <p>如果某次重构把 label 顺序变成随机顺序，人类肉眼还能读，但测试快照、监控查询和告警规则可能会变得难以维护。如果某个 label value 没有转义，文本格式甚至会被破坏。本课的核心心智模型是：<strong>文本导出不是展示层细节，它是给另一个系统读取的机器契约。</strong></p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 本节只推进测试，不扩大功能面</h2>
+      <p>本节没有新增新的 endpoint，也没有接入 Prometheus 依赖。我们只做一件事：用更完整的测试描述上一课已经暴露的文本导出边界。</p>
+      <ul>
+        <li><strong>空状态</strong>：counter 还没有任何样本时，导出仍然是合法文本。</li>
+        <li><strong>失败状态</strong>：retry scheduled 和 retry exhausted 都要能在文本中出现。</li>
+        <li><strong>特殊字符</strong>：反斜杠、换行、双引号必须转义。</li>
+        <li><strong>HTTP 边界</strong>：FastAPI endpoint 要返回 text/plain，而不是 JSON。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>3. 代码精读一：空 snapshot 不是空字符串</h2>
+      <p>新增的第一个测试保护空 metrics 状态：</p>
+      <pre><code>def test_render_provider_metrics_prometheus_text_handles_empty_snapshot() -> None:
+    text = render_provider_metrics_prometheus_text([])
+
+    assert text == (
+        "# HELP provider_prediction_total Provider prediction outcomes recorded by "
+        "the teaching metrics counter.\n"
+        "# TYPE provider_prediction_total counter\n"
+    )</code></pre>
+      <p>这里最重要的点是：没有样本不等于没有响应。HELP 和 TYPE 行描述指标的存在、名字和类型，即使当前 count 还没有任何 label set，也能让读者或采集器知道这个 endpoint 的输出语义。</p>
+    </section>
+
+    <section>
+      <h2>4. 代码精读二：endpoint 空状态也要返回 text/plain</h2>
+      <p>渲染 helper 的空状态测试还不够，因为 FastAPI endpoint 还有自己的响应边界：</p>
+      <pre><code>def test_provider_metrics_prometheus_endpoint_returns_header_only_when_empty() -> None:
+    with TestClient(app) as client:
+        metrics_response = client.get("/provider/metrics/prometheus")
+
+    assert metrics_response.status_code == 200
+    assert metrics_response.headers["content-type"].startswith("text/plain")
+    assert metrics_response.text == expected_header_only_text</code></pre>
+      <p>这个测试覆盖的是 HTTP 层：路由存在、状态码正确、Content-Type 是文本、正文是 header-only export。注意，这个测试依赖上一课的 autouse fixture：每个 endpoint 测试开始前都会清空 provider metrics counter。</p>
+    </section>
+
+    <section>
+      <h2>5. 代码精读三：失败 outcome 的文本导出</h2>
+      <p>我们还新增了 retry failure 的文本 endpoint 测试。它先让 provider 连续返回 503，并把最大尝试次数设为 2：</p>
+      <pre><code>def override_retry_settings() -> Settings:
+    return Settings(
+        ai_max_attempts=2,
+        ai_retry_base_delay_seconds=0.0,
+        ai_retry_max_delay_seconds=0.0,
+    )</code></pre>
+      <p>请求 <code>POST /provider/predict</code> 失败后，再读取 <code>GET /provider/metrics/prometheus</code>，应该看到两个样本：</p>
+      <pre><code>provider_prediction_total{error_code="ai_provider_http_error",failure_category="retryable_http_status",operation="prediction",outcome="retry_exhausted",status_code="503"} 1
+provider_prediction_total{error_code="ai_provider_http_error",failure_category="retryable_http_status",operation="prediction",outcome="retry_scheduled",status_code="503"} 1</code></pre>
+      <p>这说明 text export 并不只适合 success。它必须完整表达我们前面课程建立的 outcome taxonomy：成功、安排重试、重试耗尽、快速失败。</p>
+    </section>
+
+    <section>
+      <h2>6. 代码精读四：特殊 label value 转义</h2>
+      <p>虽然当前真实 label 值都是低基数字符串，但渲染 helper 仍然需要防御特殊字符。本课新增测试故意构造了一个麻烦的 <code>error_code</code>：</p>
+      <pre><code>error_code='line\\one\n"two"'</code></pre>
+      <p>输出中必须变成：</p>
+      <pre><code>error_code="line\\one\n\"two\""</code></pre>
+      <p>注意这里讲的是文本格式里的可见转义：反斜杠变成 <code>\\</code>，换行变成 <code>\n</code>，双引号变成 <code>\"</code>。如果不转义，label value 会提前结束，后面的文本就不再是合法样本行。</p>
+    </section>
+
+    <section>
+      <h2>7. 测试设计：helper 测试和 endpoint 测试各管一层</h2>
+      <p>本节新增的测试有两种层级：</p>
+      <ul>
+        <li><strong>helper 测试</strong>直接调用 <code>render_provider_metrics_prometheus_text()</code>，重点保护字符串格式、排序和转义。</li>
+        <li><strong>endpoint 测试</strong>通过 <code>TestClient</code> 请求路由，重点保护 FastAPI 响应类型、依赖覆盖、请求流程和实际 endpoint 输出。</li>
+      </ul>
+      <p>这两个层级不能互相替代。只测 helper 会漏掉路由配置错误；只测 endpoint 会让边界条件很难构造，也会让失败定位变慢。</p>
+    </section>
+
+    <section class="practice">
+      <h2>8. 动手实验</h2>
+      <p>运行本节相关测试：</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py tests\test_ai_client_dependency.py -q</code></pre>
+      <p>你应该看到所有相关测试通过。然后可以试着临时破坏 <code>escape_prometheus_label_value()</code>，例如删掉 <code>.replace("\n", "\\n")</code>，再运行测试，观察转义测试如何失败。</p>
+      <p>这个实验的重点不是记住某一行字符串，而是体会：测试会把“文本格式也是契约”这件事变成可执行的约束。</p>
+    </section>
+
+    <section>
+      <h2>9. 常见错误</h2>
+      <ul>
+        <li>只测试 status code，不测试正文。对 metrics export 来说，正文才是主要契约。</li>
+        <li>把空 snapshot 渲染成空字符串。这样会丢失指标说明和类型信息。</li>
+        <li>忘记 endpoint 的 Content-Type。文本 endpoint 不应该被客户端当成 JSON 处理。</li>
+        <li>只测试 success，不测试 failure outcome。监控最常用的恰恰是失败指标。</li>
+        <li>没有隔离全局 counter。上一个测试留下的样本会污染下一个测试。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>10. 面试视角：如何解释 metrics export 测试</h2>
+      <blockquote>
+        <p>我会把 metrics text export 当成机器读取的 API 契约来测试。helper 层测试负责保护 HELP、TYPE、label 顺序、转义和空 snapshot；endpoint 层测试负责保护路由、Content-Type 和真实请求流程。这样即使当前只是教学用 in-process counter，也能养成生产系统里监控契约测试的思维。</p>
+      </blockquote>
+    </section>
+
+    <section>
+      <h2>11. 记忆练习</h2>
+      <details>
+        <summary>1. 为什么空 snapshot 仍然应该输出 HELP 和 TYPE？</summary>
+        <p class="answer">因为它们描述指标名、含义和类型。没有样本只是当前没有计数，不代表 endpoint 没有可解释的导出契约。</p>
+      </details>
+      <details>
+        <summary>2. helper 测试和 endpoint 测试的边界分别是什么？</summary>
+        <p class="answer">helper 测试保护纯渲染规则；endpoint 测试保护 HTTP 路由、响应类型、依赖覆盖和真实请求流程。</p>
+      </details>
+      <details>
+        <summary>3. label value 为什么要转义反斜杠、换行和双引号？</summary>
+        <p class="answer">这些字符会影响文本格式解析。如果不转义，label 字符串可能提前结束或跨行破坏样本结构。</p>
+      </details>
+      <details>
+        <summary>4. 为什么失败 outcome 的 text export 测试很重要？</summary>
+        <p class="answer">监控最常被用来发现失败和退化。只测试 success 会让 retry_scheduled、retry_exhausted、fail_fast 这些关键路径缺少契约保护。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>12. 本节总结</h2>
+      <p>本节没有扩大功能，而是把上一课的文本导出契约测试得更完整。你现在应该能把 metrics export 看成一个机器可读接口，并理解为什么空状态、失败状态、转义规则和 Content-Type 都值得单独测试。</p>
+      <p>下一课建议学习：Provider Metrics Snapshot Boundary。我们会继续从边界角度看 metrics，证明 snapshot 是对内部 counter 的安全拷贝，而不是可被外部修改的内部状态引用。</p>
+      <p>推荐主资源：<a href="https://prometheus.io/docs/instrumenting/exposition_formats/">Prometheus exposition formats</a>、<a href="https://fastapi.tiangolo.com/tutorial/testing/">FastAPI testing</a>、<a href="https://docs.pytest.org/en/stable/how-to/fixtures.html">pytest fixtures</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0055-provider-metrics-export-shape.html">上一课：Provider Metrics Export Shape</a>
+        <a href="../reference/0056-provider-metrics-export-tests-cheatsheet.html">查看本课速查</a>
+        <a href="./0057-provider-metrics-snapshot-boundary.html">下一课：Provider Metrics Snapshot Boundary</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

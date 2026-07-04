@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Provider Metrics Production Boundary Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0058</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0058-provider-metrics-production-boundary.html">回到第 58 课</a>
+        <a href="./0057-provider-metrics-snapshot-boundary-cheatsheet.html">上一张速查</a>
+        <a href="./0059-provider-metrics-naming-contract-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0058</p>
+      <h1>Provider Metrics Production Boundary 速查</h1>
+      <p class="lead">当前 provider metrics 是教学级 in-process counter，不是生产级多实例 metrics pipeline。</p>
+    </header>
+
+    <h2>一句话模型</h2>
+    <blockquote>
+      <p>教学实现可以模拟生产输出形状，但必须诚实标注生产缺口。</p>
+    </blockquote>
+
+    <h2>当前实现能做什么</h2>
+    <ul>
+      <li>记录 provider prediction outcome。</li>
+      <li>暴露 <code>GET /provider/metrics</code> JSON snapshot。</li>
+      <li>暴露 <code>GET /provider/metrics/prometheus</code> text export。</li>
+      <li>用测试保护格式、转义、失败 outcome 和 snapshot 边界。</li>
+    </ul>
+
+    <h2>当前实现不解决什么</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>缺口</th>
+          <th>原因</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>多进程</td>
+          <td>每个 worker 有自己的内存 counter。</td>
+        </tr>
+        <tr>
+          <td>多实例</td>
+          <td>单个 endpoint 不能代表所有机器或容器。</td>
+        </tr>
+        <tr>
+          <td>重启连续性</td>
+          <td>内存计数会随进程重启归零。</td>
+        </tr>
+        <tr>
+          <td>长期分析</td>
+          <td>需要时间序列存储和查询系统。</td>
+        </tr>
+        <tr>
+          <td>告警</td>
+          <td>需要规则、阈值、通知和运行平台。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>OpenAPI 边界测试</h2>
+    <pre><code>json_operation = schema["paths"]["/provider/metrics"]["get"]
+text_operation = schema["paths"]["/provider/metrics/prometheus"]["get"]
+
+assert "in-process provider prediction metric counter snapshot" in json_operation["description"]
+assert "not for production multi-instance aggregation" in json_operation["description"]
+assert "educational export shape" in text_operation["description"]
+assert "not a production multi-instance metrics pipeline" in text_operation["description"]</code></pre>
+
+    <h2>运行命令</h2>
+    <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_openapi_contract.py -q</code></pre>
+
+    <h2>常见错误</h2>
+    <ul>
+      <li>把 Prometheus text 风格输出等同于生产 Prometheus 接入。</li>
+      <li>把单进程 count 当成全局 count。</li>
+      <li>忽略重启后内存计数丢失。</li>
+      <li>API 文档不写清用途限制。</li>
+      <li>不测试文档里的生产边界说明。</li>
+    </ul>
+
+    <h2>面试短答</h2>
+    <blockquote>
+      <p>当前实现是教学级 metrics path：能展示 outcome、snapshot 和 text export，但不解决多 worker、多实例、重启、scrape、长期存储、告警和权限。边界应该写进 OpenAPI，并由契约测试保护。</p>
+    </blockquote>
+
+    <footer>
+      来源：<a href="https://prometheus.io/docs/introduction/overview/">Prometheus overview</a>、
+      <a href="https://prometheus.io/docs/prometheus/latest/configuration/configuration/">Prometheus configuration</a>、
+      <a href="https://fastapi.tiangolo.com/tutorial/metadata/">FastAPI metadata and docs</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0058-provider-metrics-production-boundary.html">回到第 58 课</a>
+        <a href="./0057-provider-metrics-snapshot-boundary-cheatsheet.html">上一张速查</a>
+        <a href="./0059-provider-metrics-naming-contract-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

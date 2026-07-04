@@ -3,11 +3,21 @@ from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi.responses import PlainTextResponse
 
 from ..dependencies import get_provider_http_client
-from ..schemas import ErrorResponse, PredictionRequest, PredictionResponse
+from ..schemas import (
+    ErrorResponse,
+    PredictionRequest,
+    PredictionResponse,
+    ProviderMetricSampleResponse,
+)
 from ..services.ai_clients import AIClient, PredictionResult, get_ai_client
 from ..services.predictions import PredictionServiceError, PredictionServiceResult, run_prediction
+from ..services.provider_http import (
+    get_provider_metrics_prometheus_text,
+    get_provider_metrics_snapshot,
+)
 from ..settings import Settings, get_settings
 
 
@@ -174,3 +184,31 @@ async def predict_with_provider(
     log_prediction_completed(result)
 
     return build_prediction_response(result.prediction, payload.text)
+
+
+@router.get(
+    "/provider/metrics",
+    response_model=list[ProviderMetricSampleResponse],
+    summary="Read teaching provider prediction metrics",
+    description=(
+        "Returns the current in-process provider prediction metric counter snapshot. "
+        "This endpoint is for teaching metric shape and FastAPI response modeling, not "
+        "for production multi-instance aggregation."
+    ),
+)
+async def get_provider_metrics() -> list[dict[str, object]]:
+    return get_provider_metrics_snapshot()
+
+
+@router.get(
+    "/provider/metrics/prometheus",
+    response_class=PlainTextResponse,
+    summary="Read teaching provider prediction metrics as text",
+    description=(
+        "Returns a Prometheus text-style rendering of the current in-process provider "
+        "prediction metric counter. This is an educational export shape, not a "
+        "production multi-instance metrics pipeline."
+    ),
+)
+async def get_provider_metrics_prometheus() -> str:
+    return get_provider_metrics_prometheus_text()

@@ -15,6 +15,17 @@ from .ai_clients import AIClientConfig, AIClientError, PredictionLabel, Predicti
 
 
 RETRYABLE_PROVIDER_STATUS_CODES = {429, 500, 502, 503, 504}
+PROVIDER_PREDICTION_METRIC_NAME = "provider_prediction_total"
+PROVIDER_PREDICTION_METRIC_HELP = (
+    "Provider prediction outcomes recorded by the teaching metrics counter."
+)
+PROVIDER_PREDICTION_METRIC_LABEL_NAMES = (
+    "operation",
+    "outcome",
+    "failure_category",
+    "error_code",
+    "status_code",
+)
 logger = logging.getLogger(__name__)
 RetrySleep = Callable[[float], Awaitable[None]]
 RetryRandom = Callable[[], float]
@@ -98,6 +109,12 @@ class ProviderMetricsCounter:
             for labels, count in samples
         ]
 
+    def reset(self) -> None:
+        self._counts.clear()
+
+
+provider_prediction_metrics = ProviderMetricsCounter()
+
 
 class ProviderPredictionPayload(BaseModel):
     text: str
@@ -132,6 +149,87 @@ def build_provider_metric_labels(
         error_code=error_code,
         status_code=str(status_code) if status_code is not None else "none",
     )
+
+
+def record_provider_metric(labels: ProviderMetricLabels, amount: int = 1) -> None:
+    provider_prediction_metrics.increment(labels, amount=amount)
+
+
+def get_provider_metrics_snapshot() -> list[dict[str, object]]:
+    return provider_prediction_metrics.snapshot()
+
+
+def get_provider_prediction_metric_contract() -> dict[str, object]:
+    return {
+        "metric_name": PROVIDER_PREDICTION_METRIC_NAME,
+        "help": PROVIDER_PREDICTION_METRIC_HELP,
+        "label_names": list(PROVIDER_PREDICTION_METRIC_LABEL_NAMES),
+    }
+
+
+def escape_prometheus_label_value(value: object) -> str:
+    return str(value).replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+
+
+def render_provider_metrics_prometheus_text(
+    samples: list[dict[str, object]],
+) -> str:
+    lines = [
+        f"# HELP {PROVIDER_PREDICTION_METRIC_NAME} {PROVIDER_PREDICTION_METRIC_HELP}",
+        f"# TYPE {PROVIDER_PREDICTION_METRIC_NAME} counter",
+    ]
+    for sample in samples:
+        labels = sample["labels"]
+        if not isinstance(labels, dict):
+            raise ValueError("Metric sample labels must be a dictionary.")
+        label_text = ",".join(
+            f'{name}="{escape_prometheus_label_value(value)}"'
+            for name, value in sorted(labels.items())
+        )
+        lines.append(
+            f"{PROVIDER_PREDICTION_METRIC_NAME}{{{label_text}}} {sample['count']}"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def get_provider_metrics_prometheus_text() -> str:
+    return render_provider_metrics_prometheus_text(get_provider_metrics_snapshot())
+
+
+def reset_provider_metrics() -> None:
+    provider_prediction_metrics.reset()
+
+
+def classify_retry_metric_failure(
+    retry_reason: RetryFailureReason,
+    status_code: int | None = None,
+) -> ProviderMetricFailureCategory:
+    if retry_reason == "timeout":
+        return "timeout"
+    if retry_reason == "request_error":
+        return "request_error"
+    if status_code is not None:
+        return classify_provider_http_status(status_code)
+    return "retryable_http_status"
+
+
+def retry_metric_error_code(retry_reason: RetryFailureReason) -> str:
+    if retry_reason == "timeout":
+        return "ai_provider_timeout"
+    if retry_reason == "request_error":
+        return "ai_provider_request_error"
+    return "ai_provider_http_error"
+
+
+def classify_fail_fast_metric_failure(
+    fail_fast_reason: FailFastReason,
+    status_code: int | None = None,
+) -> ProviderMetricFailureCategory:
+    if fail_fast_reason == "invalid_response":
+        return "invalid_response"
+    if status_code is not None:
+        return classify_provider_http_status(status_code)
+    return "non_retryable_http_status"
 
 
 def parse_retry_after_delay(
@@ -240,6 +338,17 @@ async def wait_before_retry(
             "delay_source": delay_plan.source,
         },
     )
+    record_provider_metric(
+        build_provider_metric_labels(
+            outcome="retry_scheduled",
+            failure_category=classify_retry_metric_failure(
+                retry_reason,
+                status_code=status_code,
+            ),
+            error_code=retry_metric_error_code(retry_reason),
+            status_code=status_code,
+        )
+    )
     if delay_plan.delay_seconds > 0:
         await sleep(delay_plan.delay_seconds)
 
@@ -263,6 +372,17 @@ def log_retry_exhausted(
             "error_code": error_code,
         },
     )
+    record_provider_metric(
+        build_provider_metric_labels(
+            outcome="retry_exhausted",
+            failure_category=classify_retry_metric_failure(
+                retry_reason,
+                status_code=status_code,
+            ),
+            error_code=error_code,
+            status_code=status_code,
+        )
+    )
 
 
 def log_prediction_fail_fast(
@@ -281,6 +401,17 @@ def log_prediction_fail_fast(
             "status_code": status_code,
             "error_code": error_code,
         },
+    )
+    record_provider_metric(
+        build_provider_metric_labels(
+            outcome="fail_fast",
+            failure_category=classify_fail_fast_metric_failure(
+                fail_fast_reason,
+                status_code=status_code,
+            ),
+            error_code=error_code,
+            status_code=status_code,
+        )
     )
 
 
@@ -349,6 +480,7 @@ async def request_provider_prediction(
                 )
                 response.raise_for_status()
                 body = ProviderPredictionBody.model_validate(response.json())
+                record_provider_metric(build_provider_metric_labels(outcome="success"))
                 return PredictionResult(
                     label=body.label,
                     score=round(body.score, 2),
