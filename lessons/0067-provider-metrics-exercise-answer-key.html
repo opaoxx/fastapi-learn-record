@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0067 - Provider Metrics Exercise Answer Key</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0067</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0066-provider-metrics-runbook-exercise-cards.html">上一课</a>
+        <a href="../reference/0067-provider-metrics-exercise-answer-key-cheatsheet.html">速查</a>
+        <a href="./0068-provider-metrics-exercise-grading-anchors.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0067 Provider Metrics Exercise Answer Key：让排障训练具备标准答案</h1>
+      <p class="lead">本节新增 <code>render_provider_metrics_runbook_exercise_answer_key()</code>，把上一节的题卡渲染成 Markdown 答案键。它让 runbook 训练从“凭感觉讨论”变成“有题目、有评分锚点、有标准答案”的工程化学习流程。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Exercise Answer Key
+├─ 输入：exercise cards
+├─ 输出：Markdown answer key
+│  ├─ card id
+│  ├─ prompt
+│  ├─ expected severity
+│  └─ answer
+├─ 价值
+│  ├─ 统一排障术语
+│  ├─ 支撑自测和复盘
+│  ├─ 便于 GitHub 离线阅读
+│  └─ 可被测试保护
+└─ 边界
+   ├─ 不评分用户输入
+   ├─ 不调用 provider
+   ├─ 不读取 counter
+   └─ 不替代生产演练平台</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>标准答案是学习闭环的最后一环。没有答案键，题卡只能制造讨论；有答案键，学习者才能对照自己是否把 outcome、severity、finding 和 next_action 串成正确判断链。</p>
+      <p>本节的答案键仍然是纯渲染函数。它不做自然语言评分，不判断用户输入，只把结构化题卡转换成可读 Markdown。这种边界能避免课程过早进入复杂评分系统。</p>
+      <p>答案键必须从 cards 渲染，而不是重新读取 findings。原因是 cards 已经决定了题干、评分锚点和标准答案；答案键只负责把同一份训练数据转成复盘文本。若答案键绕过 cards 重新组装，会产生“题目一套、答案一套”的维护风险。</p>
+      <table>
+        <thead><tr><th>阶段</th><th>产物</th><th>作用</th></tr></thead>
+        <tbody>
+          <tr><td>观测</td><td>samples</td><td>提供指标事实</td></tr>
+          <tr><td>解释</td><td>findings</td><td>给出判断和动作</td></tr>
+          <tr><td>训练</td><td>exercise cards</td><td>提出问题</td></tr>
+          <tr><td>复盘</td><td>answer key</td><td>统一标准答案</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>def render_provider_metrics_runbook_exercise_answer_key(
+    cards: list[dict[str, object]],
+) -> str:
+    lines = []
+    for card in cards:</code></pre>
+      <p>函数只接收题卡，不接收 samples 或 findings，说明它位于链路末端。这样每层输入输出清晰，便于测试定位。</p>
+      <pre><code>lines.append(f"## {card['id']}")
+lines.append("")
+lines.append(f"Prompt: {card['prompt']}")
+lines.append(f"Expected severity: {card['expected_severity']}")
+lines.append(f"Answer: {card['answer']}")
+lines.append("")</code></pre>
+      <p>每张题卡渲染为一个二级标题块。空行用于保证 Markdown 段落清晰。答案键保留 prompt，便于复盘时不用跳回题目源数据。</p>
+      <pre><code>return "\n".join(lines)</code></pre>
+      <p>输出是单个 Markdown 文本块，可直接写入学习记录、issue 或课程参考页。测试会保护其中关键字符串。</p>
+      <table>
+        <thead><tr><th>代码点</th><th>作用</th><th>不这样写的隐患</th></tr></thead>
+        <tbody>
+          <tr><td><code>lines = []</code></td><td>允许按块追加 Markdown 行。</td><td>若在循环中直接拼接大字符串，后续插入字段时可读性更差。</td></tr>
+          <tr><td><code>for card in cards</code></td><td>按题卡顺序输出，保证题目与答案顺序一致。</td><td>若重新排序，学生对照题卡时会产生定位成本。</td></tr>
+          <tr><td><code>## {card['id']}</code></td><td>把每张题卡变成可跳转的 Markdown 小节。</td><td>缺少标题会让多题答案键难以扫描和引用。</td></tr>
+          <tr><td><code>Prompt:</code></td><td>保留题干上下文，让答案键自包含。</td><td>只给答案会迫使读者回查题卡，复盘效率低。</td></tr>
+          <tr><td><code>Expected severity:</code></td><td>显式暴露优先级判断标准。</td><td>只看 next_action 会忽略故障处理优先级。</td></tr>
+          <tr><td><code>lines.append("")</code></td><td>每题末尾留空行，非空 cards 会自然得到末尾换行。</td><td>缺少空行时多个答案块会粘连，Markdown 可读性下降。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>samples
+  → findings
+  → exercise cards
+  → render_provider_metrics_runbook_exercise_answer_key(cards)
+  → Markdown answer key
+  → 学生自测 / 课程复盘 / PR 说明</code></pre>
+      <p>这条链路形成完整训练闭环：先给观测事实，再给题目，再给标准答案。每一步都是纯函数，测试稳定，适合 GitHub 离线课程。</p>
+      <p>边界条件也要明确：当 <code>cards</code> 为空时，函数返回空字符串；当 card 缺少 <code>id</code>、<code>prompt</code>、<code>expected_severity</code> 或 <code>answer</code> 时，会抛出 <code>KeyError</code>。教学代码选择暴露契约错误，生产环境可在入口层加 schema 校验并返回可诊断错误。</p>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>answer key</td><td>等于自动评分系统</td><td>这里只渲染标准答案，不评分用户输入。</td></tr>
+          <tr><td>prompt</td><td>答案键不需要题目</td><td>保留题目才能自包含复盘。</td></tr>
+          <tr><td>expected severity</td><td>只是装饰字段</td><td>它是判断优先级的标准锚点。</td></tr>
+          <tr><td>Markdown</td><td>不适合工程材料</td><td>Markdown 正适合 GitHub、issue、PR 和离线阅读。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>后果</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>答案键不含 prompt</td><td>复盘时上下文丢失</td><td>每个答案块保留 Prompt。</td></tr>
+          <tr><td>答案键不含 severity</td><td>无法训练优先级判断</td><td>渲染 Expected severity。</td></tr>
+          <tr><td>答案键手写</td><td>与题卡漂移</td><td>从 cards 自动渲染。</td></tr>
+          <tr><td>渲染函数做评分</td><td>职责过重</td><td>评分另建模块，本节只做答案输出。</td></tr>
+          <tr><td>空题卡仍假装输出标题</td><td>学习材料误导读者</td><td>空输入返回空字符串，让调用方决定是否展示空状态。</td></tr>
+          <tr><td>吞掉缺失字段异常</td><td>题卡生成错误被隐藏</td><td>教学场景保持 <code>KeyError</code> 暴露，生产入口统一校验。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>答案用途</td><td>自测、复习、面试训练</td><td>值班演练评分、事故复盘、培训认证</td></tr>
+          <tr><td>数据敏感性</td><td>固定假样本</td><td>可能包含真实事故信息，需要脱敏</td></tr>
+          <tr><td>评分方式</td><td>人工对照标准答案</td><td>可结合演练平台和 reviewer</td></tr>
+          <tr><td>维护方式</td><td>测试保护字符串</td><td>owner 审查、演练后更新、合规留档</td></tr>
+          <tr><td>异常处理</td><td>缺字段直接暴露代码契约问题</td><td>入口层 schema 校验、错误码、审计日志和数据修复流程。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. 为什么答案键要保留 Prompt？</summary><p class="answer">答案键需要自包含，复盘时不能要求读者再回到题卡源数据寻找题目。</p></details>
+      <details><summary>2. 为什么答案键不负责评分用户输入？</summary><p class="answer">评分涉及模糊匹配和质量判断，会显著增加复杂度。本节只做稳定答案渲染。</p></details>
+      <details><summary>3. 为什么答案键从 cards 渲染？</summary><p class="answer">这样可以保证题目、severity 和答案来自同一结构化来源，减少手写漂移。</p></details>
+      <details><summary>4. 答案键在面试训练中有什么价值？</summary><p class="answer">它给出标准排障表达，帮助学习者把观察、判断、下一步动作组织成完整回答。</p></details>
+      <details><summary>5. 空 cards 输入应该返回什么？</summary><p class="answer">返回空字符串。渲染函数不虚构标题或提示文案，是否展示空状态应由页面或调用方决定。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：如何构建一套可维护的故障排查训练材料？</summary><p class="answer">用真实契约生成样本，用 findings 解释样本，用题卡训练判断，用答案键统一复盘。每层都是结构化数据和纯函数，配套测试防止漂移。</p></details>
+      <details><summary>面试题 2：答案键为什么不能手写散落在文档里？</summary><p class="answer">手写答案容易与题卡和代码契约漂移。自动从 cards 渲染能保证题目、severity、标准答案一致。</p></details>
+      <details><summary>面试题 3：教学答案键和生产演练平台有什么区别？</summary><p class="answer">教学答案键强调标准认知路径；生产演练平台还要记录参与人、时间、响应质量、审批、脱敏和复盘更新。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0066-provider-metrics-runbook-exercise-cards.html">上一课：Provider Metrics Runbook Exercise Cards</a>
+        <a href="../reference/0067-provider-metrics-exercise-answer-key-cheatsheet.html">查看速查</a>
+        <a href="./0068-provider-metrics-exercise-grading-anchors.html">下一课：Provider Metrics Exercise Grading Anchors</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

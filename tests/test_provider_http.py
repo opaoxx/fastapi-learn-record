@@ -12,6 +12,7 @@ from first_api.services.provider_http import (
     PROVIDER_PREDICTION_METRIC_HELP,
     PROVIDER_PREDICTION_METRIC_NAME,
     ProviderMetricsCounter,
+    build_provider_metrics_runbook_exercise_cards,
     build_provider_metrics_runbook_findings,
     build_provider_metrics_runbook_scenario_samples,
     build_provider_metric_labels,
@@ -21,10 +22,16 @@ from first_api.services.provider_http import (
     check_provider_health,
     get_provider_prediction_metric_contract,
     get_provider_metrics_snapshot,
+    grade_provider_metrics_runbook_exercise_answer,
     parse_retry_after_delay,
+    render_provider_metrics_runbook_exercise_answer_key,
+    render_provider_metrics_runbook_findings_markdown,
+    render_provider_metrics_runbook_grading_summary_markdown,
     render_provider_metrics_prometheus_text,
     request_provider_prediction,
     reset_provider_metrics,
+    summarize_provider_metrics_runbook_exercise_grades,
+    validate_provider_metrics_runbook_grading_summary,
 )
 
 
@@ -365,6 +372,253 @@ def test_provider_metrics_runbook_findings_reject_malformed_samples() -> None:
 
     assert str(label_error) == "Metric sample labels must be a dictionary."
     assert str(count_error) == "Metric sample count must be an integer."
+
+
+def test_provider_metrics_runbook_findings_render_as_markdown_table() -> None:
+    findings = build_provider_metrics_runbook_findings(
+        build_provider_metrics_runbook_scenario_samples()
+    )
+
+    markdown = render_provider_metrics_runbook_findings_markdown(findings)
+
+    assert markdown == (
+        "| outcome | count | severity | finding | next_action |\n"
+        "| --- | ---: | --- | --- | --- |\n"
+        "| success | 3 | baseline | Provider prediction requests are succeeding. | "
+        "Compare the success count with expected request volume before treating "
+        "failure samples as system-wide. |\n"
+        "| retry_scheduled | 2 | investigate | Retryable provider failures were "
+        "observed and retry was scheduled. | Check failure_category, status_code, "
+        "retry delay logs, and whether retry_exhausted also appears. |\n"
+        "| retry_exhausted | 1 | action_required | Retryable provider failures "
+        "exhausted the configured attempts. | Check max_attempts, provider "
+        "availability, and the last retryable failure before changing retry policy. |\n"
+        "| fail_fast | 1 | contract_check | A non-retryable provider failure or "
+        "invalid response was recorded. | Do not increase retries first; inspect "
+        "the request or response contract and the status_code. |\n"
+    )
+
+
+def test_provider_metrics_runbook_exercise_cards_preserve_expected_actions() -> None:
+    cards = build_provider_metrics_runbook_exercise_cards(
+        build_provider_metrics_runbook_findings(
+            build_provider_metrics_runbook_scenario_samples()
+        )
+    )
+
+    assert cards[0] == {
+        "id": "provider-metrics-runbook-1",
+        "prompt": "Outcome success has count 3. What should you check next?",
+        "expected_severity": "baseline",
+        "expected_next_action": (
+            "Compare the success count with expected request volume before "
+            "treating failure samples as system-wide."
+        ),
+        "answer": (
+            "Provider prediction requests are succeeding. Next action: Compare "
+            "the success count with expected request volume before treating "
+            "failure samples as system-wide."
+        ),
+    }
+    assert [card["expected_severity"] for card in cards] == [
+        "baseline",
+        "investigate",
+        "action_required",
+        "contract_check",
+    ]
+
+
+def test_provider_metrics_runbook_exercise_answer_key_renders_cards() -> None:
+    cards = build_provider_metrics_runbook_exercise_cards(
+        build_provider_metrics_runbook_findings(
+            build_provider_metrics_runbook_scenario_samples()
+        )
+    )
+
+    answer_key = render_provider_metrics_runbook_exercise_answer_key(cards)
+
+    assert answer_key.startswith("## provider-metrics-runbook-1\n")
+    assert "Expected severity: investigate" in answer_key
+    assert (
+        "Answer: Retryable provider failures exhausted the configured attempts. "
+        "Next action: Check max_attempts, provider availability, and the last "
+        "retryable failure before changing retry policy."
+    ) in answer_key
+    assert answer_key.endswith("\n")
+
+
+def test_provider_metrics_runbook_exercise_answer_grade_passes_exact_anchors() -> None:
+    cards = build_provider_metrics_runbook_exercise_cards(
+        build_provider_metrics_runbook_findings(
+            build_provider_metrics_runbook_scenario_samples()
+        )
+    )
+
+    grade = grade_provider_metrics_runbook_exercise_answer(
+        cards[2],
+        (
+            "Severity should be ACTION_REQUIRED. Next action: Check max_attempts, "
+            "provider availability, and the last retryable failure before changing "
+            "retry policy."
+        ),
+    )
+
+    assert grade == {
+        "card_id": "provider-metrics-runbook-3",
+        "severity_matched": True,
+        "next_action_matched": True,
+        "passed": True,
+        "missing": [],
+        "feedback": "Answer includes the expected severity and next action.",
+    }
+
+
+def test_provider_metrics_runbook_exercise_answer_grade_reports_missing_anchors() -> None:
+    cards = build_provider_metrics_runbook_exercise_cards(
+        build_provider_metrics_runbook_findings(
+            build_provider_metrics_runbook_scenario_samples()
+        )
+    )
+
+    grade = grade_provider_metrics_runbook_exercise_answer(
+        cards[3],
+        "Increase retries and try again.",
+    )
+
+    assert grade == {
+        "card_id": "provider-metrics-runbook-4",
+        "severity_matched": False,
+        "next_action_matched": False,
+        "passed": False,
+        "missing": ["expected_severity", "expected_next_action"],
+        "feedback": "Missing: expected_severity, expected_next_action.",
+    }
+
+
+def test_provider_metrics_runbook_exercise_grades_summary_counts_results() -> None:
+    cards = build_provider_metrics_runbook_exercise_cards(
+        build_provider_metrics_runbook_findings(
+            build_provider_metrics_runbook_scenario_samples()
+        )
+    )
+
+    summary = summarize_provider_metrics_runbook_exercise_grades(
+        cards[:3],
+        {
+            "provider-metrics-runbook-1": (
+                "baseline. Compare the success count with expected request volume "
+                "before treating failure samples as system-wide."
+            ),
+            "provider-metrics-runbook-2": "investigate retry failures.",
+        },
+    )
+
+    assert summary["total"] == 3
+    assert summary["answered"] == 2
+    assert summary["passed"] == 1
+    assert summary["failed"] == 2
+    assert summary["unanswered"] == 1
+    assert summary["grades"][0]["answered"] is True
+    assert summary["grades"][0]["passed"] is True
+    assert summary["grades"][1]["answered"] is True
+    assert summary["grades"][1]["missing"] == ["expected_next_action"]
+    assert summary["grades"][2]["answered"] is False
+    assert summary["grades"][2]["missing"] == [
+        "expected_severity",
+        "expected_next_action",
+    ]
+
+
+def test_provider_metrics_runbook_grading_summary_renders_markdown() -> None:
+    cards = build_provider_metrics_runbook_exercise_cards(
+        build_provider_metrics_runbook_findings(
+            build_provider_metrics_runbook_scenario_samples()
+        )
+    )
+    summary = summarize_provider_metrics_runbook_exercise_grades(
+        cards[:2],
+        {
+            "provider-metrics-runbook-1": (
+                "baseline. Compare the success count with expected request volume "
+                "before treating failure samples as system-wide."
+            ),
+            "provider-metrics-runbook-2": "investigate retry failures.",
+        },
+    )
+
+    markdown = render_provider_metrics_runbook_grading_summary_markdown(summary)
+
+    assert markdown == (
+        "## Provider Metrics Runbook Grading Summary\n"
+        "\n"
+        "| total | answered | passed | failed | unanswered |\n"
+        "| ---: | ---: | ---: | ---: | ---: |\n"
+        "| 2 | 2 | 1 | 1 | 0 |\n"
+        "\n"
+        "## Grade Details\n"
+        "\n"
+        "| card_id | answered | passed | missing | feedback |\n"
+        "| --- | --- | --- | --- | --- |\n"
+        "| provider-metrics-runbook-1 | True | True | - | "
+        "Answer includes the expected severity and next action. |\n"
+        "| provider-metrics-runbook-2 | True | False | expected_next_action | "
+        "Missing: expected_next_action. |\n"
+    )
+
+
+def test_provider_metrics_runbook_grading_summary_validation_accepts_valid_summary() -> None:
+    cards = build_provider_metrics_runbook_exercise_cards(
+        build_provider_metrics_runbook_findings(
+            build_provider_metrics_runbook_scenario_samples()
+        )
+    )
+    summary = summarize_provider_metrics_runbook_exercise_grades(
+        cards[:1],
+        {
+            "provider-metrics-runbook-1": (
+                "baseline. Compare the success count with expected request volume "
+                "before treating failure samples as system-wide."
+            ),
+        },
+    )
+
+    assert validate_provider_metrics_runbook_grading_summary(summary) == {
+        "valid": True,
+        "errors": [],
+    }
+
+
+def test_provider_metrics_runbook_grading_summary_validation_reports_contract_errors() -> None:
+    validation = validate_provider_metrics_runbook_grading_summary(
+        {
+            "total": 2,
+            "answered": 3,
+            "passed": 1,
+            "failed": 0,
+            "unanswered": 0,
+            "grades": [
+                {
+                    "card_id": "provider-metrics-runbook-1",
+                    "answered": "yes",
+                    "passed": False,
+                    "missing": "expected_next_action",
+                }
+            ],
+        }
+    )
+
+    assert validation == {
+        "valid": False,
+        "errors": [
+            "Grade #1 missing field: feedback.",
+            "Grade #1 field must be a boolean: answered.",
+            "Grade #1 field must be a list: missing.",
+            "Summary answered count cannot exceed total.",
+            "Summary failed count must equal total - passed.",
+            "Summary unanswered count must equal total - answered.",
+            "Summary total must equal the number of grades.",
+        ],
+    }
 
 
 def test_provider_metrics_counter_accumulates_samples_by_label_set() -> None:

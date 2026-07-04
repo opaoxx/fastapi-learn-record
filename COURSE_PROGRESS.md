@@ -1,5 +1,181 @@
 # Course Progress
 
+# 2026-07-05 Run: Lesson 0071 Provider Metrics Grading Summary Validation
+
+## Completed
+
+- Completed Lesson 0071: Provider Metrics Grading Summary Validation.
+- Added `validate_provider_metrics_runbook_grading_summary()` as a pure summary contract checker.
+- Added provider HTTP tests for accepting valid summaries and reporting multiple contract errors in malformed summaries.
+- Added Lesson 0071, Reference 0071, learning record 0062, updated Lesson 0070 navigation, Reference 0070 navigation, provider metrics index, provider metrics runbook, main course index, `NOTES.md`, and documentation contract coverage.
+
+## Files touched
+
+- `first_api/services/provider_http.py`
+- `tests/test_provider_http.py`
+- `tests/test_course_docs_contract.py`
+- `lessons/0070-provider-metrics-grading-summary-markdown.html`
+- `lessons/0071-provider-metrics-grading-summary-validation.html`
+- `reference/0070-provider-metrics-grading-summary-markdown-cheatsheet.html`
+- `reference/0071-provider-metrics-grading-summary-validation-cheatsheet.html`
+- `reference/provider-metrics-index.html`
+- `reference/provider-metrics-runbook.html`
+- `index.html`
+- `NOTES.md`
+- `learning-records/0062-provider-metrics-grading-summary-validation.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Continue with Lesson 0072 after user review. A natural next topic is packaging a complete runbook practice session from samples through validation and Markdown report rendering.
+
+# 2026-07-05 Run: Lesson 0070 Provider Metrics Grading Summary Markdown
+
+## Completed
+
+- Completed Lesson 0070: Provider Metrics Grading Summary Markdown.
+- Added `render_provider_metrics_runbook_grading_summary_markdown()` as a pure report renderer over grading summaries.
+- Added provider HTTP test coverage for stable summary Markdown rendering.
+- Added Lesson 0070, Reference 0070, learning record 0061, updated Lesson 0069 navigation, Reference 0069 navigation, provider metrics index, provider metrics runbook, main course index, `NOTES.md`, and documentation contract coverage.
+
+## Files touched
+
+- `first_api/services/provider_http.py`
+- `tests/test_provider_http.py`
+- `tests/test_course_docs_contract.py`
+- `lessons/0069-provider-metrics-grading-summary.html`
+- `lessons/0070-provider-metrics-grading-summary-markdown.html`
+- `reference/0069-provider-metrics-grading-summary-cheatsheet.html`
+- `reference/0070-provider-metrics-grading-summary-markdown-cheatsheet.html`
+- `reference/provider-metrics-index.html`
+- `reference/provider-metrics-runbook.html`
+- `index.html`
+- `NOTES.md`
+- `learning-records/0061-provider-metrics-grading-summary-markdown.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Continue with Lesson 0071 after user review. A natural next topic is exporting a complete practice package or adding schema validation for grading report inputs.
+
+# 2026-07-05 Run: Lesson 0069 Provider Metrics Grading Summary
+
+## Completed
+
+- Completed Lesson 0069: Provider Metrics Grading Summary.
+- Added `summarize_provider_metrics_runbook_exercise_grades()` as a pure batch summary helper over existing single-card grading.
+- Added provider HTTP test coverage for total, answered, passed, failed, unanswered, per-card answered flags, and missing-anchor details.
+- Added Lesson 0069, Reference 0069, learning record 0060, updated Lesson 0068 navigation, Reference 0068 navigation, provider metrics index, provider metrics runbook, main course index, `NOTES.md`, and documentation contract coverage.
+
+## Files touched
+
+- `first_api/services/provider_http.py`
+- `tests/test_provider_http.py`
+- `tests/test_course_docs_contract.py`
+- `lessons/0068-provider-metrics-exercise-grading-anchors.html`
+- `lessons/0069-provider-metrics-grading-summary.html`
+- `reference/0068-provider-metrics-exercise-grading-anchors-cheatsheet.html`
+- `reference/0069-provider-metrics-grading-summary-cheatsheet.html`
+- `reference/provider-metrics-index.html`
+- `reference/provider-metrics-runbook.html`
+- `index.html`
+- `NOTES.md`
+- `learning-records/0060-provider-metrics-grading-summary.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Continue with Lesson 0070 after user review. A natural next topic is rendering the grading summary as a Markdown report or exporting graded practice results while keeping raw response text out of the report.
+
+# 2026-07-05 Run: Lesson 0068 Provider Metrics Exercise Grading Anchors
+
+## Completed
+
+- Completed Lesson 0068: Provider Metrics Exercise Grading Anchors.
+- Added `grade_provider_metrics_runbook_exercise_answer()` as a pure teaching-grade scoring helper.
+- Added provider HTTP tests for passing exact grading anchors and reporting missing grading anchors.
+- Added Lesson 0068, Reference 0068, learning record 0059, updated Lesson 0067 navigation, Reference 0067 navigation, provider metrics index, provider metrics runbook, main course index, `NOTES.md`, and documentation contract coverage.
+
+## Files touched
+
+- `first_api/services/provider_http.py`
+- `tests/test_provider_http.py`
+- `tests/test_course_docs_contract.py`
+- `lessons/0067-provider-metrics-exercise-answer-key.html`
+- `lessons/0068-provider-metrics-exercise-grading-anchors.html`
+- `reference/0067-provider-metrics-exercise-answer-key-cheatsheet.html`
+- `reference/0068-provider-metrics-exercise-grading-anchors-cheatsheet.html`
+- `reference/provider-metrics-index.html`
+- `reference/provider-metrics-runbook.html`
+- `index.html`
+- `NOTES.md`
+- `learning-records/0059-provider-metrics-exercise-grading-anchors.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Continue with Lesson 0069 after user review. A natural next topic is provider metrics grading report rendering or graded practice datasets, while keeping teaching-grade grading separate from production exercise platforms.
+
+# 2026-07-05 Run: Lessons 0065-0067 Provider Metrics Runbook Training
+
+## Completed
+
+- Manually executed the requested `00:30` continuation task after the heartbeat did not visibly start on time.
+- Completed three new lessons after Lesson 0064:
+  - Lesson 0065: Provider Metrics Findings Markdown Report.
+  - Lesson 0066: Provider Metrics Runbook Exercise Cards.
+  - Lesson 0067: Provider Metrics Exercise Answer Key.
+- Added pure helpers in `first_api/services/provider_http.py`:
+  - `render_provider_metrics_runbook_findings_markdown()`.
+  - `build_provider_metrics_runbook_exercise_cards()`.
+  - `render_provider_metrics_runbook_exercise_answer_key()`.
+- Added provider HTTP tests for Markdown rendering, exercise card generation, and answer-key rendering.
+- Added Lesson and Reference pages for 0065-0067, updated navigation, provider metrics index, provider metrics runbook, main course index, `NOTES.md`, learning records, and documentation contract coverage.
+
+## Files touched
+
+- `first_api/services/provider_http.py`
+- `tests/test_provider_http.py`
+- `tests/test_course_docs_contract.py`
+- `lessons/0064-provider-metrics-runbook-findings.html`
+- `lessons/0065-provider-metrics-findings-markdown-report.html`
+- `lessons/0066-provider-metrics-runbook-exercise-cards.html`
+- `lessons/0067-provider-metrics-exercise-answer-key.html`
+- `reference/0064-provider-metrics-runbook-findings-cheatsheet.html`
+- `reference/0065-provider-metrics-findings-markdown-report-cheatsheet.html`
+- `reference/0066-provider-metrics-runbook-exercise-cards-cheatsheet.html`
+- `reference/0067-provider-metrics-exercise-answer-key-cheatsheet.html`
+- `reference/provider-metrics-index.html`
+- `reference/provider-metrics-runbook.html`
+- `index.html`
+- `NOTES.md`
+- `learning-records/0056-provider-metrics-findings-markdown-report.md`
+- `learning-records/0057-provider-metrics-runbook-exercise-cards.md`
+- `learning-records/0058-provider-metrics-exercise-answer-key.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+At the scheduled `06:00` follow-up, first inspect this run's files and test results, then continue from Lesson 0068 with the same standard and avoid overwriting Lessons 0065-0067.
+
+## Blockers
+
+- The original `00:30` heartbeat did not visibly start on time, so the task was executed manually in this thread.
+
+# 2026-07-05 Run: 00:30 Manual Takeover Checkpoint
+
+## Context Compression / Handoff
+
+- The scheduled heartbeat did not visibly start by `2026-07-05 00:34 +08:00`, so this thread manually took over the same requested task.
+- Current course standard remains the fixed nine-section "Final Review + CSDN Deep Dive" style: framework, principles, line-by-line code reading, runtime flow, confusion comparisons, common errors, production-vs-teaching differences, exercises with answers, and interview Q&A.
+- Latest completed lesson before this takeover: Lesson 0064 Provider Metrics Runbook Findings.
+- Latest core code area: `first_api/services/provider_http.py`, especially provider metrics scenario samples and runbook findings helpers.
+- Verification before takeover from the prior run: provider HTTP tests, course docs contract tests, full pytest, and `git diff --check` passed with only the existing Starlette/FastAPI TestClient warning and Windows LF/CRLF notices.
+
+## Next task
+
+Produce the next three lessons, starting from Lesson 0065, without overwriting Lessons 0063-0064.
+
 # 2026-07-04 Run: Lesson 0064 Provider Metrics Runbook Findings
 
 ## Completed

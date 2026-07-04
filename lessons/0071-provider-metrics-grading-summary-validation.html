@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0071 - Provider Metrics Grading Summary Validation</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0071</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0070-provider-metrics-grading-summary-markdown.html">上一课</a>
+        <a href="../reference/0071-provider-metrics-grading-summary-validation-cheatsheet.html">速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0071 Provider Metrics Grading Summary Validation：渲染报告前先校验训练汇总契约</h1>
+      <p class="lead">本节新增 <code>validate_provider_metrics_runbook_grading_summary()</code>，对 0069 生成的 summary 做结构校验和计数一致性校验。它不渲染报告、不重新评分，只负责把坏数据挡在 Markdown renderer 之前。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Grading Summary Validation
+├─ 输入：summary dict
+├─ 校验维度
+│  ├─ 必备数字字段
+│  │  ├─ total
+│  │  ├─ answered
+│  │  ├─ passed
+│  │  ├─ failed
+│  │  └─ unanswered
+│  ├─ grades 必须是 list
+│  ├─ 每个 grade 必备字段
+│  │  ├─ card_id
+│  │  ├─ answered
+│  │  ├─ passed
+│  │  ├─ missing
+│  │  └─ feedback
+│  └─ 统计一致性
+│     ├─ failed == total - passed
+│     ├─ unanswered == total - answered
+│     └─ total == len(grades)
+└─ 输出
+   ├─ valid
+   └─ errors</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>校验层的目标不是“修复数据”，而是“暴露契约破坏”。summary 会被 Markdown renderer、学习记录、PR 说明等多个消费者使用，越靠近入口发现坏数据，后续排查成本越低。</p>
+      <p>本节选择返回 <code>{"valid": bool, "errors": list}</code>，而不是遇到第一个错误立刻抛异常。原因是复盘材料更需要完整诊断：一次性看到所有字段缺失、类型错误和计数不一致，学习者才能系统修正数据。</p>
+      <p>校验函数不重新评分，也不重新生成 summary。它只检查 summary 是否满足结构和数学约束。这样能保持职责单一：评分层负责判断答案，汇总层负责统计，校验层负责守住数据契约，渲染层负责展示。</p>
+      <table>
+        <thead><tr><th>层级</th><th>职责</th><th>错误处理方式</th></tr></thead>
+        <tbody>
+          <tr><td>summary helper</td><td>生成统计结果</td><td>通过测试保护计算语义</td></tr>
+          <tr><td>validator</td><td>检查结构和一致性</td><td>返回完整 errors 列表</td></tr>
+          <tr><td>renderer</td><td>渲染 Markdown</td><td>只做最小防御校验</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>def validate_provider_metrics_runbook_grading_summary(
+    summary: dict[str, object],
+) -> dict[str, object]:
+    errors = []
+    numeric_fields = ["total", "answered", "passed", "failed", "unanswered"]</code></pre>
+      <p>函数接收 summary 并返回结构化校验结果。<code>errors</code> 收集所有问题，<code>numeric_fields</code> 固定总体统计字段，避免后续校验散落硬编码字符串。</p>
+      <pre><code>for field in numeric_fields:
+    if field not in summary:
+        errors.append(f"Missing summary field: {field}.")
+    elif not isinstance(summary[field], int):
+        errors.append(f"Summary field must be an integer: {field}.")</code></pre>
+      <p>第一轮检查字段存在性和类型。使用 <code>elif</code> 是为了避免字段缺失时继续取值导致 <code>KeyError</code>；校验函数应该把错误整理成可读列表，而不是在第一个字段缺失时中断。</p>
+      <pre><code>grades = summary.get("grades")
+if not isinstance(grades, list):
+    errors.append("Summary field must be a list: grades.")</code></pre>
+      <p><code>grades</code> 使用 <code>get()</code> 是因为这里正在做校验，缺失字段应该转成错误信息。它必须是列表，因为后续逐题明细需要按顺序遍历。</p>
+      <pre><code>else:
+    for index, grade in enumerate(grades, start=1):
+        if not isinstance(grade, dict):
+            errors.append(f"Grade #{index} must be a dictionary.")
+            continue</code></pre>
+      <p>逐题校验从 1 开始编号，方便错误信息对应用户看到的题号。若某个 grade 不是字典，继续检查字段没有意义，因此用 <code>continue</code> 跳到下一项。</p>
+      <pre><code>for field in ["card_id", "answered", "passed", "missing", "feedback"]:
+    if field not in grade:
+        errors.append(f"Grade #{index} missing field: {field}.")
+if "answered" in grade and not isinstance(grade["answered"], bool):
+    errors.append(f"Grade #{index} field must be a boolean: answered.")
+if "passed" in grade and not isinstance(grade["passed"], bool):
+    errors.append(f"Grade #{index} field must be a boolean: passed.")
+if "missing" in grade and not isinstance(grade["missing"], list):
+    errors.append(f"Grade #{index} field must be a list: missing.")</code></pre>
+      <p>每个 grade 必须包含追踪字段、布尔结果、缺失锚点和反馈。<code>answered</code> 与 <code>passed</code> 必须是布尔值，<code>missing</code> 必须是列表，否则渲染层和复盘逻辑都会误读数据。</p>
+      <pre><code>if all(field in summary and isinstance(summary[field], int) for field in numeric_fields):
+    total = summary["total"]
+    answered = summary["answered"]
+    passed = summary["passed"]
+    failed = summary["failed"]
+    unanswered = summary["unanswered"]</code></pre>
+      <p>只有数字字段都存在且类型正确时，才进入数学一致性校验。否则继续计算会把类型错误变成二次异常，降低错误信息质量。</p>
+      <pre><code>if total < 0 or answered < 0 or passed < 0 or failed < 0 or unanswered < 0:
+    errors.append("Summary counts must be non-negative.")
+if answered > total:
+    errors.append("Summary answered count cannot exceed total.")
+if passed > total:
+    errors.append("Summary passed count cannot exceed total.")
+if failed != total - passed:
+    errors.append("Summary failed count must equal total - passed.")
+if unanswered != total - answered:
+    errors.append("Summary unanswered count must equal total - answered.")
+if isinstance(grades, list) and total != len(grades):
+    errors.append("Summary total must equal the number of grades.")</code></pre>
+      <p>这些判断保护 summary 的数学语义。<code>failed</code> 和 <code>unanswered</code> 不是独立随便填的字段，它们必须能由 total、passed、answered 推导出来。</p>
+      <pre><code>return {
+    "valid": not errors,
+    "errors": errors,
+}</code></pre>
+      <p>最终返回统一结构。<code>valid</code> 适合程序快速判断，<code>errors</code> 适合教学复盘和测试断言。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>summary
+  → validate_provider_metrics_runbook_grading_summary(summary)
+  → validation result
+    ├─ valid: True
+    │  └─ render Markdown report
+    └─ valid: False
+       └─ inspect errors before rendering</code></pre>
+      <p>校验层应位于 summary 生成之后、Markdown 渲染之前。这样 renderer 不需要承担完整 schema 检查，也不会把错误数据渲染成看似正常的报告。</p>
+      <table>
+        <thead><tr><th>阶段</th><th>输入</th><th>输出</th><th>失败时动作</th></tr></thead>
+        <tbody>
+          <tr><td>生成</td><td>cards + responses</td><td>summary</td><td>看单元测试和业务输入</td></tr>
+          <tr><td>校验</td><td>summary</td><td>valid/errors</td><td>修复字段或统计规则</td></tr>
+          <tr><td>渲染</td><td>valid summary</td><td>Markdown</td><td>检查展示格式或特殊字符</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>validator</td><td>应该自动修复坏数据</td><td>校验层只报告错误，不改写业务结果。</td></tr>
+          <tr><td><code>errors</code></td><td>只需要第一个错误</td><td>教学复盘更需要完整错误列表。</td></tr>
+          <tr><td><code>get()</code></td><td>到处都该用</td><td>校验入口适合用；业务读取字段时更应暴露契约错误。</td></tr>
+          <tr><td><code>failed</code></td><td>可以独立填写</td><td>它必须等于 <code>total - passed</code>。</td></tr>
+          <tr><td><code>total</code></td><td>只是展示数字</td><td>它必须等于 <code>len(grades)</code>，否则明细和汇总冲突。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>后果</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>漏掉 <code>feedback</code></td><td>报告有结果但无解释</td><td>逐题校验 feedback 必备。</td></tr>
+          <tr><td><code>answered</code> 写成字符串</td><td>展示层可能把任意非空字符串当真</td><td>强制校验为 bool。</td></tr>
+          <tr><td><code>missing</code> 写成字符串</td><td>Markdown renderer 可能按字符拆分</td><td>强制校验为 list。</td></tr>
+          <tr><td>summary 统计手写</td><td>total、failed、unanswered 不一致</td><td>用一致性公式校验。</td></tr>
+          <tr><td>校验函数直接抛第一个异常</td><td>修一个错跑一次，反馈低效</td><td>返回完整 errors 列表。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>校验方式</td><td>手写纯函数</td><td>Pydantic、JSON Schema、数据库约束组合</td></tr>
+          <tr><td>错误返回</td><td>字符串 errors 列表</td><td>错误码、字段路径、国际化文案、日志追踪</td></tr>
+          <tr><td>一致性</td><td>单个 summary 内部校验</td><td>跨表、跨批次、题库版本一致性校验</td></tr>
+          <tr><td>处理策略</td><td>发现错误后停止渲染</td><td>拒绝写入、告警、审计、回滚或补偿任务</td></tr>
+          <tr><td>测试</td><td>单元测试覆盖典型坏数据</td><td>schema 测试、属性测试、迁移兼容测试</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. 为什么 validator 不直接修复坏 summary？</summary><p class="answer">校验层的职责是暴露契约破坏，自动修复会隐藏上游错误来源，导致后续数据更难追踪。</p></details>
+      <details><summary>2. 为什么要一次性返回多个 errors？</summary><p class="answer">教学复盘需要完整诊断。一次只报一个错误会降低修复效率，也不利于理解 schema 的整体约束。</p></details>
+      <details><summary>3. 为什么 <code>failed</code> 必须等于 <code>total - passed</code>？</summary><p class="answer">failed 表示未通过题目数，数学上必须由总题数和通过题数推导出来，否则汇总统计自相矛盾。</p></details>
+      <details><summary>4. 为什么 <code>missing</code> 必须是 list？</summary><p class="answer">missing 表示缺失锚点集合，可能包含多个字段。字符串无法表达集合语义，还会破坏后续 join 渲染。</p></details>
+      <details><summary>5. 生产环境会如何升级本节校验？</summary><p class="answer">可引入 Pydantic 或 JSON Schema，增加字段路径、错误码、题库版本、数据库约束和审计日志。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：为什么需要在渲染前校验 summary？</summary><p class="answer">渲染层会把数据变成人类可信的报告。如果坏数据先被渲染，读者容易把错误统计当成事实，后续排查成本更高。</p></details>
+      <details><summary>面试题 2：返回 errors 和抛异常有什么取舍？</summary><p class="answer">返回 errors 适合批量诊断和教学反馈；抛异常适合不可恢复的运行时错误。这里目标是复盘输入契约，所以返回完整错误列表更合适。</p></details>
+      <details><summary>面试题 3：如何判断一个汇总对象是否自洽？</summary><p class="answer">检查字段存在、类型正确、计数非负、answered/passed 不超过 total、failed 等于 total - passed、unanswered 等于 total - answered、total 等于明细数量。</p></details>
+      <details><summary>面试题 4：生产系统为什么不能只靠前端校验？</summary><p class="answer">前端校验可以提升体验，但不能作为可信边界。后端仍必须校验 schema、权限、一致性和持久化约束。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0070-provider-metrics-grading-summary-markdown.html">上一课：Provider Metrics Grading Summary Markdown</a>
+        <a href="../reference/0071-provider-metrics-grading-summary-validation-cheatsheet.html">查看速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

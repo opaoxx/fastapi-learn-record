@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0065 - Provider Metrics Findings Markdown Report</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0065</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0064-provider-metrics-runbook-findings.html">上一课</a>
+        <a href="../reference/0065-provider-metrics-findings-markdown-report-cheatsheet.html">速查</a>
+        <a href="./0066-provider-metrics-runbook-exercise-cards.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0065 Provider Metrics Findings Markdown Report：把排障判断渲染成可复盘表格</h1>
+      <p class="lead">本节新增 <code>render_provider_metrics_runbook_findings_markdown()</code>，把上一节生成的 findings 渲染成 Markdown 表格。它不改变指标、不读取 counter、不做告警，只负责把机器结构化判断变成适合 PR、学习记录和 runbook 复盘的文本报告。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Findings Markdown Report
+├─ 输入：runbook findings
+│  ├─ outcome
+│  ├─ count
+│  ├─ severity
+│  ├─ finding
+│  └─ next_action
+├─ 输出：Markdown table
+│  ├─ header row
+│  ├─ alignment row
+│  └─ one row per finding
+├─ 设计目标
+│  ├─ 让排障判断可复制到 PR/issue/学习记录
+│  ├─ 保持输出确定性，便于测试
+│  └─ 不把人类解释写回 metric label
+└─ 验证点
+   ├─ 表头稳定
+   ├─ 行顺序稳定
+   ├─ severity 文案稳定
+   └─ next_action 不丢失</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>Markdown report 是解释层的展示格式。metrics 适合机器聚合，findings 适合人类理解，Markdown report 适合传播和复盘。三者分层后，任何一层变更都能被测试定位。</p>
+      <p>表格格式的优势是列稳定：读者可以横向比较 outcome、severity 和 next_action。相较长段落，它更适合期末复习、面试回答和 GitHub 文档。</p>
+      <p>本函数默认输入已经通过 <code>build_provider_metrics_runbook_findings()</code> 生成，因此依赖字段契约：<code>outcome</code>、<code>count</code>、<code>severity</code>、<code>finding</code>、<code>next_action</code> 必须存在。若直接传入手写字典并漏字段，Python 会在索引处抛出 <code>KeyError</code>；这不是渲染层要兜底的业务错误，而是调用方违反结构化数据契约。</p>
+      <table>
+        <thead><tr><th>层级</th><th>数据形态</th><th>主要读者</th></tr></thead>
+        <tbody>
+          <tr><td>Metric sample</td><td><code>{labels,count}</code></td><td>程序、测试、监控系统</td></tr>
+          <tr><td>Finding</td><td><code>{severity,finding,next_action}</code></td><td>开发者、排障者</td></tr>
+          <tr><td>Markdown report</td><td>文本表格</td><td>课程读者、PR reviewer、复盘记录</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>def render_provider_metrics_runbook_findings_markdown(
+    findings: list[dict[str, object]],
+) -> str:
+    lines = [
+        "| outcome | count | severity | finding | next_action |",
+        "| --- | ---: | --- | --- | --- |",
+    ]</code></pre>
+      <p>函数名使用 <code>render</code>，表示把结构化数据转换为文本。返回值是 <code>str</code>，说明它是展示层函数，不应再承载业务状态。</p>
+      <p>第二行 <code>---:</code> 让 count 右对齐，符合数字列阅读习惯。若表头不稳定，测试和文档引用都会漂移。</p>
+      <pre><code>for finding in findings:
+    lines.append(
+        "| {outcome} | {count} | {severity} | {finding_text} | {next_action} |".format(
+            outcome=finding["outcome"],
+            count=finding["count"],
+            severity=finding["severity"],
+            finding_text=finding["finding"],
+            next_action=finding["next_action"],
+        )
+    )
+return "\n".join(lines) + "\n"</code></pre>
+      <p>每个 finding 对应一行，保留原顺序，保证 report 与输入样本可一一追溯。最后补换行，便于写入文件或拼接到 Markdown 文档。</p>
+      <table>
+        <thead><tr><th>代码点</th><th>作用</th><th>不这样写的隐患</th></tr></thead>
+        <tbody>
+          <tr><td><code>lines = [...]</code></td><td>先写固定表头和对齐行，建立输出骨架。</td><td>若表头在循环中拼接，空输入时可能没有合法 Markdown 表格。</td></tr>
+          <tr><td><code>finding["outcome"]</code></td><td>读取排障分支，保持与 metric outcome 对齐。</td><td>若改用 <code>get()</code> 静默返回 <code>None</code>，会把上游契约错误伪装成合法报告。</td></tr>
+          <tr><td><code>finding["count"]</code></td><td>保留观测规模，避免只看 severity 导致误判。</td><td>丢掉 count 后，读者无法区分偶发样本和批量故障。</td></tr>
+          <tr><td><code>finding_text=finding["finding"]</code></td><td>避开 <code>finding</code> 变量名与字段名混淆。</td><td>若格式变量也叫 <code>finding</code>，阅读时容易误以为传入整张字典。</td></tr>
+          <tr><td><code>+ "\n"</code></td><td>让输出符合文本文件和 Markdown 拼接习惯。</td><td>缺少末尾换行时，后续追加内容可能黏在表格最后一行。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>scenario samples
+  → build_provider_metrics_runbook_findings(samples)
+  → render_provider_metrics_runbook_findings_markdown(findings)
+  → Markdown table
+  → PR / issue / lesson / runbook review</code></pre>
+      <p>调用链保持单向：样本到 finding，finding 到 report。report 不反向修改样本，也不触发任何 provider 请求。</p>
+      <table>
+        <thead><tr><th>步骤</th><th>输入</th><th>输出</th><th>风险控制</th></tr></thead>
+        <tbody>
+          <tr><td>构造</td><td>samples</td><td>findings</td><td>分支测试保护</td></tr>
+          <tr><td>渲染</td><td>findings</td><td>Markdown</td><td>完整字符串测试保护</td></tr>
+          <tr><td>传播</td><td>Markdown</td><td>文档片段</td><td>不进入 metrics label</td></tr>
+        </tbody>
+      </table>
+      <p>数据流的关键约束是“只降维、不回写”：metric sample 是事实，finding 是解释，Markdown 是表达。表达层最多改变排版，不能改变 outcome、count 或 next_action，否则同一份观测数据会在不同展示入口产生不同结论。</p>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>Markdown report</td><td>是监控数据源</td><td>只是 findings 的文本展示。</td></tr>
+          <tr><td>完整字符串测试</td><td>太严格，没有必要</td><td>报告格式是课程契约，稳定输出有价值。</td></tr>
+          <tr><td>finding 文案</td><td>应该放进 metric label</td><td>长文本只能停留在解释层。</td></tr>
+          <tr><td>行顺序</td><td>可以随机</td><td>复盘材料需要稳定顺序，便于 diff。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>后果</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>漏掉末尾换行</td><td>拼接文档时格式粘连</td><td>返回 <code>"\n".join(lines) + "\n"</code>。</td></tr>
+          <tr><td>不测试表头</td><td>列名漂移没人发现</td><td>完整断言 Markdown 输出。</td></tr>
+          <tr><td>渲染函数读取 counter</td><td>报告不可复现</td><td>只接收 findings 参数。</td></tr>
+          <tr><td>在 Markdown 里改判断逻辑</td><td>展示层承担业务语义</td><td>判断逻辑留在 findings helper。</td></tr>
+          <tr><td>finding 或 action 含 <code>|</code></td><td>Markdown 表格列被截断</td><td>教学样本受控；生产环境应先做 Markdown 转义或改用结构化模板。</td></tr>
+          <tr><td>对缺失字段做静默默认值</td><td>上游契约错误被掩盖</td><td>保持 <code>KeyError</code> 暴露，或在入口层集中校验。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>报告用途</td><td>学习、复盘、PR 说明</td><td>事故记录、自动通知、审计附件</td></tr>
+          <tr><td>格式</td><td>Markdown 表格</td><td>Dashboard、incident timeline、ticket template</td></tr>
+          <tr><td>数据来源</td><td>固定 samples/findings</td><td>实时监控、日志、trace、事件流</td></tr>
+          <tr><td>治理</td><td>pytest 锁格式</td><td>owner、审批、保留周期、权限控制</td></tr>
+          <tr><td>安全边界</td><td>字段内容完全受课程控制</td><td>需要转义 Markdown 特殊字符，过滤敏感供应商信息。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. 为什么本节选择 Markdown 表格？</summary><p class="answer">表格能稳定展示 outcome、count、severity、finding、next_action，适合复习、review 和复盘。</p></details>
+      <details><summary>2. 为什么 report 函数不读取全局 counter？</summary><p class="answer">读取全局状态会让输出不可复现；report 应只渲染传入 findings。</p></details>
+      <details><summary>3. 为什么 finding 文本不能进入 metric label？</summary><p class="answer">metric label 要低基数且稳定，finding 是人类解释文本，变化频繁且过长。</p></details>
+      <details><summary>4. 为什么要测试完整 Markdown 输出？</summary><p class="answer">报告格式本身是课程和文档契约，完整测试能保护列名、顺序和动作建议。</p></details>
+      <details><summary>5. 如果 finding 中出现竖线 <code>|</code>，生产环境应如何处理？</summary><p class="answer">应在渲染前做 Markdown 转义，或改用 HTML table / JSON payload 等结构化输出；不能让原始文本直接破坏表格列。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：监控 findings 如何进入工程协作流程？</summary><p class="answer">先从 metrics 生成结构化 findings，再渲染成稳定文本或 dashboard panel，进入 PR、issue、incident record。展示层不能反向污染采集层。</p></details>
+      <details><summary>面试题 2：为什么 report renderer 应该是纯函数？</summary><p class="answer">纯函数可测试、可复现、无环境依赖。监控报告需要稳定 diff，不能依赖当前进程状态。</p></details>
+      <details><summary>面试题 3：Markdown 报告和生产 dashboard 的关系是什么？</summary><p class="answer">Markdown 报告适合教学和文本协作；生产 dashboard 适合实时查询和可视化。两者都消费观测数据，但服务不同场景。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0064-provider-metrics-runbook-findings.html">上一课：Provider Metrics Runbook Findings</a>
+        <a href="../reference/0065-provider-metrics-findings-markdown-report-cheatsheet.html">查看速查</a>
+        <a href="./0066-provider-metrics-runbook-exercise-cards.html">下一课：Provider Metrics Runbook Exercise Cards</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

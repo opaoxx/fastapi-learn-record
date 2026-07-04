@@ -17,6 +17,11 @@
         <a href="./0062-provider-metrics-runbook-checklist-cheatsheet.html">第 62 课速查</a>
         <a href="../lessons/0063-provider-metrics-scenario-fixtures.html">场景样本课</a>
         <a href="../lessons/0064-provider-metrics-runbook-findings.html">Finding 课</a>
+        <a href="../lessons/0065-provider-metrics-findings-markdown-report.html">报告课</a>
+        <a href="../lessons/0068-provider-metrics-exercise-grading-anchors.html">评分课</a>
+        <a href="../lessons/0069-provider-metrics-grading-summary.html">汇总课</a>
+        <a href="../lessons/0070-provider-metrics-grading-summary-markdown.html">报告课</a>
+        <a href="../lessons/0071-provider-metrics-grading-summary-validation.html">校验课</a>
       </span>
     </nav>
 
@@ -107,7 +112,15 @@
     </section>
 
     <section>
-      <h2>5. 不要误用</h2>
+      <h2>5. 训练评分入口</h2>
+      <p>完成题卡后，可以用 <code>grade_provider_metrics_runbook_exercise_answer()</code> 检查作答是否覆盖 <code>expected_severity</code> 和 <code>expected_next_action</code> 两个锚点。该评分只服务教学自测，不代表生产演练平台的完整评分。</p>
+      <p>如果需要复盘多题训练结果，再使用 <code>summarize_provider_metrics_runbook_exercise_grades()</code> 统计 <code>total</code>、<code>answered</code>、<code>passed</code>、<code>failed</code> 和 <code>unanswered</code>。</p>
+      <p>如果需要把训练结果贴到 GitHub 或 PR 中，再使用 <code>render_provider_metrics_runbook_grading_summary_markdown()</code> 生成 Markdown 报告。</p>
+      <p>渲染报告前，可以用 <code>validate_provider_metrics_runbook_grading_summary()</code> 检查 summary 字段、grade 明细和统计一致性。</p>
+    </section>
+
+    <section>
+      <h2>6. 不要误用</h2>
       <ul>
         <li>当前 counter 是进程内教学实现，不代表生产全局计数。</li>
         <li>当前 runbook 是学习排障顺序，不是值班升级策略。</li>
@@ -125,6 +138,11 @@
         <a href="./0062-provider-metrics-runbook-checklist-cheatsheet.html">查看第 62 课速查</a>
         <a href="../lessons/0063-provider-metrics-scenario-fixtures.html">练习场景样本</a>
         <a href="../lessons/0064-provider-metrics-runbook-findings.html">学习 Finding 转换</a>
+        <a href="../lessons/0065-provider-metrics-findings-markdown-report.html">学习报告渲染</a>
+        <a href="../lessons/0068-provider-metrics-exercise-grading-anchors.html">学习评分锚点</a>
+        <a href="../lessons/0069-provider-metrics-grading-summary.html">学习评分汇总</a>
+        <a href="../lessons/0070-provider-metrics-grading-summary-markdown.html">学习评分报告</a>
+        <a href="../lessons/0071-provider-metrics-grading-summary-validation.html">学习评分校验</a>
       </span>
     </nav>
   </main>

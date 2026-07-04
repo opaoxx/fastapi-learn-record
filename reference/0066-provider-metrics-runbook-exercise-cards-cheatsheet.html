@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Provider Metrics Runbook Exercise Cards Cheat Sheet</title><link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+  <nav class="course-nav" aria-label="速查表导航"><span class="nav-title">Reference 0066</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0066-provider-metrics-runbook-exercise-cards.html">回到第 66 课</a><a href="./0065-provider-metrics-findings-markdown-report-cheatsheet.html">上一张速查</a><a href="./0067-provider-metrics-exercise-answer-key-cheatsheet.html">下一张速查</a></span></nav>
+  <header><p class="eyebrow">Reference 0066</p><h1>Provider Metrics Runbook Exercise Cards 速查</h1><p class="lead">把 findings 变成可自测的 runbook 题卡。</p></header>
+  <h2>核心函数</h2><pre><code>build_provider_metrics_runbook_exercise_cards(findings)</code></pre>
+  <h2>题卡字段</h2><ul><li><code>id</code>：稳定题号。</li><li><code>prompt</code>：只暴露 outcome/count。</li><li><code>expected_severity</code>：优先级锚点。</li><li><code>expected_next_action</code>：评分动作锚点。</li><li><code>answer</code>：finding + next_action。</li></ul>
+  <h2>关键原则</h2><ul><li>prompt 不泄露答案。</li><li>题卡从 findings 生成，不手写漂移。</li><li>稳定 id 便于文档引用。</li></ul>
+  <h2>测试命令</h2><pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q</code></pre>
+  <nav class="course-nav bottom" aria-label="速查表底部导航"><span class="nav-title">继续学习</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0066-provider-metrics-runbook-exercise-cards.html">回到第 66 课</a><a href="./0067-provider-metrics-exercise-answer-key-cheatsheet.html">下一张速查</a></span></nav>
+</main></body></html>

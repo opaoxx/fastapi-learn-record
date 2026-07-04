@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Provider Metrics Exercise Grading Anchors Cheat Sheet</title><link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+  <nav class="course-nav" aria-label="速查表导航"><span class="nav-title">Reference 0068</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0068-provider-metrics-exercise-grading-anchors.html">回到第 68 课</a><a href="./0067-provider-metrics-exercise-answer-key-cheatsheet.html">上一张速查</a><a href="./0069-provider-metrics-grading-summary-cheatsheet.html">下一张速查</a></span></nav>
+  <header><p class="eyebrow">Reference 0068</p><h1>Provider Metrics Exercise Grading Anchors 速查</h1><p class="lead">用确定性锚点检查排障作答是否覆盖 severity 和 next_action。</p></header>
+  <h2>核心函数</h2><pre><code>grade_provider_metrics_runbook_exercise_answer(card, response)</code></pre>
+  <h2>检查锚点</h2><ul><li><code>expected_severity</code>：优先级判断。</li><li><code>expected_next_action</code>：下一步动作。</li><li><code>casefold()</code>：大小写归一化。</li></ul>
+  <h2>返回字段</h2><ul><li><code>card_id</code>：追溯题卡。</li><li><code>severity_matched</code> / <code>next_action_matched</code>：细粒度命中结果。</li><li><code>passed</code>：两个锚点都命中。</li><li><code>missing</code>：缺失字段列表。</li><li><code>feedback</code>：人类可读反馈。</li></ul>
+  <h2>边界</h2><ul><li>不做语义相似度评分。</li><li>不调用 provider，不读取 counter。</li><li>生产环境需要 rubric、复核、脱敏和审计。</li></ul>
+  <h2>测试命令</h2><pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q</code></pre>
+  <nav class="course-nav bottom" aria-label="速查表底部导航"><span class="nav-title">继续学习</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0068-provider-metrics-exercise-grading-anchors.html">回到第 68 课</a><a href="./0067-provider-metrics-exercise-answer-key-cheatsheet.html">上一张速查</a><a href="./0069-provider-metrics-grading-summary-cheatsheet.html">下一张速查</a></span></nav>
+</main></body></html>

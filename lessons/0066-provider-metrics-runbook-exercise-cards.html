@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0066 - Provider Metrics Runbook Exercise Cards</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0066</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0065-provider-metrics-findings-markdown-report.html">上一课</a>
+        <a href="../reference/0066-provider-metrics-runbook-exercise-cards-cheatsheet.html">速查</a>
+        <a href="./0067-provider-metrics-exercise-answer-key.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0066 Provider Metrics Runbook Exercise Cards：把排障判断拆成可训练题卡</h1>
+      <p class="lead">本节新增 <code>build_provider_metrics_runbook_exercise_cards()</code>。它把 findings 转成题卡：给出 outcome 和 count，要求学习者写出下一步检查动作。课程从“看懂报告”推进到“能独立回答排障题”。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Runbook Exercise Cards
+├─ 输入：findings
+├─ 输出：exercise cards
+│  ├─ id
+│  ├─ prompt
+│  ├─ expected_severity
+│  ├─ expected_next_action
+│  └─ answer
+├─ 训练目标
+│  ├─ 从 outcome 识别排障分支
+│  ├─ 从 count 判断观察规模
+│  ├─ 从 severity 判断优先级
+│  └─ 从 next_action 写出下一步
+└─ 测试目标
+   ├─ id 稳定
+   ├─ prompt 稳定
+   ├─ severity 顺序稳定
+   └─ answer 不丢 finding</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>题卡是认知训练工具。它把完整 runbook 拆成最小可回答单元：看到一个 outcome 和 count，学生必须说出 severity 与 next_action。这个过程非常接近面试中的故障排查追问。</p>
+      <p>题卡不是测试业务代码，而是测试学习者的判断路径。代码层面仍然要保证题卡从真实 findings 生成，避免题目与项目指标契约脱节。</p>
+      <p>题卡生成函数的输入不是原始 metric sample，而是解释后的 findings。这一层选择很重要：如果直接从 samples 出题，题卡就必须重复判断 severity 和 next_action，导致解释规则分裂；从 findings 出题则复用单一事实源，降低漂移概率。</p>
+      <table>
+        <thead><tr><th>对象</th><th>职责</th><th>风险</th></tr></thead>
+        <tbody>
+          <tr><td>Finding</td><td>保存解释结果</td><td>文案可能漂移</td></tr>
+          <tr><td>Exercise Card</td><td>把解释结果变成问题</td><td>题目可能丢失标准答案</td></tr>
+          <tr><td>Answer</td><td>给出标准作答</td><td>如果不测试会与 next_action 不一致</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>def build_provider_metrics_runbook_exercise_cards(
+    findings: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    cards = []
+    for index, finding in enumerate(findings, start=1):</code></pre>
+      <p><code>enumerate(..., start=1)</code> 让题号从 1 开始，更符合教学材料习惯。若使用 0 开始，读者容易把内部索引误认为题号。</p>
+      <pre><code>cards.append(
+    {
+        "id": f"provider-metrics-runbook-{index}",
+        "prompt": (
+            "Outcome {outcome} has count {count}. What should you check next?"
+        ).format(
+            outcome=finding["outcome"],
+            count=finding["count"],
+        ),
+        "expected_severity": finding["severity"],
+        "expected_next_action": finding["next_action"],
+        "answer": (
+            "{finding_text} Next action: {next_action}"
+        ).format(
+            finding_text=finding["finding"],
+            next_action=finding["next_action"],
+        ),
+    }
+)</code></pre>
+      <p><code>prompt</code> 只暴露 outcome 和 count，避免把答案泄露给学生；<code>expected_severity</code> 和 <code>expected_next_action</code> 是评分锚点；<code>answer</code> 把 finding 与 action 拼接成完整标准答案。</p>
+      <pre><code>return cards</code></pre>
+      <p>返回结构化列表而不是直接渲染文本，是为了让后续答案键、网页、测试都能复用同一份题卡数据。</p>
+      <table>
+        <thead><tr><th>代码点</th><th>作用</th><th>不这样写的隐患</th></tr></thead>
+        <tbody>
+          <tr><td><code>cards = []</code></td><td>建立可追加的题卡集合，空 findings 时自然返回空列表。</td><td>若返回 <code>None</code>，下游答案键无法统一迭代处理。</td></tr>
+          <tr><td><code>enumerate(..., start=1)</code></td><td>生成面向读者的 1 基题号。</td><td>0 基题号会暴露实现细节，不利于文档引用。</td></tr>
+          <tr><td><code>prompt</code></td><td>只给 outcome/count 两个观察事实。</td><td>若把 <code>next_action</code> 放进题干，题目失去训练判断的意义。</td></tr>
+          <tr><td><code>expected_severity</code></td><td>保存优先级标准答案。</td><td>只检查 action 会漏掉“该不该升级处理”的关键能力。</td></tr>
+          <tr><td><code>expected_next_action</code></td><td>保存评分锚点，供后续自动/人工评估使用。</td><td>若只保留自然语言 answer，机器评估时还要重新解析文本。</td></tr>
+          <tr><td><code>answer</code></td><td>把事实解释和下一步动作合成完整作答。</td><td>只写 action 会让学生无法说明判断依据。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>samples
+  → findings
+  → exercise cards
+    → prompt: 只给题目
+    → expected_*: 评分锚点
+    → answer: 标准答案
+  → 学生作答
+  → 对照 answer_key</code></pre>
+      <p>这条链路把学习材料做成结构化数据。结构化题卡的好处是：既能生成 HTML，也能生成 Markdown，还能被测试保护。</p>
+      <p>调用链中最重要的分工是：findings 决定“正确判断是什么”，cards 决定“如何向学习者提问”。若把两者合并，题干、标准答案、排障规则会互相缠绕，后续很难单独修改题目呈现方式。</p>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>prompt</td><td>应该包含完整答案</td><td>prompt 只给观察事实，答案放 answer。</td></tr>
+          <tr><td>expected_severity</td><td>可有可无</td><td>它是判断优先级的评分锚点。</td></tr>
+          <tr><td>answer</td><td>只写 next_action 即可</td><td>标准答案应包含 finding + next_action。</td></tr>
+          <tr><td>id</td><td>随机生成更方便</td><td>教学题卡需要稳定 id，便于引用。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>后果</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>题目泄露 next_action</td><td>学生无法训练判断</td><td>prompt 只放 outcome/count。</td></tr>
+          <tr><td>题卡 id 不稳定</td><td>文档链接和测试难维护</td><td>用顺序编号生成稳定 id。</td></tr>
+          <tr><td>answer 丢 finding</td><td>只剩操作，缺少事实解释</td><td>答案拼接 finding 与 next_action。</td></tr>
+          <tr><td>题卡手写</td><td>与代码契约漂移</td><td>从 findings 自动生成。</td></tr>
+          <tr><td>只用顺序号做长期题库 ID</td><td>插入新题后历史引用变化</td><td>教学 Demo 可用顺序号；生产题库应加入版本号、场景名或稳定 slug。</td></tr>
+          <tr><td>缺失 <code>expected_next_action</code></td><td>无法机器化核对关键动作</td><td>保留结构化评分字段，不只依赖自然语言答案。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>题卡用途</td><td>训练排障判断</td><td>演练、值班培训、事故复盘题库</td></tr>
+          <tr><td>题目来源</td><td>固定 findings</td><td>真实事故、演练场景、历史告警</td></tr>
+          <tr><td>评分</td><td>标准答案对照</td><td>可结合演练记录和 reviewer 评估</td></tr>
+          <tr><td>风险</td><td>无运行影响</td><td>演练数据需脱敏和权限控制</td></tr>
+          <tr><td>ID 策略</td><td>顺序号足够支撑课程阅读</td><td>需要题库版本、场景标识、迁移策略和历史引用兼容。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. 为什么题卡 prompt 不直接包含 next_action？</summary><p class="answer">因为 next_action 是学生要推导的答案，放进 prompt 会破坏训练价值。</p></details>
+      <details><summary>2. 为什么题卡要有 expected_severity？</summary><p class="answer">severity 是优先级判断锚点，可以检查学生是否把 scheduled、exhausted、fail_fast 混淆。</p></details>
+      <details><summary>3. 为什么题卡从 findings 生成？</summary><p class="answer">这样能复用真实解释层契约，避免手写题目与项目语义漂移。</p></details>
+      <details><summary>4. 为什么 answer 需要包含 finding？</summary><p class="answer">排障答案不能只有动作，还要说明观察事实是什么。</p></details>
+      <details><summary>5. 教学题卡为什么可以用顺序 ID，生产题库为什么不够？</summary><p class="answer">教学页面顺序稳定且规模小；生产题库会插题、删题、归档历史演练，必须用版本化稳定 ID 保护引用。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：如何把 runbook 变成团队训练材料？</summary><p class="answer">把常见信号拆成结构化题卡：给观察事实，要求说出 severity、判断依据和下一步动作。题卡从真实 findings 生成，避免脱离系统契约。</p></details>
+      <details><summary>面试题 2：题卡和单元测试有什么相似点？</summary><p class="answer">二者都固定输入、预期输出和验证标准。题卡验证人的判断，单元测试验证代码行为。</p></details>
+      <details><summary>面试题 3：为什么 runbook 培训需要标准答案？</summary><p class="answer">没有标准答案，团队成员会形成不同排障路径，事故时难以协作。标准答案能统一术语和动作顺序。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0065-provider-metrics-findings-markdown-report.html">上一课：Provider Metrics Findings Markdown Report</a>
+        <a href="../reference/0066-provider-metrics-runbook-exercise-cards-cheatsheet.html">查看速查</a>
+        <a href="./0067-provider-metrics-exercise-answer-key.html">下一课：Provider Metrics Exercise Answer Key</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Provider Metrics Findings Markdown Report Cheat Sheet</title><link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+  <nav class="course-nav" aria-label="速查表导航"><span class="nav-title">Reference 0065</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0065-provider-metrics-findings-markdown-report.html">回到第 65 课</a><a href="./0064-provider-metrics-runbook-findings-cheatsheet.html">上一张速查</a><a href="./0066-provider-metrics-runbook-exercise-cards-cheatsheet.html">下一张速查</a></span></nav>
+  <header><p class="eyebrow">Reference 0065</p><h1>Provider Metrics Findings Markdown Report 速查</h1><p class="lead">把 findings 渲染成可复盘、可复制、可测试的 Markdown 表格。</p></header>
+  <h2>核心函数</h2><pre><code>render_provider_metrics_runbook_findings_markdown(findings)</code></pre>
+  <h2>输出列</h2><ul><li><code>outcome</code>：排障分支。</li><li><code>count</code>：样本数量，右对齐。</li><li><code>severity</code>：教学级判断。</li><li><code>finding</code>：人类解释。</li><li><code>next_action</code>：下一步动作。</li></ul>
+  <h2>边界</h2><ul><li>只渲染文本，不读取 counter。</li><li>不把 finding 写回 metric label。</li><li>完整字符串测试保护表格格式。</li></ul>
+  <h2>测试命令</h2><pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q</code></pre>
+  <nav class="course-nav bottom" aria-label="速查表底部导航"><span class="nav-title">继续学习</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0065-provider-metrics-findings-markdown-report.html">回到第 65 课</a><a href="./0066-provider-metrics-runbook-exercise-cards-cheatsheet.html">下一张速查</a></span></nav>
+</main></body></html>

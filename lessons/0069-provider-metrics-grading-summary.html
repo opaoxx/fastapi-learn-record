@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0069 - Provider Metrics Grading Summary</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0069</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0068-provider-metrics-exercise-grading-anchors.html">上一课</a>
+        <a href="../reference/0069-provider-metrics-grading-summary-cheatsheet.html">速查</a>
+        <a href="./0070-provider-metrics-grading-summary-markdown.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0069 Provider Metrics Grading Summary：把单题评分聚合成训练汇总</h1>
+      <p class="lead">本节新增 <code>summarize_provider_metrics_runbook_exercise_grades()</code>，把多张题卡与按 <code>card_id</code> 索引的作答合并，输出总题数、已作答数、通过数、失败数、未作答数和每题评分结果。它把 0068 的单题锚点评分升级为可复盘的批量训练统计。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Grading Summary
+├─ 输入
+│  ├─ cards: exercise cards
+│  └─ responses_by_card_id: dict[card_id, response]
+├─ 复用单题评分
+│  └─ grade_provider_metrics_runbook_exercise_answer(card, response)
+├─ 汇总字段
+│  ├─ total
+│  ├─ answered
+│  ├─ passed
+│  ├─ failed
+│  ├─ unanswered
+│  └─ grades
+├─ 每题 grade 补充
+│  └─ answered: 是否收到作答
+└─ 设计边界
+   ├─ 不保存原始 response
+   ├─ 不做持久化
+   ├─ 不调用 provider
+   └─ 不改变题卡或标准答案</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>单题评分回答“这一题是否覆盖关键锚点”，批量汇总回答“这一轮训练整体完成得怎样”。二者是不同层级：单题评分关注局部判断，汇总层关注训练完成度和失败分布。</p>
+      <p>本节使用 <code>responses_by_card_id</code> 而不是列表索引，是为了让作答与题卡通过稳定 ID 对齐。列表位置适合临时展示，但一旦插题、删题或分页，位置索引就容易错位；ID 映射更适合工程数据流。</p>
+      <p><code>unanswered</code> 与 <code>failed</code> 必须区分。未作答是一种训练完成度问题；已作答但缺锚点是知识掌握问题。若把两者混在一个失败数里，复盘时无法判断是学生没交，还是排障思路错误。</p>
+      <table>
+        <thead><tr><th>指标</th><th>含义</th><th>复盘价值</th></tr></thead>
+        <tbody>
+          <tr><td><code>total</code></td><td>本轮训练题卡总数</td><td>确定统计分母</td></tr>
+          <tr><td><code>answered</code></td><td>收到 response 的题目数</td><td>衡量完成度</td></tr>
+          <tr><td><code>passed</code></td><td>两个锚点都命中的题目数</td><td>衡量掌握度</td></tr>
+          <tr><td><code>failed</code></td><td>未通过题目数</td><td>定位需要复习的题</td></tr>
+          <tr><td><code>unanswered</code></td><td>没有 response 的题目数</td><td>定位漏答或数据缺口</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>def summarize_provider_metrics_runbook_exercise_grades(
+    cards: list[dict[str, object]],
+    responses_by_card_id: dict[str, str],
+) -> dict[str, object]:
+    grades = []
+    answered = 0</code></pre>
+      <p>函数输入是题卡列表和按题卡 ID 索引的作答字典。<code>grades</code> 收集每题评分结果，<code>answered</code> 单独统计已提交题数。若只依赖 <code>grades</code> 事后推断，会把“未作答”和“作答错误”混淆。</p>
+      <pre><code>for card in cards:
+    card_id = str(card["id"])
+    if card_id in responses_by_card_id:
+        answered += 1</code></pre>
+      <p>每张题卡都从 <code>card["id"]</code> 取稳定标识，并转成字符串对齐 <code>responses_by_card_id</code> 的 key 类型。若题卡缺少 <code>id</code>，这里会抛出 <code>KeyError</code>，说明题卡契约已经损坏，不能继续静默评分。</p>
+      <pre><code>grade = grade_provider_metrics_runbook_exercise_answer(
+    card,
+    responses_by_card_id.get(card_id, ""),
+)</code></pre>
+      <p>汇总层不重新实现锚点评分，而是复用 0068 的单题函数。未作答时传入空字符串，让单题评分自然得到缺少两个锚点的结果；同时汇总层会额外标记 <code>answered=False</code>。</p>
+      <pre><code>grade["answered"] = card_id in responses_by_card_id
+grades.append(grade)</code></pre>
+      <p>这里给每题结果补充 <code>answered</code> 字段。它不是单题评分算法的一部分，而是批量训练上下文：同样未通过，已作答失败和未作答失败的教学处理完全不同。</p>
+      <pre><code>passed = sum(1 for grade in grades if grade["passed"])
+total = len(cards)
+return {
+    "total": total,
+    "answered": answered,
+    "passed": passed,
+    "failed": total - passed,
+    "unanswered": total - answered,
+    "grades": grades,
+}</code></pre>
+      <p><code>passed</code> 从每题结果计算，避免重复实现通过逻辑。<code>failed = total - passed</code> 表示未通过总数，包含未作答；<code>unanswered</code> 单独暴露漏答数量，避免复盘时误读失败原因。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>cards
+  + responses_by_card_id
+  → for each card
+      → find response by card_id
+      → grade single answer
+      → attach answered flag
+  → aggregate counts
+  → summary report object</code></pre>
+      <p>调用链坚持单向数据流：题卡定义标准，作答字典提供输入，单题评分产生 grade，汇总函数只做聚合。任何一步都不反向修改题卡、findings、metrics counter 或 provider 状态。</p>
+      <table>
+        <thead><tr><th>数据</th><th>来源</th><th>本节处理方式</th><th>风险控制</th></tr></thead>
+        <tbody>
+          <tr><td>card</td><td>题卡生成函数</td><td>读取 id 和标准锚点</td><td>缺字段直接暴露契约错误</td></tr>
+          <tr><td>response</td><td>学习者作答</td><td>只传给评分函数，不写入 summary</td><td>减少隐私和噪声传播</td></tr>
+          <tr><td>grade</td><td>单题评分函数</td><td>追加 answered 标记</td><td>保留细粒度 missing 解释</td></tr>
+          <tr><td>summary</td><td>本节函数</td><td>统计 total/passed/failed</td><td>测试锁定统计语义</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td><code>failed</code></td><td>只表示已作答但答错</td><td>本节语义中，未通过都计入 failed，包括未作答。</td></tr>
+          <tr><td><code>unanswered</code></td><td>和 failed 重复</td><td>它是失败原因拆分，用于区分漏答和答错。</td></tr>
+          <tr><td><code>responses_by_card_id</code></td><td>用列表更简单</td><td>ID 映射能避免题目顺序变化导致作答错位。</td></tr>
+          <tr><td>summary</td><td>应该保存原始答案</td><td>教学汇总只保留评分结果；原始文本涉及隐私和噪声。</td></tr>
+          <tr><td>批量评分</td><td>需要重新写一套评分逻辑</td><td>应复用单题评分函数，避免规则分叉。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>后果</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>按列表下标匹配作答</td><td>插题后答案错位</td><td>使用 <code>card_id</code> 字典映射。</td></tr>
+          <tr><td>未作答直接跳过</td><td>统计分母变小，完成度虚高</td><td>每张 card 都生成 grade，未作答传空字符串。</td></tr>
+          <tr><td>只统计 passed</td><td>无法判断漏答规模</td><td>同时输出 answered、failed、unanswered。</td></tr>
+          <tr><td>把 response 原文写进 summary</td><td>可能泄露用户文本</td><td>summary 只保留评分结果和缺失锚点。</td></tr>
+          <tr><td>批量函数复制单题算法</td><td>评分规则漂移</td><td>调用 <code>grade_provider_metrics_runbook_exercise_answer()</code>。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>数据规模</td><td>少量固定题卡</td><td>大量演练批次、用户、时间窗口</td></tr>
+          <tr><td>存储</td><td>内存返回 summary</td><td>数据库、审计日志、权限隔离</td></tr>
+          <tr><td>隐私</td><td>不保存 response 原文</td><td>脱敏、访问控制、保留周期、删除策略</td></tr>
+          <tr><td>统计</td><td>total/answered/passed/failed/unanswered</td><td>通过率、题目难度、趋势、团队分布</td></tr>
+          <tr><td>一致性</td><td>单进程纯函数</td><td>并发提交、幂等批次、版本化题库</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. 为什么 responses 使用 <code>card_id</code> 作为 key？</summary><p class="answer">因为题目顺序可能变化，ID 映射能保证作答和题卡稳定对齐，避免列表下标错位。</p></details>
+      <details><summary>2. 为什么未作答也要生成 grade？</summary><p class="answer">未作答是训练结果的一部分，跳过会缩小统计分母，让通过率和失败数失真。</p></details>
+      <details><summary>3. <code>failed</code> 和 <code>unanswered</code> 的区别是什么？</summary><p class="answer">failed 表示未通过总数，unanswered 表示没有提交作答的子集。前者衡量掌握结果，后者衡量完成度缺口。</p></details>
+      <details><summary>4. 为什么 summary 不保存 response 原文？</summary><p class="answer">原始作答可能包含敏感文本，也会增加报告噪声。教学汇总只需要评分结果、缺失锚点和统计数字。</p></details>
+      <details><summary>5. 为什么批量函数要复用单题评分函数？</summary><p class="answer">复用可以保证评分规则只有一个事实源，避免单题评分和批量评分出现不同判断。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：如何设计批量评分的结果结构？</summary><p class="answer">结果应包含总体统计和逐题明细。总体字段用于看完成度和通过情况，逐题 grade 用于定位缺失锚点和具体失败原因。</p></details>
+      <details><summary>面试题 2：为什么不能只统计通过率？</summary><p class="answer">通过率会掩盖未作答、题目难度和失败原因。工程系统需要 answered、failed、unanswered 和 missing 才能支持复盘。</p></details>
+      <details><summary>面试题 3：批量评分为什么不应复制单题评分逻辑？</summary><p class="answer">复制会产生规则漂移。单题评分函数应是评分规则的唯一入口，批量层只负责遍历、补上下文和统计。</p></details>
+      <details><summary>面试题 4：生产演练系统如何扩展本节设计？</summary><p class="answer">需要加入题库版本、用户身份、批次 ID、持久化、审计、并发提交处理、作答脱敏和人工复核流程。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0068-provider-metrics-exercise-grading-anchors.html">上一课：Provider Metrics Exercise Grading Anchors</a>
+        <a href="../reference/0069-provider-metrics-grading-summary-cheatsheet.html">查看速查</a>
+        <a href="./0070-provider-metrics-grading-summary-markdown.html">下一课：Provider Metrics Grading Summary Markdown</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

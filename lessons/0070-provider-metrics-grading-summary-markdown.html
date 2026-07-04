@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0070 - Provider Metrics Grading Summary Markdown</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0070</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0069-provider-metrics-grading-summary.html">上一课</a>
+        <a href="../reference/0070-provider-metrics-grading-summary-markdown-cheatsheet.html">速查</a>
+        <a href="./0071-provider-metrics-grading-summary-validation.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0070 Provider Metrics Grading Summary Markdown：把训练汇总渲染成可复盘报告</h1>
+      <p class="lead">本节新增 <code>render_provider_metrics_runbook_grading_summary_markdown()</code>，把 0069 生成的结构化 summary 渲染成 Markdown 报告。它输出总体统计表和逐题明细表，适合复制到 GitHub、PR、issue 或学习记录中做离线复盘。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Grading Summary Markdown
+├─ 输入：summary
+│  ├─ total
+│  ├─ answered
+│  ├─ passed
+│  ├─ failed
+│  ├─ unanswered
+│  └─ grades
+├─ 输出：Markdown report
+│  ├─ summary table
+│  └─ grade details table
+├─ 渲染规则
+│  ├─ 数字列右对齐
+│  ├─ missing 为空时显示 "-"
+│  ├─ grades 必须是 list
+│  └─ grade["missing"] 必须是 list
+└─ 边界
+   ├─ 不重新计算评分
+   ├─ 不读取原始 response
+   ├─ 不调用 provider
+   └─ 不写文件或数据库</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>结构化 summary 适合程序消费，Markdown report 适合人类复盘。两者属于不同层级：summary 是数据契约，report 是展示契约。把它们分开，可以让统计逻辑和展示格式分别测试。</p>
+      <p>本节渲染函数不重新计算 <code>passed</code>、<code>failed</code> 或 <code>unanswered</code>。原因是计算逻辑已经属于 0069 的 summary helper；展示层如果重复计算，会制造第二套事实源，未来一旦统计规则变化就容易漂移。</p>
+      <p>报告不包含原始 <code>response</code> 文本，只展示 <code>missing</code> 和 <code>feedback</code>。这是教学项目里提前建立的隐私边界：复盘需要结果和原因，不一定需要传播用户自由文本。</p>
+      <table>
+        <thead><tr><th>层级</th><th>输入</th><th>输出</th><th>职责</th></tr></thead>
+        <tbody>
+          <tr><td>评分层</td><td>card + response</td><td>grade</td><td>判断锚点命中</td></tr>
+          <tr><td>汇总层</td><td>cards + responses</td><td>summary</td><td>统计训练结果</td></tr>
+          <tr><td>渲染层</td><td>summary</td><td>Markdown</td><td>展示复盘报告</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>def render_provider_metrics_runbook_grading_summary_markdown(
+    summary: dict[str, object],
+) -> str:
+    lines = [
+        "## Provider Metrics Runbook Grading Summary",
+        "",
+        "| total | answered | passed | failed | unanswered |",
+        "| ---: | ---: | ---: | ---: | ---: |",</code></pre>
+      <p>函数只接收 summary，说明它位于训练链路末端。<code>lines</code> 先放标题、空行、表头和对齐行，确保即使后续没有明细，也能形成合法 Markdown 报告骨架。</p>
+      <pre><code>(
+    "| {total} | {answered} | {passed} | {failed} | {unanswered} |"
+).format(
+    total=summary["total"],
+    answered=summary["answered"],
+    passed=summary["passed"],
+    failed=summary["failed"],
+    unanswered=summary["unanswered"],
+),</code></pre>
+      <p>总体统计直接读取 summary 字段，不重新推导。使用 <code>summary["total"]</code> 这种索引访问可以暴露上游契约错误；如果用 <code>get()</code> 静默给默认值，报告可能把损坏数据伪装成正常统计。</p>
+      <pre><code>"",
+"## Grade Details",
+"",
+"| card_id | answered | passed | missing | feedback |",
+"| --- | --- | --- | --- | --- |",
+]</code></pre>
+      <p>第二个表展示逐题明细。报告分成总体统计和题目明细两段，是为了让读者先看整体训练结果，再定位具体哪张题卡缺少哪些锚点。</p>
+      <pre><code>grades = summary["grades"]
+if not isinstance(grades, list):
+    raise ValueError("Grading summary grades must be a list.")</code></pre>
+      <p>这里做最小结构校验：<code>grades</code> 必须是列表。若上游把它传成字典或字符串，继续渲染会产生难读的错误报告，因此应立刻抛出可诊断异常。</p>
+      <pre><code>for grade in grades:
+    missing = grade["missing"]
+    if not isinstance(missing, list):
+        raise ValueError("Grading detail missing field must be a list.")</code></pre>
+      <p>每题的 <code>missing</code> 也必须是列表，因为它代表缺失锚点集合。若它是字符串，<code>", ".join(...)</code> 会按字符拆分，报告会变成错误但不易察觉。</p>
+      <pre><code>lines.append(
+    "| {card_id} | {answered} | {passed} | {missing} | {feedback} |".format(
+        card_id=grade["card_id"],
+        answered=grade["answered"],
+        passed=grade["passed"],
+        missing=", ".join(str(item) for item in missing) if missing else "-",
+        feedback=grade["feedback"],
+    )
+)
+return "\n".join(lines) + "\n"</code></pre>
+      <p>每个 grade 渲染成一行。<code>missing</code> 为空时显示 <code>-</code>，避免空单元格难以扫描。最后追加末尾换行，方便写入 Markdown 文件或拼接到其他文档。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>cards + responses
+  → summarize_provider_metrics_runbook_exercise_grades(...)
+  → summary dict
+  → render_provider_metrics_runbook_grading_summary_markdown(summary)
+  → Markdown report
+  → GitHub / PR / issue / learning record</code></pre>
+      <p>这条链路体现典型分层：评分函数处理单题，汇总函数处理批量统计，渲染函数只处理展示。任何展示格式变化都不应影响评分结果；任何评分规则变化都不应强迫 Markdown renderer 重写。</p>
+      <table>
+        <thead><tr><th>阶段</th><th>数据形态</th><th>可测试点</th><th>失败风险</th></tr></thead>
+        <tbody>
+          <tr><td>汇总</td><td><code>dict</code></td><td>统计字段</td><td>answered 与 failed 语义漂移</td></tr>
+          <tr><td>渲染</td><td><code>str</code></td><td>完整 Markdown 字符串</td><td>表头、顺序、换行漂移</td></tr>
+          <tr><td>传播</td><td>文档片段</td><td>链接和导航</td><td>报告被误当成数据源</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>Markdown report</td><td>是评分数据源</td><td>它只是 summary 的展示结果。</td></tr>
+          <tr><td>renderer</td><td>应该重新计算通过率</td><td>计算属于 summary helper，renderer 只读取字段。</td></tr>
+          <tr><td><code>missing</code></td><td>可以是字符串</td><td>必须是列表，表示缺失锚点集合。</td></tr>
+          <tr><td>空 missing</td><td>直接留空即可</td><td>显示 <code>-</code> 更利于阅读和测试。</td></tr>
+          <tr><td>原始 response</td><td>报告越完整越好</td><td>复盘报告应避免传播自由文本，降低隐私风险。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>后果</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>renderer 重新统计 passed</td><td>与 summary 规则漂移</td><td>只读取 summary 字段。</td></tr>
+          <tr><td>不校验 <code>grades</code> 类型</td><td>错误结构被渲染成垃圾文本</td><td>要求 <code>grades</code> 必须是 list。</td></tr>
+          <tr><td><code>missing</code> 是字符串</td><td>join 时按字符拆分</td><td>逐题校验 <code>missing</code> 必须是 list。</td></tr>
+          <tr><td>漏掉末尾换行</td><td>拼接文档时粘连</td><td>返回 <code>"\n".join(lines) + "\n"</code>。</td></tr>
+          <tr><td>feedback 含 <code>|</code></td><td>Markdown 表格列被破坏</td><td>教学样本受控；生产报告需要 Markdown 转义。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>报告格式</td><td>Markdown 表格</td><td>Dashboard、PDF、ticket、审计记录</td></tr>
+          <tr><td>数据来源</td><td>内存 summary</td><td>数据库批次、题库版本、用户记录</td></tr>
+          <tr><td>安全</td><td>不包含 response 原文</td><td>脱敏、权限控制、保留周期、下载审计</td></tr>
+          <tr><td>格式保护</td><td>完整字符串测试</td><td>schema 校验、快照测试、渲染回归测试</td></tr>
+          <tr><td>特殊字符</td><td>受控字段，暂不转义</td><td>必须处理 <code>|</code>、换行和 HTML 注入风险</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. 为什么 renderer 不重新计算 passed 和 failed？</summary><p class="answer">统计规则属于 summary helper。renderer 重算会产生第二套事实源，未来规则变化时容易漂移。</p></details>
+      <details><summary>2. 为什么 <code>grades</code> 必须校验为 list？</summary><p class="answer">逐题明细需要按列表迭代。若传入字典或字符串，报告结构会错误且难以诊断。</p></details>
+      <details><summary>3. 为什么 <code>missing</code> 为空时显示 <code>-</code>？</summary><p class="answer">空单元格不利于扫描，也不利于稳定测试。<code>-</code> 明确表示没有缺失锚点。</p></details>
+      <details><summary>4. 为什么报告不展示原始 response？</summary><p class="answer">原始作答可能包含敏感文本和噪声。复盘报告只需要评分结果、缺失项和反馈即可。</p></details>
+      <details><summary>5. 生产环境为什么要做 Markdown 转义？</summary><p class="answer">用户或系统字段可能包含 <code>|</code>、换行、HTML 片段等特殊内容，未转义会破坏表格或引入安全风险。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：展示层函数为什么应保持纯渲染？</summary><p class="answer">纯渲染函数只把结构化数据转换成文本，易测试、可复现，也避免把业务规则散落到展示层。</p></details>
+      <details><summary>面试题 2：Markdown 报告和结构化 summary 的关系是什么？</summary><p class="answer">summary 是机器可消费的数据契约，Markdown 是人类可读展示。报告可以由 summary 生成，但不能反向成为评分数据源。</p></details>
+      <details><summary>面试题 3：为什么完整字符串测试适合本节？</summary><p class="answer">本节的业务价值就是稳定报告格式。完整字符串测试能保护标题、表头、列顺序、空行和末尾换行。</p></details>
+      <details><summary>面试题 4：生产报告系统还要补哪些能力？</summary><p class="answer">需要字段转义、模板版本、权限控制、审计日志、下载记录、脱敏策略和渲染回归测试。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0069-provider-metrics-grading-summary.html">上一课：Provider Metrics Grading Summary</a>
+        <a href="../reference/0070-provider-metrics-grading-summary-markdown-cheatsheet.html">查看速查</a>
+        <a href="./0071-provider-metrics-grading-summary-validation.html">下一课：Provider Metrics Grading Summary Validation</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

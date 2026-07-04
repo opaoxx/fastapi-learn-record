@@ -269,6 +269,220 @@ def build_provider_metrics_runbook_findings(
     return findings
 
 
+def render_provider_metrics_runbook_findings_markdown(
+    findings: list[dict[str, object]],
+) -> str:
+    lines = [
+        "| outcome | count | severity | finding | next_action |",
+        "| --- | ---: | --- | --- | --- |",
+    ]
+    for finding in findings:
+        lines.append(
+            "| {outcome} | {count} | {severity} | {finding_text} | {next_action} |".format(
+                outcome=finding["outcome"],
+                count=finding["count"],
+                severity=finding["severity"],
+                finding_text=finding["finding"],
+                next_action=finding["next_action"],
+            )
+        )
+    return "\n".join(lines) + "\n"
+
+
+def build_provider_metrics_runbook_exercise_cards(
+    findings: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    cards = []
+    for index, finding in enumerate(findings, start=1):
+        cards.append(
+            {
+                "id": f"provider-metrics-runbook-{index}",
+                "prompt": (
+                    "Outcome {outcome} has count {count}. What should you check next?"
+                ).format(
+                    outcome=finding["outcome"],
+                    count=finding["count"],
+                ),
+                "expected_severity": finding["severity"],
+                "expected_next_action": finding["next_action"],
+                "answer": (
+                    "{finding_text} Next action: {next_action}"
+                ).format(
+                    finding_text=finding["finding"],
+                    next_action=finding["next_action"],
+                ),
+            }
+        )
+    return cards
+
+
+def render_provider_metrics_runbook_exercise_answer_key(
+    cards: list[dict[str, object]],
+) -> str:
+    lines = []
+    for card in cards:
+        lines.append(f"## {card['id']}")
+        lines.append("")
+        lines.append(f"Prompt: {card['prompt']}")
+        lines.append(f"Expected severity: {card['expected_severity']}")
+        lines.append(f"Answer: {card['answer']}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def grade_provider_metrics_runbook_exercise_answer(
+    card: dict[str, object],
+    response: str,
+) -> dict[str, object]:
+    normalized_response = response.casefold()
+    expected_severity = str(card["expected_severity"])
+    expected_next_action = str(card["expected_next_action"])
+    severity_matched = expected_severity.casefold() in normalized_response
+    next_action_matched = expected_next_action.casefold() in normalized_response
+    missing = []
+    if not severity_matched:
+        missing.append("expected_severity")
+    if not next_action_matched:
+        missing.append("expected_next_action")
+    passed = not missing
+    return {
+        "card_id": card["id"],
+        "severity_matched": severity_matched,
+        "next_action_matched": next_action_matched,
+        "passed": passed,
+        "missing": missing,
+        "feedback": (
+            "Answer includes the expected severity and next action."
+            if passed
+            else "Missing: {items}.".format(items=", ".join(missing))
+        ),
+    }
+
+
+def summarize_provider_metrics_runbook_exercise_grades(
+    cards: list[dict[str, object]],
+    responses_by_card_id: dict[str, str],
+) -> dict[str, object]:
+    grades = []
+    answered = 0
+    for card in cards:
+        card_id = str(card["id"])
+        if card_id in responses_by_card_id:
+            answered += 1
+        grade = grade_provider_metrics_runbook_exercise_answer(
+            card,
+            responses_by_card_id.get(card_id, ""),
+        )
+        grade["answered"] = card_id in responses_by_card_id
+        grades.append(grade)
+    passed = sum(1 for grade in grades if grade["passed"])
+    total = len(cards)
+    return {
+        "total": total,
+        "answered": answered,
+        "passed": passed,
+        "failed": total - passed,
+        "unanswered": total - answered,
+        "grades": grades,
+    }
+
+
+def validate_provider_metrics_runbook_grading_summary(
+    summary: dict[str, object],
+) -> dict[str, object]:
+    errors = []
+    numeric_fields = ["total", "answered", "passed", "failed", "unanswered"]
+    for field in numeric_fields:
+        if field not in summary:
+            errors.append(f"Missing summary field: {field}.")
+        elif not isinstance(summary[field], int):
+            errors.append(f"Summary field must be an integer: {field}.")
+
+    grades = summary.get("grades")
+    if not isinstance(grades, list):
+        errors.append("Summary field must be a list: grades.")
+    else:
+        for index, grade in enumerate(grades, start=1):
+            if not isinstance(grade, dict):
+                errors.append(f"Grade #{index} must be a dictionary.")
+                continue
+            for field in ["card_id", "answered", "passed", "missing", "feedback"]:
+                if field not in grade:
+                    errors.append(f"Grade #{index} missing field: {field}.")
+            if "answered" in grade and not isinstance(grade["answered"], bool):
+                errors.append(f"Grade #{index} field must be a boolean: answered.")
+            if "passed" in grade and not isinstance(grade["passed"], bool):
+                errors.append(f"Grade #{index} field must be a boolean: passed.")
+            if "missing" in grade and not isinstance(grade["missing"], list):
+                errors.append(f"Grade #{index} field must be a list: missing.")
+
+    if all(field in summary and isinstance(summary[field], int) for field in numeric_fields):
+        total = summary["total"]
+        answered = summary["answered"]
+        passed = summary["passed"]
+        failed = summary["failed"]
+        unanswered = summary["unanswered"]
+        if total < 0 or answered < 0 or passed < 0 or failed < 0 or unanswered < 0:
+            errors.append("Summary counts must be non-negative.")
+        if answered > total:
+            errors.append("Summary answered count cannot exceed total.")
+        if passed > total:
+            errors.append("Summary passed count cannot exceed total.")
+        if failed != total - passed:
+            errors.append("Summary failed count must equal total - passed.")
+        if unanswered != total - answered:
+            errors.append("Summary unanswered count must equal total - answered.")
+        if isinstance(grades, list) and total != len(grades):
+            errors.append("Summary total must equal the number of grades.")
+
+    return {
+        "valid": not errors,
+        "errors": errors,
+    }
+
+
+def render_provider_metrics_runbook_grading_summary_markdown(
+    summary: dict[str, object],
+) -> str:
+    lines = [
+        "## Provider Metrics Runbook Grading Summary",
+        "",
+        "| total | answered | passed | failed | unanswered |",
+        "| ---: | ---: | ---: | ---: | ---: |",
+        (
+            "| {total} | {answered} | {passed} | {failed} | {unanswered} |"
+        ).format(
+            total=summary["total"],
+            answered=summary["answered"],
+            passed=summary["passed"],
+            failed=summary["failed"],
+            unanswered=summary["unanswered"],
+        ),
+        "",
+        "## Grade Details",
+        "",
+        "| card_id | answered | passed | missing | feedback |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    grades = summary["grades"]
+    if not isinstance(grades, list):
+        raise ValueError("Grading summary grades must be a list.")
+    for grade in grades:
+        missing = grade["missing"]
+        if not isinstance(missing, list):
+            raise ValueError("Grading detail missing field must be a list.")
+        lines.append(
+            "| {card_id} | {answered} | {passed} | {missing} | {feedback} |".format(
+                card_id=grade["card_id"],
+                answered=grade["answered"],
+                passed=grade["passed"],
+                missing=", ".join(str(item) for item in missing) if missing else "-",
+                feedback=grade["feedback"],
+            )
+        )
+    return "\n".join(lines) + "\n"
+
+
 def escape_prometheus_label_value(value: object) -> str:
     return str(value).replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
 

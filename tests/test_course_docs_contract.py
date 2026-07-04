@@ -101,6 +101,13 @@ def test_rebuilt_foundation_lessons_use_exam_review_structure() -> None:
         Path("lessons/0062-provider-metrics-runbook-checklist.html"),
         Path("lessons/0063-provider-metrics-scenario-fixtures.html"),
         Path("lessons/0064-provider-metrics-runbook-findings.html"),
+        Path("lessons/0065-provider-metrics-findings-markdown-report.html"),
+        Path("lessons/0066-provider-metrics-runbook-exercise-cards.html"),
+        Path("lessons/0067-provider-metrics-exercise-answer-key.html"),
+        Path("lessons/0068-provider-metrics-exercise-grading-anchors.html"),
+        Path("lessons/0069-provider-metrics-grading-summary.html"),
+        Path("lessons/0070-provider-metrics-grading-summary-markdown.html"),
+        Path("lessons/0071-provider-metrics-grading-summary-validation.html"),
     ]
     required_sections = [
         "① 本节核心知识框架",
@@ -146,6 +153,13 @@ def test_provider_metrics_documentation_index_links_learning_and_tests() -> None
     assert "../lessons/0062-provider-metrics-runbook-checklist.html" in parser.links
     assert "../lessons/0063-provider-metrics-scenario-fixtures.html" in parser.links
     assert "../lessons/0064-provider-metrics-runbook-findings.html" in parser.links
+    assert "../lessons/0065-provider-metrics-findings-markdown-report.html" in parser.links
+    assert "../lessons/0066-provider-metrics-runbook-exercise-cards.html" in parser.links
+    assert "../lessons/0067-provider-metrics-exercise-answer-key.html" in parser.links
+    assert "../lessons/0068-provider-metrics-exercise-grading-anchors.html" in parser.links
+    assert "../lessons/0069-provider-metrics-grading-summary.html" in parser.links
+    assert "../lessons/0070-provider-metrics-grading-summary-markdown.html" in parser.links
+    assert "../lessons/0071-provider-metrics-grading-summary-validation.html" in parser.links
     assert "../tests/test_provider_http.py" in parser.links
     assert "../tests/test_openapi_contract.py" in parser.links
 
