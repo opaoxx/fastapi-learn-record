@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lesson 0007 - SQLite and SQLModel Basics</title>
+  <title>Lesson 0007 - SQLite 与 SQLModel 持久化基础</title>
   <link rel="stylesheet" href="../assets/course.css">
 </head>
 <body>
@@ -19,53 +19,37 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0007</p>
-      <h1>SQLite 和 SQLModel：把数据从内存搬进数据库</h1>
-      <p class="lead">前面的商品数据存在 Python 字典里，服务重启就会回到初始状态。本节学习数据库的最小闭环：SQLite 文件、SQLModel 表模型、engine、建表和种子数据。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>SQLite 与 SQLModel：从内存变量到关系型持久化</h1>
+      <p class="lead">本节把“数据为什么要进数据库”讲透：SQLite 提供本地关系型存储，SQLModel 把 Python 类型、Pydantic 校验和 SQLAlchemy ORM 映射合并到同一套模型体系中。理解这一节，后续 CRUD、测试隔离、任务状态持久化才有底层依据。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解为什么后端项目需要数据库，而不是只用内存变量。</li>
-        <li>理解 SQLite 是一个适合入门的本地文件数据库。</li>
-        <li>理解 SQLModel 如何把 Python 类映射成数据库表。</li>
-        <li>看懂 <code>database.py</code> 里创建 engine、建表、初始化数据的流程。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>持久化基础
+├─ 内存变量：进程内状态，重启即丢失
+├─ SQLite：单文件关系数据库，适合教学、本地开发、轻量项目
+├─ SQLModel
+│  ├─ SQLModel 基类：兼具 Pydantic 与 SQLAlchemy 能力
+│  ├─ table=True：声明数据库表模型
+│  ├─ Field(primary_key=True)：主键列
+│  └─ Field(index=True)：索引提示
+├─ Engine：数据库连接工厂
+├─ metadata.create_all(engine)：按模型元数据建表
+├─ seed_items：空库初始化样例数据
+└─ lifespan：应用启动阶段执行建表和种子数据</code></pre>
     </section>
 
     <section>
-      <h2>1. 为什么需要数据库</h2>
-      <p>内存字典很适合教学，但它有一个致命问题：数据只活在当前 Python 进程里。你创建一个商品，重启服务后它就消失了。</p>
-      <p>数据库解决的是“持久化”问题：把数据保存到进程外部。服务重启、代码重载、电脑关机后，只要数据库文件还在，数据就还在。</p>
-      <div class="callout">
-        <p><strong>普通后端视角：</strong>用户、商品、订单、评论都应该放在数据库里。<br><strong>AI 服务视角：</strong>推理任务、上传文件、模型调用记录、向量索引元数据也需要持久化。</p>
-      </div>
+      <h2>② 核心概念底层原理</h2>
+      <p><strong>持久化的本质是把状态移出 Python 进程。</strong>内存字典只存在于当前解释器进程；热重载、重启、崩溃都会丢失。数据库把状态写入独立存储介质，应用进程只负责读写它。</p>
+      <p><strong>SQLite 是嵌入式关系数据库。</strong>它不需要单独数据库服务，数据库就是一个本地文件。它支持 SQL、事务、表、索引和约束，适合教学和小型工具；但高并发写入、分布式部署、复杂权限不是它的强项。</p>
+      <p><strong>SQLModel 不是“另一个 Pydantic”。</strong>它建立在 Pydantic 和 SQLAlchemy 之上：Pydantic 负责类型与数据校验，SQLAlchemy 负责 ORM 映射和 SQL 执行，SQLModel 用更接近 FastAPI 的类型写法把两者合并。</p>
+      <p><strong>表模型与请求/响应模型要区分。</strong><code>Item</code> 是数据库表模型，携带 <code>table=True</code> 和主键；<code>ItemCreate</code> 是输入模型；<code>ItemRead</code> 是输出模型。把三者混成一个模型会导致客户端能提交不该提交的字段，也容易泄漏内部字段。</p>
     </section>
 
     <section>
-      <h2>2. SQLite 是什么</h2>
-      <p>SQLite 是一个轻量级关系数据库。它不需要单独启动数据库服务器，数据通常保存在一个本地 <code>.db</code> 文件里。FastAPI 官方 SQL 数据库教程也选择 SQLite 作为入门示例，因为它可以直接复制运行。</p>
-      <p>本项目会在 <code>first_api/first_api.db</code> 创建数据库文件。这个文件是运行产物，所以已经加入 <code>.gitignore</code>，通常不提交到 GitHub。</p>
-    </section>
-
-    <section>
-      <h2>3. SQLModel 是什么</h2>
-      <p>SQLModel 是 FastAPI 作者推出的数据库库，建立在 SQLAlchemy 和 Pydantic 之上。你可以先这样理解：</p>
-      <ul>
-        <li>Pydantic 负责数据校验和 API schema。</li>
-        <li>SQLAlchemy 负责和 SQL 数据库交互。</li>
-        <li>SQLModel 把两者结合起来，让一个 Python 类既像 API 模型，也能映射数据库表。</li>
-      </ul>
-      <p>例如现在的表模型：</p>
-      <pre><code>class Item(ItemBase, table=True):
-    id: int | None = Field(default=None, primary_key=True)</code></pre>
-      <p><code>table=True</code> 是关键：它告诉 SQLModel，这个类不仅是数据模型，还对应数据库里的一张表。</p>
-    </section>
-
-    <section>
-      <h2>4. 三类 Item 模型</h2>
-      <p>现在 <code>schemas.py</code> 里不再只有一个 <code>Item</code>，而是拆成几层：</p>
+      <h2>③ 全套代码逐行精读解析</h2>
       <pre><code>class ItemBase(SQLModel):
     name: str
     category: str = Field(index=True)
@@ -73,90 +57,103 @@
     in_stock: bool
 
 class Item(ItemBase, table=True):
-    id: int | None = Field(default=None, primary_key=True)
-
-class ItemCreate(ItemBase):
-    category: ItemCategory = "course"
-
-class ItemRead(ItemBase):
-    id: int</code></pre>
-      <p>这样拆是为了区分不同场景：</p>
+    id: int | None = Field(default=None, primary_key=True)</code></pre>
       <ul>
-        <li><code>ItemBase</code>：公共字段。</li>
-        <li><code>Item</code>：数据库表模型，有主键 <code>id</code>。</li>
-        <li><code>ItemCreate</code>：创建商品时客户端能提交的字段。</li>
-        <li><code>ItemRead</code>：接口返回给客户端的字段。</li>
+        <li><code>ItemBase(SQLModel)</code>：抽出商品公共字段，避免表模型、创建模型、读取模型重复声明。</li>
+        <li><code>name: str</code>：商品名称列。当前表模型不放长度约束，创建模型里会进一步限制。</li>
+        <li><code>category: str = Field(index=True)</code>：数据库中按字符串保存分类，并声明索引意图。若经常按分类查询，索引能减少扫描成本。</li>
+        <li><code>price: float = Field(ge=0)</code>：非负约束在模型层防止非法价格进入数据库。</li>
+        <li><code>in_stock: bool</code>：库存状态，映射为数据库布尔兼容类型。</li>
+        <li><code>Item(..., table=True)</code>：告诉 SQLModel 这个类对应真实数据库表。没有 <code>table=True</code>，<code>create_all</code> 不会为它建表。</li>
+        <li><code>id: int | None</code>：创建前为 <code>None</code>，提交后由数据库生成整数主键。</li>
+        <li><code>primary_key=True</code>：声明主键列。没有主键，ORM 很难稳定追踪对象身份。</li>
       </ul>
-      <p>注意：数据库表里的 <code>category</code> 用普通字符串保存，因为数据库列需要明确的 SQL 类型；创建请求里仍然用 <code>Literal["book", "course", "tool"]</code> 做输入校验。</p>
-    </section>
 
-    <section>
-      <h2>5. database.py 逐段解释</h2>
       <pre><code>DATABASE_URL = f"sqlite:///{Path(__file__).with_name('first_api.db')}"
 engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False},
 )</code></pre>
-      <p><code>DATABASE_URL</code> 告诉 SQLModel 连接哪个数据库。<code>sqlite:///...</code> 表示使用 SQLite 文件。<code>engine</code> 可以理解成“数据库连接工厂”，后面所有 session 都通过它和数据库交流。</p>
-      <pre><code>def create_db_and_tables() -&gt; None:
+      <ul>
+        <li><code>Path(__file__).with_name('first_api.db')</code>：把数据库文件固定到 <code>first_api/first_api.db</code>，不依赖启动命令所在目录。</li>
+        <li><code>sqlite:///...</code>：SQLAlchemy 数据库 URL，三条斜杠表示本地文件路径。</li>
+        <li><code>create_engine(...)</code>：创建 engine。engine 不是一次查询连接，而是连接与方言配置入口。</li>
+        <li><code>check_same_thread=False</code>：SQLite 默认限制连接只在创建线程使用；FastAPI/TestClient 场景会跨线程访问，教学项目需要关闭该检查。生产不是靠这个解决并发，应使用合适数据库和连接池。</li>
+      </ul>
+
+      <pre><code>def create_db_and_tables() -> None:
     SQLModel.metadata.create_all(engine)
+    migrate_runtime_schema()
     with Session(engine) as session:
         seed_items(session)</code></pre>
-      <p><code>create_all</code> 会根据所有 <code>table=True</code> 的 SQLModel 模型创建数据库表。<code>seed_items</code> 会在表为空时放入三条初始商品数据。</p>
+      <ul>
+        <li><code>SQLModel.metadata</code>：收集所有 <code>table=True</code> 模型的表结构元数据。</li>
+        <li><code>create_all(engine)</code>：缺表则建表；已有表通常不会自动执行复杂迁移。</li>
+        <li><code>migrate_runtime_schema()</code>：教学项目里的轻量运行时迁移，用于补旧表字段；生产应使用 Alembic。</li>
+        <li><code>with Session(engine)</code>：打开短生命周期会话执行种子数据逻辑。</li>
+        <li><code>seed_items(session)</code>：空库插入三条样例，保证新手启动后 <code>GET /items</code> 有可观察结果。</li>
+      </ul>
     </section>
 
     <section>
-      <h2>6. 应用启动时初始化数据库</h2>
-      <p><code>main.py</code> 现在使用 lifespan：</p>
-      <pre><code>@asynccontextmanager
-async def lifespan(app: FastAPI) -&gt; AsyncGenerator[None, None]:
-    create_db_and_tables()
-    yield
-
-app = FastAPI(..., lifespan=lifespan)</code></pre>
-      <p>这表示应用启动时先创建表和初始化数据，然后再开始接收请求。后面的 <code>yield</code> 表示应用正常运行阶段。</p>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>应用启动
+  -> FastAPI lifespan 开始
+  -> create_db_and_tables()
+  -> SQLModel.metadata.create_all(engine)
+  -> SQLite 文件 first_api.db 不存在则创建
+  -> 根据 Item(table=True) 创建 item 表
+  -> migrate_runtime_schema() 补历史字段
+  -> seed_items() 检查是否已有 Item
+       ├─ 有数据：直接返回，避免重复插入
+       └─ 无数据：add_all 三条样例并 commit
+  -> 应用开始接收请求</code></pre>
     </section>
 
     <section>
-      <h2>7. 实验：观察数据库文件</h2>
-      <p>运行服务：</p>
-      <pre><code>.\.venv\Scripts\Activate.ps1
-fastapi dev first_api/main.py</code></pre>
-      <p>启动后，查看 <code>first_api/first_api.db</code> 是否出现。然后打开 <code>/docs</code> 测试：</p>
-      <pre><code>GET /items
-GET /items/2</code></pre>
-      <p>如果能返回商品，说明 FastAPI 已经从数据库读取数据，而不是从内存字典读取。</p>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <ul>
+        <li><strong>SQLite 文件 vs Python 文件：</strong><code>first_api.db</code> 是运行数据，不是源码；通常不提交 GitHub。</li>
+        <li><strong>Engine vs Session：</strong>engine 是连接工厂和数据库入口；Session 是一次工作单元，负责查询、追踪对象、提交事务。</li>
+        <li><strong>create_all vs migration：</strong><code>create_all</code> 适合首次建表；生产结构演进应使用迁移工具，而不是指望它自动改表。</li>
+        <li><strong>Field(index=True) vs 唯一约束：</strong>索引提高查询速度，不等于保证值唯一。唯一性需要 unique 约束或业务校验。</li>
+      </ul>
     </section>
 
-    <section class="practice">
-      <h2>8. 课堂练习</h2>
-      <p>请你回答两个问题：</p>
-      <ol>
-        <li>为什么 <code>first_api.db</code> 不适合提交到 GitHub？</li>
-        <li><code>Item</code> 和 <code>ItemCreate</code> 为什么不能简单合成一个模型？</li>
-      </ol>
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <ul>
+        <li><code>no such table: item</code>：未执行建表。解决：确认 lifespan 调用了 <code>create_db_and_tables()</code>，或测试里执行 <code>SQLModel.metadata.create_all(engine)</code>。</li>
+        <li><code>SQLite objects created in a thread...</code>：SQLite 线程检查冲突。解决：教学/TestClient 场景使用 <code>check_same_thread=False</code>。</li>
+        <li>样例数据重复：种子函数没有先检查已有数据。解决：像 <code>seed_items</code> 一样先查第一条记录。</li>
+        <li>数据库文件被提交：<code>.gitignore</code> 未忽略运行产物。解决：忽略 <code>*.db</code> 或具体数据库文件。</li>
+        <li>改了模型但表结构没变：<code>create_all</code> 不负责复杂迁移。解决：开发期重建本地库，生产用 Alembic。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <ul>
+        <li><strong>数据库选择：</strong>教学用 SQLite 降低门槛；生产常用 PostgreSQL/MySQL，支持并发、权限、备份、监控和高可用。</li>
+        <li><strong>迁移方案：</strong>教学可用 <code>create_all</code> 和轻量补字段；生产必须有版本化 migration。</li>
+        <li><strong>连接管理：</strong>教学 engine 配置简单；生产要考虑连接池、超时、事务隔离、慢查询和连接泄漏。</li>
+        <li><strong>数据初始化：</strong>教学 seed 样例数据；生产 seed 通常只用于基础字典、管理员初始化或迁移脚本。</li>
+      </ul>
     </section>
 
     <section class="checkpoint">
-      <h2>9. 小测：先回忆再展开</h2>
-      <details>
-        <summary>1. <code>table=True</code> 表示什么？</summary>
-        <p class="answer">它表示这个 SQLModel 类会映射成数据库表。</p>
-      </details>
-      <details>
-        <summary>2. <code>engine</code> 可以先理解成什么？</summary>
-        <p class="answer">可以理解成数据库连接工厂，负责让 session 和数据库建立联系。</p>
-      </details>
-      <details>
-        <summary>3. SQLite 为什么适合入门？</summary>
-        <p class="answer">因为它不需要单独数据库服务器，数据保存在一个本地文件里，运行和学习成本低。</p>
-      </details>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details><summary>1. <code>table=True</code> 的作用是什么？</summary><p class="answer">让 SQLModel 把该模型纳入表元数据，并在 create_all 时创建对应数据库表。</p></details>
+      <details><summary>2. 为什么 <code>id</code> 类型是 <code>int | None</code>？</summary><p class="answer">对象创建前数据库还没生成主键，所以可能是 None；提交刷新后才有整数 id。</p></details>
+      <details><summary>3. 为什么 SQLite 适合教学但不等于生产首选？</summary><p class="answer">它零部署、单文件、易运行，但高并发写入、权限治理和分布式部署能力有限。</p></details>
     </section>
 
-    <section>
-      <h2>10. 本节总结</h2>
-      <p>数据库让数据离开内存，获得持久化能力。SQLite 是适合入门的本地数据库，SQLModel 让 Python 类型、Pydantic 校验和 SQL 表结构结合起来。下一节会把接口真正改成数据库 CRUD。</p>
-      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/sql-databases/">FastAPI SQL Databases</a>、<a href="https://sqlmodel.tiangolo.com/tutorial/fastapi/simple-hero-api/">SQLModel Simple Hero API</a>。</p>
+    <section class="practice">
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details><summary>1. ORM 解决了什么问题？</summary><p class="answer">ORM 把数据库表和 Python 对象建立映射，让业务代码通过对象操作数据，同时由 ORM 生成和执行 SQL。</p></details>
+      <details><summary>2. SQLModel 和 SQLAlchemy、Pydantic 的关系是什么？</summary><p class="answer">SQLModel 基于 SQLAlchemy 和 Pydantic，既能做 ORM 表映射，也能利用类型注解和数据校验能力。</p></details>
+      <details><summary>3. 为什么数据库迁移不能只靠 <code>create_all</code>？</summary><p class="answer"><code>create_all</code> 主要负责缺表建表，不可靠处理删列、改列、迁移数据等结构演进。</p></details>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/sql-databases/">FastAPI SQL Databases</a>、<a href="https://sqlmodel.tiangolo.com/tutorial/">SQLModel Tutorial</a>。</p>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

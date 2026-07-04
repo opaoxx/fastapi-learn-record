@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lesson 0012 - API Key Authentication</title>
+  <title>Lesson 0012 - API Key 鉴权</title>
   <link rel="stylesheet" href="../assets/course.css">
 </head>
 <body>
@@ -19,75 +19,71 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0012</p>
-      <h1>API Key 鉴权：保护会修改数据的接口</h1>
-      <p class="lead">读接口可以公开，但创建、更新、删除通常不能让任何人随便调用。本节用 <code>X-API-Key</code> 请求头和 <code>Depends</code> 做一个入门级 API Key 鉴权。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>API Key 鉴权：用请求头和依赖注入保护状态变更接口</h1>
+      <p class="lead">本节讲清楚最小鉴权链路：客户端在 <code>X-API-Key</code> 请求头携带密钥，FastAPI 的 <code>APIKeyHeader</code> 提取凭据，<code>require_api_key</code> 与 Settings 中的服务端密钥比较，写接口通过 <code>Depends</code> 强制执行检查。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>API Key 鉴权
+├─ 威胁模型：未授权调用会创建/修改/删除数据，或消耗 AI 服务额度
+├─ 请求头：X-API-Key: dev-secret-key
+├─ APIKeyHeader
+│  ├─ name="X-API-Key"
+│  ├─ scheme_name="ApiKeyAuth"
+│  ├─ auto_error=False
+│  └─ OpenAPI security scheme
+├─ require_api_key
+│  ├─ Depends(api_key_header)：读取客户端 key
+│  ├─ Depends(get_settings)：读取服务端 key
+│  └─ 不匹配 -> 401
+├─ 路由保护：dependencies=[Depends(require_api_key)]
+└─ 测试保护：成功路径带 headers，失败路径断言 401</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p><strong>鉴权回答“你是谁/你是否有凭据”。</strong>API Key 是最简单的共享密钥方案：客户端和服务端都知道同一个 secret，请求时客户端证明自己知道它。</p>
+      <p><strong>认证与授权不要混淆。</strong>当前 API Key 只证明调用者持有密钥，属于认证雏形；它没有用户身份、角色、资源权限。生产系统还需要授权：这个调用者能不能改这条资源。</p>
+      <p><strong>请求头比 query 更适合放凭据。</strong>query 会进入 URL、浏览器历史、代理日志和分享链接；header 更符合认证凭据的传输习惯。即便如此，生产也必须使用 HTTPS。</p>
+      <p><strong>依赖放在装饰器 dependencies 中表示“执行检查但不使用返回值”。</strong><code>require_api_key</code> 成功时返回 <code>None</code>，路径函数不需要它的结果，只需要它失败时阻断请求。</p>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>api_key_header = APIKeyHeader(
+    name="X-API-Key",
+    scheme_name="ApiKeyAuth",
+    description="Local learning API key required by protected write, file, and task endpoints.",
+    auto_error=False,
+)</code></pre>
       <ul>
-        <li>理解鉴权和接口保护的基本目的。</li>
-        <li>理解请求头 <code>X-API-Key</code> 如何携带密钥。</li>
-        <li>看懂 <code>APIKeyHeader</code> 和 <code>require_api_key</code>。</li>
-        <li>理解为什么写接口需要保护，读接口暂时保持公开。</li>
+        <li><code>APIKeyHeader</code>：FastAPI 安全工具，负责从请求头读取 API Key，并生成 OpenAPI 安全方案。</li>
+        <li><code>name="X-API-Key"</code>：约定客户端必须发送的 header 名。</li>
+        <li><code>scheme_name="ApiKeyAuth"</code>：OpenAPI 中安全方案的名字，影响 <code>/docs</code> Authorize 面板。</li>
+        <li><code>description=...</code>：说明保护范围，帮助 GitHub 读者理解哪些接口需要 key。</li>
+        <li><code>auto_error=False</code>：缺少 header 时不由工具自动报错，而是交给 <code>require_api_key</code> 返回统一错误。</li>
       </ul>
-    </section>
 
-    <section>
-      <h2>1. 为什么需要 API Key</h2>
-      <p>如果没有保护，任何人都可以调用：</p>
-      <pre><code>POST /items
-PATCH /items/{item_id}
-DELETE /items/{item_id}</code></pre>
-      <p>这意味着别人可以随便创建、改动或删除你的数据。对于 AI 服务也一样：如果推理接口不保护，别人可能滥用你的模型额度和 API Key。</p>
-      <p>API Key 是最简单的一类鉴权方式：客户端在请求里带一个约定好的密钥，后端检查它是否正确。</p>
-    </section>
-
-    <section>
-      <h2>2. 请求头是什么</h2>
-      <p>HTTP 请求除了 URL、方法、请求体，还有请求头。请求头适合携带元信息，例如认证凭据：</p>
-      <pre><code>POST /items
-X-API-Key: dev-secret-key
-Content-Type: application/json
-
-{
-  "name": "Protected Item",
-  "category": "book",
-  "price": 10,
-  "in_stock": true
-}</code></pre>
-      <p>FastAPI 官方 Header 文档说明，读取请求头要使用 <code>Header</code> 或安全工具，而不能把它当普通查询参数。</p>
-    </section>
-
-    <section>
-      <h2>3. APIKeyHeader</h2>
-      <pre><code>api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)</code></pre>
-      <p><code>APIKeyHeader</code> 来自 FastAPI 的 security 工具。它会从请求头里提取 <code>X-API-Key</code>，并且能集成到 OpenAPI 文档中。</p>
-      <p><code>auto_error=False</code> 表示缺少 header 时不要让工具自动返回错误，而是交给我们自己的 <code>require_api_key</code> 统一处理。</p>
-    </section>
-
-    <section>
-      <h2>4. require_api_key 逐行讲解</h2>
       <pre><code>def require_api_key(
     api_key: Annotated[str | None, Depends(api_key_header)],
     settings: Annotated[Settings, Depends(get_settings)],
-) -&gt; None:
+) -> None:
     if api_key != settings.api_key:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing API key.",
         )</code></pre>
-      <p>这里用到了两个依赖：</p>
       <ul>
-        <li><code>api_key_header</code>：从请求头读取客户端传来的 key。</li>
-        <li><code>get_settings</code>：读取服务端配置里的正确 key。</li>
+        <li><code>api_key</code>：客户端传来的 header 值，缺失时是 <code>None</code>。</li>
+        <li><code>Depends(api_key_header)</code>：把“从 header 取 key”的动作声明成依赖。</li>
+        <li><code>settings</code>：服务端配置对象，包含正确的 <code>api_key</code>。</li>
+        <li><code>api_key != settings.api_key</code>：统一处理缺失和错误 key。</li>
+        <li><code>HTTP_401_UNAUTHORIZED</code>：认证失败。不要用 422，因为请求格式可能完全合法，只是凭据不对。</li>
+        <li><code>detail</code>：错误信息保持简洁，不区分“缺失”还是“错误”，避免泄漏过多认证判断细节。</li>
       </ul>
-      <p>如果两者不相等，就返回 <code>401 Unauthorized</code>。这表示请求没有通过身份凭据检查。</p>
-    </section>
 
-    <section>
-      <h2>5. 把鉴权挂到写接口上</h2>
       <pre><code>@router.post(
     "",
     response_model=ItemRead,
@@ -96,79 +92,76 @@ Content-Type: application/json
 )
 def create_item(...):
     ...</code></pre>
-      <p>这里把依赖放在路径装饰器的 <code>dependencies</code> 里。这样 FastAPI 会执行 <code>require_api_key</code>，但不会把它的返回值传给路径函数。</p>
-      <p>这很适合“只需要执行检查，不需要在函数里使用结果”的场景。现在 <code>POST</code>、<code>PATCH</code>、<code>DELETE</code> 都被保护了，<code>GET</code> 仍然公开。</p>
+      <ul>
+        <li><code>dependencies=[...]</code>：注册前置检查，不把返回值传给路径函数。</li>
+        <li>同样模式用于 <code>PATCH</code> 和 <code>DELETE</code>，因为它们都会改变数据。</li>
+        <li><code>GET</code> 暂时公开，是教学取舍：读接口方便学习，写接口先保护。</li>
+      </ul>
     </section>
 
     <section>
-      <h2>6. 实验：无 key 请求</h2>
+      <h2>④ 核心机制运行全流程拆解</h2>
       <pre><code>POST /items
-{
-  "name": "No Key Item",
-  "category": "book",
-  "price": 5,
-  "in_stock": true
-}</code></pre>
-      <p>不带 <code>X-API-Key</code> 时应该返回 <code>401</code>。</p>
+Headers:
+  X-API-Key: dev-secret-key
+Body:
+  {...}
+
+请求进入
+  -> 匹配 POST /items
+  -> 执行 dependencies=[Depends(require_api_key)]
+  -> api_key_header 从请求头读取 X-API-Key
+  -> get_settings 读取服务端 Settings.api_key
+  -> 比较两者
+       ├─ 不相等：raise HTTPException(401)，create_item 不执行
+       └─ 相等：继续解析 ItemCreate、Session，执行 create_item
+  -> 成功返回 201</code></pre>
     </section>
 
     <section>
-      <h2>7. 实验：带 key 请求</h2>
-      <p>在 <code>/docs</code> 里可以点击 Authorize，填写 API Key；或者在 HTTP 请求里加 header：</p>
-      <pre><code>X-API-Key: dev-secret-key</code></pre>
-      <p>然后再请求：</p>
-      <pre><code>POST /items
-{
-  "name": "Protected Item",
-  "category": "book",
-  "price": 10,
-  "in_stock": true
-}</code></pre>
-      <p>如果 key 正确，应该返回 <code>201</code>。</p>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <ul>
+        <li><strong>401 vs 403：</strong>401 通常表示认证凭据缺失或无效；403 表示已认证但无权限。当前场景用 401。</li>
+        <li><strong>API Key vs JWT：</strong>API Key 是共享静态密钥；JWT 可携带用户身份、过期时间和声明，更适合用户级认证。</li>
+        <li><strong>Header vs Query：</strong>认证凭据应放 header；query 更容易被日志和分享链接泄漏。</li>
+        <li><strong>鉴权依赖 vs 中间件：</strong>依赖可按路由选择性启用；中间件更适合全局横切逻辑。</li>
+      </ul>
     </section>
 
     <section>
-      <h2>8. 测试也要带 key</h2>
-      <pre><code>API_KEY_HEADERS = {"X-API-Key": "dev-secret-key"}
-
-created = client.post(
-    "/items",
-    headers=API_KEY_HEADERS,
-    json={...},
-)</code></pre>
-      <p>第 10 课的测试现在也升级了：成功创建、更新、删除时要带正确 key；另外新增了“不带 key 创建商品返回 401”的测试。</p>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <ul>
+        <li>写接口返回 401：缺少或写错 <code>X-API-Key</code>。解决：带上当前 Settings 中的 key。</li>
+        <li><code>/docs</code> 中请求仍 401：没有点击 Authorize 或 header 未附加。解决：在 Swagger UI 的 Authorize 填入 key。</li>
+        <li>把 key 写进源码：安全风险。解决：使用 <code>.env</code> / 环境变量。</li>
+        <li>测试成功路径失败：忘记 <code>headers=API_KEY_HEADERS</code>。</li>
+        <li>所有接口都被保护导致学习不便：依赖挂载范围过大。解决：只给写接口或需要保护的 router 加依赖。</li>
+      </ul>
     </section>
 
-    <section class="practice">
-      <h2>9. 课堂练习</h2>
-      <p>请你完成：</p>
-      <ol>
-        <li>不带 <code>X-API-Key</code> 调用 <code>POST /items</code>，观察 <code>401</code>。</li>
-        <li>带错误 key 调用，观察 <code>401</code>。</li>
-        <li>带正确 key 调用，观察 <code>201</code>。</li>
-      </ol>
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <ul>
+        <li><strong>密钥强度：</strong>教学 key 简短固定；生产 key 应随机、高熵、可轮换。</li>
+        <li><strong>传输安全：</strong>教学本地 HTTP；生产必须 HTTPS，避免 header 被窃听。</li>
+        <li><strong>权限模型：</strong>教学只有一个共享 key；生产要有用户、角色、资源权限、审计日志。</li>
+        <li><strong>滥用防护：</strong>生产还需要限流、配额、IP/用户维度监控，尤其 AI 接口会消耗真实成本。</li>
+      </ul>
     </section>
 
     <section class="checkpoint">
-      <h2>10. 小测：先回忆再展开</h2>
-      <details>
-        <summary>1. API Key 应该放在代码里还是配置里？</summary>
-        <p class="answer">应该放在配置或环境变量里，不能把真实密钥硬编码并提交。</p>
-      </details>
-      <details>
-        <summary>2. 为什么写接口比读接口更需要先保护？</summary>
-        <p class="answer">因为写接口会改变数据，误用或滥用的破坏性更大。</p>
-      </details>
-      <details>
-        <summary>3. <code>401</code> 和 <code>422</code> 的区别是什么？</summary>
-        <p class="answer"><code>401</code> 是认证失败，<code>422</code> 是请求数据不符合参数或模型校验。</p>
-      </details>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details><summary>1. 为什么 API Key 放在 header 而不是 query？</summary><p class="answer">query 容易进入 URL 历史、代理日志和分享链接，header 更适合携带认证凭据。</p></details>
+      <details><summary>2. <code>auto_error=False</code> 的作用是什么？</summary><p class="answer">让缺失 key 的情况交给自定义依赖统一处理，而不是由安全工具直接返回默认错误。</p></details>
+      <details><summary>3. 为什么写接口需要优先保护？</summary><p class="answer">写接口会改变数据或消耗资源，未授权调用的破坏性比只读接口更大。</p></details>
     </section>
 
-    <section>
-      <h2>11. 本节总结</h2>
-      <p>API Key 是最小可用的接口保护方式。客户端通过请求头发送 key，后端通过 <code>APIKeyHeader</code> 提取，再和 Settings 中的服务端 key 比较。真实生产系统通常还会用 OAuth2、JWT、权限角色、速率限制等更完整的安全方案，但 API Key 是入门 AI 服务保护的好起点。</p>
-      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/reference/security/">FastAPI Security Tools</a>、<a href="https://fastapi.tiangolo.com/tutorial/security/">FastAPI Security</a>、<a href="https://fastapi.tiangolo.com/tutorial/header-params/">FastAPI Header Parameters</a>。</p>
+    <section class="practice">
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details><summary>1. API Key 鉴权的优缺点是什么？</summary><p class="answer">优点是简单、易接入；缺点是共享静态密钥难表达用户身份和细粒度权限，泄漏后风险大。</p></details>
+      <details><summary>2. 401 和 403 如何区分？</summary><p class="answer">401 表示认证凭据缺失或无效；403 表示凭据有效但没有访问该资源的权限。</p></details>
+      <details><summary>3. AI 服务接口为什么必须做鉴权和限流？</summary><p class="answer">AI 调用有真实成本和滥用风险，未保护接口可能导致额度耗尽、账单异常和服务不可用。</p></details>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/reference/security/">FastAPI Security Reference</a>、<a href="https://fastapi.tiangolo.com/tutorial/security/">FastAPI Security Tutorial</a>。</p>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

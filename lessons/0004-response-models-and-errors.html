@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lesson 0004 - Response Models and Errors</title>
+  <title>Lesson 0004 - 响应模型、状态码与错误处理</title>
   <link rel="stylesheet" href="../assets/course.css">
 </head>
 <body>
@@ -19,157 +19,148 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0004</p>
-      <h1>响应模型、状态码和错误处理：接口要会说清楚结果</h1>
-      <p class="lead">请求进来以后，后端不仅要“算出结果”，还要用稳定的响应结构和正确的 HTTP 状态码告诉调用者发生了什么。这是后端工程感很重要的一步。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>响应模型、状态码与错误处理：API 对外契约的另一半</h1>
+      <p class="lead">请求模型约束输入，响应模型约束输出；状态码表达结果类别，错误响应表达失败原因。本节从当前 <code>items</code> CRUD 接口出发，掌握后端项目里最容易被新手写乱的响应边界。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>响应与错误
+├─ response_model：成功响应结构契约
+├─ HTTP status code：请求结果类别
+│  ├─ 200 OK：查询/更新成功
+│  ├─ 201 Created：创建成功
+│  ├─ 204 No Content：删除成功且无响应体
+│  ├─ 404 Not Found：合法请求但资源不存在
+│  └─ 422 Validation Error：参数/请求体违反模型约束
+├─ HTTPException：主动中断并返回业务错误
+├─ Pydantic/SQLModel：输入校验与输出序列化
+└─ 当前项目落点：ItemRead / ItemCreate / ItemUpdate / read_item / create_item</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p><strong>HTTP 响应由状态行、响应头和响应体组成。</strong>状态码是机器可判断的结果类别；响应体是业务数据或错误细节。只返回 JSON 不设计状态码，会让前端和测试无法可靠区分成功、客户端错误和服务端错误。</p>
+      <p><strong><code>response_model</code> 是输出白名单。</strong>FastAPI 会按响应模型对返回对象做序列化，文档也按它生成。生产项目中响应模型常用于隐藏数据库内部字段、统一字段类型、避免偶然泄漏。</p>
+      <p><strong><code>HTTPException</code> 是控制流，不是普通异常泄漏。</strong>它告诉 FastAPI 立即结束当前请求并生成指定状态码的 HTTP 响应。与未捕获异常不同，<code>HTTPException</code> 是预期内业务分支。</p>
+      <p><strong>404 与 422 的分层。</strong>422 是进入业务前的契约校验失败；404 是契约合法但资源不存在。这个区分是面试高频，也是 API 设计基本功。</p>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>class ItemCreate(ItemBase):
+    name: str = Field(min_length=2, max_length=80, schema_extra={"examples": ["FastAPI Project Notes"]})
+    category: ItemCategory = "course"
+    price: float = Field(ge=0, schema_extra={"examples": [29.9]})
+    in_stock: bool = True
+
+class ItemRead(ItemBase):
+    id: int</code></pre>
       <ul>
-        <li>理解 <code>response_model</code> 的作用：声明、校验和文档化响应数据。</li>
-        <li>理解 <code>200</code>、<code>201</code>、<code>404</code>、<code>422</code> 的基本语义。</li>
-        <li>学会用 <code>HTTPException</code> 主动返回业务错误。</li>
-        <li>理解为什么错误处理对普通后端和 AI 服务都很重要。</li>
+        <li><code>ItemCreate</code>：创建请求模型。它不包含 <code>id</code>，因为 ID 应由数据库生成，不应由客户端指定。</li>
+        <li><code>name</code> 长度约束：避免空名称、单字符脏数据和过长文本进入数据库。</li>
+        <li><code>category: ItemCategory</code>：限制分类为 <code>book/course/tool</code>，防止任意字符串破坏筛选逻辑。</li>
+        <li><code>price: Field(ge=0)</code>：价格不能为负。没有该约束，业务层和前端都要额外处理非法价格。</li>
+        <li><code>ItemRead</code>：读取响应模型，包含数据库生成的 <code>id</code>。这体现输入输出模型分离。</li>
       </ul>
-    </section>
 
-    <section>
-      <h2>1. 背景知识：响应不只是 return 一个字典</h2>
-      <p>一个 HTTP 响应至少包含状态码和响应体：</p>
-      <pre><code>HTTP/1.1 200 OK
-Content-Type: application/json
-
-{
-  "id": 2,
-  "name": "Python Backend Handbook",
-  "category": "book",
-  "price": 39.9,
-  "in_stock": true
-}</code></pre>
-      <p>状态码告诉客户端“这次请求整体上发生了什么”，响应体告诉客户端“具体数据是什么”。如果只返回数据，不管状态码和结构，接口就很难被前端、测试脚本和其他服务稳定调用。</p>
-    </section>
-
-    <section>
-      <h2>2. 响应模型：后端对外的承诺</h2>
-      <p>在代码里，我们用 <code>response_model=Item</code> 声明响应结构：</p>
-      <pre><code>@app.get("/items/{item_id}", response_model=Item)
-def read_item(item_id: Annotated[int, Path(ge=1)]) -&gt; Item:
-    return get_item_or_404(item_id)</code></pre>
-      <p><code>Item</code> 模型如下：</p>
-      <pre><code>class Item(BaseModel):
-    id: int
-    name: str
-    category: ItemCategory
-    price: float
-    in_stock: bool</code></pre>
-      <p>这表示接口对外承诺：成功时会返回一个包含这些字段的商品对象。FastAPI 会用这个模型生成 <code>/docs</code> 文档，也会按这个模型处理返回数据。</p>
-      <div class="callout">
-        <p><strong>工程直觉：</strong>请求模型管“别人能传什么进来”，响应模型管“你承诺返回什么出去”。</p>
-      </div>
-    </section>
-
-    <section>
-      <h2>3. 状态码：用数字表达请求结果</h2>
-      <p>先掌握这四个常见状态码：</p>
-      <ul>
-        <li><code>200 OK</code>：请求成功，常见于查询。</li>
-        <li><code>201 Created</code>：资源创建成功，常见于 <code>POST /items</code>。</li>
-        <li><code>404 Not Found</code>：客户端要的资源不存在。</li>
-        <li><code>422 Unprocessable Entity</code>：请求格式能理解，但参数或请求体不符合模型约束。</li>
-      </ul>
-      <p>在新接口里，创建商品使用 <code>201</code>：</p>
-      <pre><code>@app.post("/items", response_model=Item, status_code=status.HTTP_201_CREATED)
-def create_item(payload: ItemCreate) -&gt; Item:
-    next_id = max(ITEMS) + 1
-    item = Item(id=next_id, **payload.model_dump())
-    ITEMS[next_id] = item
+      <pre><code>@router.post(
+    "",
+    response_model=ItemRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_api_key)],
+)
+def create_item(
+    payload: ItemCreate,
+    session: Annotated[Session, Depends(get_session)],
+) -> Item:
+    item = Item.model_validate(payload)
+    session.add(item)
+    session.commit()
+    session.refresh(item)
     return item</code></pre>
-      <p><code>status.HTTP_201_CREATED</code> 比直接写 <code>201</code> 更可读。面试或团队项目里，这种写法也更容易让别人看懂你的意图。</p>
-    </section>
-
-    <section>
-      <h2>4. 主动抛出错误：HTTPException</h2>
-      <p>如果用户请求 <code>/items/999</code>，参数本身是合法整数，但业务上找不到这个商品。这不是 <code>422</code>，而是 <code>404</code>。</p>
-      <pre><code>def get_item_or_404(item_id: int) -&gt; Item:
-    item = ITEMS.get(item_id)
-    if item is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Item {item_id} was not found.",
-        )
-    return item</code></pre>
-      <p><code>raise HTTPException(...)</code> 会中断当前请求处理，FastAPI 会把它转换成标准 JSON 错误响应。这里的 <code>detail</code> 是给调用者看的错误说明。</p>
-    </section>
-
-    <section>
-      <h2>5. 404 和 422 的区别</h2>
-      <p>这两个错误很容易混，要用“错在语法/参数”还是“错在业务资源”来区分：</p>
       <ul>
-        <li><code>GET /items/abc</code> 返回 <code>422</code>，因为 <code>abc</code> 不能变成整数 ID。</li>
-        <li><code>GET /items/0</code> 返回 <code>422</code>，因为 ID 不满足 <code>ge=1</code>。</li>
-        <li><code>GET /items/999</code> 返回 <code>404</code>，因为 ID 合法，但这个商品不存在。</li>
+        <li><code>@router.post("")</code>：在 <code>/items</code> 下注册创建接口。</li>
+        <li><code>response_model=ItemRead</code>：创建成功后返回带 <code>id</code> 的读模型。</li>
+        <li><code>status_code=201</code>：明确表达“资源已创建”。若省略，默认是 200，语义不够准确。</li>
+        <li><code>dependencies=[Depends(require_api_key)]</code>：要求 API Key。若缺失，写接口会返回 401。</li>
+        <li><code>payload: ItemCreate</code>：请求体必须符合创建模型。</li>
+        <li><code>session</code>：数据库会话由依赖注入提供。</li>
+        <li><code>Item.model_validate(payload)</code>：把输入模型转换为表模型。若直接信任字典，容易绕过模型边界。</li>
+        <li><code>session.add(item)</code>：把对象加入事务跟踪。</li>
+        <li><code>session.commit()</code>：提交事务，写入数据库并生成主键。</li>
+        <li><code>session.refresh(item)</code>：从数据库刷新对象，拿到生成后的 <code>id</code>。</li>
+        <li><code>return item</code>：FastAPI 按 <code>ItemRead</code> 输出。</li>
       </ul>
-      <p>普通后端里，这能帮助前端准确提示用户。AI 服务里，这能区分“请求参数不合法”和“任务 ID / 文件 ID / 模型 ID 不存在”。</p>
+
+      <pre><code>if item is None:
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Item {item_id} was not found.")</code></pre>
+      <p>这两行是业务错误边界：ID 参数合法、数据库查询执行成功，但目标资源不存在，所以返回 404。若返回 <code>None</code>，会让响应模型校验失败，变成服务端问题。</p>
     </section>
 
     <section>
-      <h2>6. 实验一：创建商品</h2>
-      <p>在 <code>/docs</code> 中测试 <code>POST /items</code>：</p>
-      <pre><code>{
-  "name": "FastAPI Interview Pack",
-  "category": "course",
-  "price": 49.9,
-  "in_stock": true
-}</code></pre>
-      <p>你应该看到 <code>201</code> 状态码，并得到一个带 <code>id</code> 的新商品。然后再访问 <code>GET /items</code>，可以看到它已经进入内存列表。</p>
-      <p class="small">注意：这里用的是内存字典，重启服务后新增商品会消失。数据库会在后续课程再讲。</p>
-    </section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>POST /items
+  -> API Key 依赖校验
+  -> ItemCreate 校验请求体
+  -> get_session() 提供数据库会话
+  -> Item.model_validate(payload)
+  -> session.add + commit + refresh
+  -> ItemRead 序列化
+  -> 201 + JSON
 
-    <section>
-      <h2>7. 实验二：触发不同错误</h2>
-      <pre><code>GET /items/abc
-GET /items/0
 GET /items/999
-
-POST /items
-{
-  "name": "A",
-  "category": "course",
-  "price": -1,
-  "in_stock": true
-}</code></pre>
-      <p>请观察状态码和错误响应。前三个请求能帮你区分路径参数校验和业务 404；最后一个请求会展示请求体校验错误。</p>
+  -> item_id 类型和 ge=1 通过
+  -> session.get(Item, 999)
+  -> None
+  -> raise HTTPException(404)
+  -> 404 + {"detail":"Item 999 was not found."}</code></pre>
     </section>
 
-    <section class="practice">
-      <h2>8. 课堂练习</h2>
-      <p>请你完成两个小任务：</p>
-      <ol>
-        <li>创建一个 <code>category</code> 为 <code>"tool"</code> 的商品，然后用 <code>GET /items?category=tool</code> 查出来。</li>
-        <li>访问一个不存在但合法的 ID，例如 <code>/items/9999</code>，说出为什么它是 <code>404</code> 而不是 <code>422</code>。</li>
-      </ol>
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <ul>
+        <li><strong>201 vs 200：</strong>创建资源用 201 更精确；查询和普通更新常用 200。</li>
+        <li><strong>204 vs 返回空 JSON：</strong>删除成功用 204 时不应再返回响应体；返回 <code>{}</code> 更适合 200。</li>
+        <li><strong>401 vs 422：</strong>缺 API Key 是认证失败 401；请求体字段非法是 422。</li>
+        <li><strong>HTTPException vs Python ValueError：</strong>前者是可控 HTTP 错误；后者未处理时通常变成 500。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <ul>
+        <li><strong>POST /items 返回 401：</strong>缺少 <code>X-API-Key: dev-secret-key</code>。解决：按 README 配置请求头。</li>
+        <li><strong>POST /items 返回 422：</strong><code>name</code> 太短、<code>price</code> 为负、<code>category</code> 非法。解决：按 <code>ItemCreate</code> 字段约束传参。</li>
+        <li><strong>创建后 id 为 None：</strong>忘记 <code>commit</code> 或 <code>refresh</code>。解决：写入后刷新数据库生成字段。</li>
+        <li><strong>找不到资源却返回 500：</strong>没有处理 <code>None</code>。解决：显式抛 <code>HTTPException(404)</code>。</li>
+        <li><strong>响应字段比预期多：</strong>直接返回内部模型且未使用响应模型。解决：定义 <code>ItemRead</code> 作为输出契约。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <ul>
+        <li><strong>错误体结构：</strong>教学可用 FastAPI 默认；生产常定义统一 <code>error_code/message/request_id</code>。</li>
+        <li><strong>鉴权：</strong>教学 API Key 足够展示依赖；生产要用 OAuth2/JWT/会话/权限模型。</li>
+        <li><strong>事务：</strong>教学每次简单 commit；生产要考虑事务边界、幂等性、唯一约束冲突和回滚。</li>
+        <li><strong>数据暴露：</strong>教学模型字段少；生产必须严格区分 DB model、domain model、request DTO、response DTO。</li>
+      </ul>
     </section>
 
     <section class="checkpoint">
-      <h2>9. 小测：先回忆再展开</h2>
-      <details>
-        <summary>1. <code>response_model</code> 主要解决什么问题？</summary>
-        <p class="answer">它声明成功响应的数据结构，让 FastAPI 能生成文档，并按模型处理返回值。</p>
-      </details>
-      <details>
-        <summary>2. 创建资源为什么常用 <code>201</code>？</summary>
-        <p class="answer">因为 <code>201 Created</code> 表示请求成功，并且服务器创建了新的资源。</p>
-      </details>
-      <details>
-        <summary>3. 什么时候用 <code>HTTPException(status_code=404)</code>？</summary>
-        <p class="answer">当请求本身合法，但业务资源不存在时，例如数据库里找不到指定 ID。</p>
-      </details>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details><summary>1. 为什么创建商品请求模型不包含 <code>id</code>？</summary><p class="answer">id 是数据库生成的资源标识，客户端不应在创建请求中指定。</p></details>
+      <details><summary>2. <code>GET /items/abc</code> 和 <code>GET /items/999</code> 分别是什么错误？</summary><p class="answer">abc 无法转 int，是 422；999 合法但资源不存在，是 404。</p></details>
+      <details><summary>3. <code>session.refresh(item)</code> 的作用是什么？</summary><p class="answer">提交后从数据库刷新对象，拿到数据库生成或更新后的字段，例如自增 id。</p></details>
     </section>
 
-    <section>
-      <h2>10. 本节总结</h2>
-      <p>请求模型让输入可控，响应模型让输出稳定，状态码让调用者知道请求结果。<code>HTTPException</code> 是你主动表达业务错误的工具。到这里，你已经具备一个小型 CRUD API 的基本接口表达能力。</p>
+    <section class="practice">
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details><summary>1. 为什么要区分请求模型和响应模型？</summary><p class="answer">二者面向不同边界：请求模型限制外部输入，响应模型控制对外输出，分离后可以避免字段泄漏并支持独立演进。</p></details>
+      <details><summary>2. 什么时候应该抛出 404？</summary><p class="answer">当请求路径和参数合法，但业务资源不存在，例如数据库按 ID 查询为空。</p></details>
+      <details><summary>3. 为什么 204 删除接口不返回 body？</summary><p class="answer">HTTP 204 的语义是成功但无内容，客户端不应期待响应体；这能减少歧义并符合标准语义。</p></details>
       <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/response-model/">FastAPI Response Model</a>、<a href="https://fastapi.tiangolo.com/tutorial/handling-errors/">FastAPI Handling Errors</a>。</p>
     </section>
 

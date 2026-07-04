@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lesson 0008 - Database Session and CRUD</title>
+  <title>Lesson 0008 - Session 与数据库 CRUD</title>
   <link rel="stylesheet" href="../assets/course.css">
 </head>
 <body>
@@ -19,149 +19,140 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0008</p>
-      <h1>数据库 Session 和 CRUD：让接口真正读写数据库</h1>
-      <p class="lead">本节把第 6 课的 Depends 和第 7 课的 SQLModel 连起来：用依赖为每个请求提供数据库 Session，然后用 Session 完成查询、创建、提交和刷新。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>数据库 Session 与 CRUD：请求级工作单元的读写闭环</h1>
+      <p class="lead">本节把第 6 课的依赖注入和第 7 课的数据库模型合并：每个请求通过 <code>Depends(get_session)</code> 获得一个 Session，再用 <code>select/get/add/commit/refresh</code> 完成读写。重点是 Session 生命周期和事务语义，而不是机械背 CRUD。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解 Session 是一次请求访问数据库的工作单元。</li>
-        <li>理解 <code>yield</code> 依赖如何创建并关闭 Session。</li>
-        <li>看懂 <code>GET /items</code>、<code>GET /items/{item_id}</code>、<code>POST /items</code> 的数据库版本。</li>
-        <li>理解 <code>add</code>、<code>commit</code>、<code>refresh</code> 的基本作用。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Session CRUD
+├─ get_session：yield 依赖，创建并关闭请求级 Session
+├─ Read list：select(Item) + session.exec(...)
+├─ Read one：session.get(Item, item_id)
+├─ Create：Item.model_validate(payload)
+│  ├─ session.add(item)：加入事务跟踪
+│  ├─ session.commit()：提交写入
+│  └─ session.refresh(item)：读取数据库生成字段
+├─ Response：Item/SQLModel -> ItemRead JSON
+└─ 错误边界：合法 ID 查不到 -> 404</code></pre>
     </section>
 
     <section>
-      <h2>1. Session 是什么</h2>
-      <p>你可以把数据库 Session 理解成“这一轮请求和数据库沟通的上下文”。路径函数不应该自己到处创建连接，而是通过依赖拿到一个 Session。</p>
-      <p>本项目的依赖是：</p>
-      <pre><code>def get_session() -&gt; Generator[Session, None, None]:
+      <h2>② 核心概念底层原理</h2>
+      <p><strong>Session 是 ORM 工作单元。</strong>它不只是“数据库连接”，还负责对象状态追踪、事务边界、SQL 执行和结果映射。一次请求拿一个短生命周期 Session，是 Web API 最常见的安全起点。</p>
+      <p><strong>事务提交是写入的分界线。</strong><code>session.add(item)</code> 只是把对象放进待处理队列；<code>commit()</code> 才把改动提交给数据库。若请求过程中发生异常且未提交，改动不应被持久化。</p>
+      <p><strong><code>refresh()</code> 解决 Python 对象与数据库状态同步。</strong>自增主键、数据库默认值、触发器生成字段只有数据库知道；提交后刷新对象，API 才能返回完整、最新的数据。</p>
+      <p><strong>教学实现与生产查询的边界。</strong>当前 <code>list_items</code> 先查全量再 Python 过滤，利于新手理解；生产要把过滤、排序、分页下推到 SQL，否则数据量一大就会退化。</p>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>def get_session() -> Generator[Session, None, None]:
     with Session(engine) as session:
         yield session</code></pre>
-      <p>这段代码的含义是：</p>
-      <ol>
-        <li>请求进来时，创建一个 Session。</li>
-        <li><code>yield session</code> 把 Session 交给路径函数使用。</li>
-        <li>路径函数执行完后，离开 <code>with</code> 代码块，Session 自动关闭。</li>
-      </ol>
-      <div class="callout">
-        <p><strong>连接第 6 课：</strong>这就是 Depends 的价值。路径函数只声明需要 Session，创建和关闭由依赖统一管理。</p>
-      </div>
-    </section>
+      <ul>
+        <li><code>Generator[Session, None, None]</code>：说明这是 yield 依赖，产出值是 <code>Session</code>。</li>
+        <li><code>with Session(engine)</code>：创建会话并交给上下文管理器关闭。若手动创建不关闭，会造成连接泄漏。</li>
+        <li><code>yield session</code>：FastAPI 将该值注入路径函数；请求结束后继续退出 <code>with</code>。</li>
+      </ul>
 
-    <section>
-      <h2>2. 查询列表：select + session.exec</h2>
-      <pre><code>@router.get("", response_model=list[ItemRead])
-def list_items(
-    filters: Annotated[ItemFilters, Depends(ItemFilters)],
-    pagination: Annotated[Pagination, Depends(Pagination)],
-    session: Annotated[Session, Depends(get_session)],
-) -&gt; list[Item]:
-    statement = select(Item)
-    items = list(session.exec(statement))
-    ...
-    return items[pagination.skip : pagination.skip + pagination.limit]</code></pre>
-      <p><code>select(Item)</code> 表示构造一条“查询所有 Item”的 SQL 查询。<code>session.exec(statement)</code> 执行查询并返回结果。</p>
-      <p>当前为了保持小白友好，筛选和分页仍然在 Python 列表里完成。后面课程可以再把这些筛选下推到 SQL 查询中，让数据库做更多工作。</p>
-    </section>
+      <pre><code>statement = select(Item)
+items = list(session.exec(statement))</code></pre>
+      <ul>
+        <li><code>select(Item)</code>：构造查询 Item 表全部列的 SQLModel/SQLAlchemy statement。</li>
+        <li><code>session.exec(statement)</code>：通过当前 Session 执行 SQL 并返回 ORM 对象结果。</li>
+        <li><code>list(...)</code>：消费结果迭代器，得到 Python 列表。教学清晰，但生产大结果集要谨慎。</li>
+      </ul>
 
-    <section>
-      <h2>3. 查询单个资源：session.get</h2>
       <pre><code>item = session.get(Item, item_id)
 if item is None:
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail=f"Item {item_id} was not found.",
-    )
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Item {item_id} was not found.")</code></pre>
+      <ul>
+        <li><code>session.get(Item, item_id)</code>：按主键查询，适合详情页读取。</li>
+        <li><code>item is None</code>：参数合法但记录不存在。</li>
+        <li><code>HTTPException(404)</code>：把业务不存在转换为 HTTP 语义，不让 <code>None</code> 进入响应模型。</li>
+      </ul>
+
+      <pre><code>item = Item.model_validate(payload)
+session.add(item)
+session.commit()
+session.refresh(item)
 return item</code></pre>
-      <p><code>session.get(Item, item_id)</code> 表示按主键查找一条 <code>Item</code>。查不到时返回 <code>None</code>，这时我们主动抛出 <code>404</code>。</p>
-      <p>这也复习了第 4 课：<code>999</code> 是合法 ID，但数据库里没有对应记录，所以是业务层面的 <code>404</code>，不是参数校验 <code>422</code>。</p>
-    </section>
-
-    <section>
-      <h2>4. 创建资源：add + commit + refresh</h2>
-      <pre><code>@router.post("", response_model=ItemRead, status_code=status.HTTP_201_CREATED)
-def create_item(
-    payload: ItemCreate,
-    session: Annotated[Session, Depends(get_session)],
-) -&gt; Item:
-    item = Item.model_validate(payload)
-    session.add(item)
-    session.commit()
-    session.refresh(item)
-    return item</code></pre>
-      <p>逐行解释：</p>
       <ul>
-        <li><code>Item.model_validate(payload)</code>：把创建请求模型转换成数据库表模型。</li>
-        <li><code>session.add(item)</code>：告诉 Session 准备新增这条记录。</li>
-        <li><code>session.commit()</code>：真正提交到数据库文件。</li>
-        <li><code>session.refresh(item)</code>：从数据库刷新对象，拿到自动生成的 <code>id</code>。</li>
+        <li><code>Item.model_validate(payload)</code>：把 <code>ItemCreate</code> 输入模型转成 <code>Item</code> 表模型。若直接拼字典，模型边界更脆弱。</li>
+        <li><code>session.add(item)</code>：进入 Session 的 pending 状态，等待 flush/commit。</li>
+        <li><code>session.commit()</code>：提交事务，数据库生成主键。</li>
+        <li><code>session.refresh(item)</code>：刷新 Python 对象，拿到 <code>id</code> 等数据库侧值。</li>
+        <li><code>return item</code>：FastAPI 按 <code>response_model=ItemRead</code> 输出 JSON。</li>
       </ul>
-      <p>如果忘记 <code>commit</code>，数据通常不会真正保存；如果忘记 <code>refresh</code>，返回对象可能拿不到数据库生成后的最新值。</p>
     </section>
 
     <section>
-      <h2>5. 为什么数据库 Session 要用 Depends</h2>
-      <p>如果每个接口都手动写 <code>Session(engine)</code>，会有三个问题：</p>
-      <ul>
-        <li>重复代码多。</li>
-        <li>容易忘记关闭 Session。</li>
-        <li>以后测试时不容易替换成测试数据库。</li>
-      </ul>
-      <p>用 <code>Depends(get_session)</code> 后，路径函数只关心“我要一个 Session”，至于怎么创建、怎么关闭、以后怎么替换，都集中在依赖函数里。</p>
-    </section>
-
-    <section>
-      <h2>6. 实验：确认数据能持久化</h2>
-      <p>在 <code>/docs</code> 里执行：</p>
-      <p class="small">学到第 12 课后，写接口已经被 API Key 保护。执行 <code>POST /items</code> 时需要带 <code>X-API-Key: dev-secret-key</code>。</p>
+      <h2>④ 核心机制运行全流程拆解</h2>
       <pre><code>POST /items
-{
-  "name": "Persistent FastAPI Notes",
-  "category": "book",
-  "price": 12.5,
-  "in_stock": true
-}</code></pre>
-      <p>然后执行：</p>
-      <pre><code>GET /items
-GET /items/{new_id}</code></pre>
-      <p>重启 FastAPI 服务后再次执行 <code>GET /items</code>。如果新商品还在，说明它已经写入 SQLite 文件，而不是只存在内存里。</p>
+  -> require_api_key 通过
+  -> Pydantic 校验 ItemCreate
+  -> get_session() yield Session
+  -> Item.model_validate(payload)
+  -> session.add(item)
+  -> commit: INSERT INTO item ...
+  -> refresh: SELECT 新生成 id
+  -> ItemRead 序列化
+  -> 201 + JSON
+  -> 请求结束，Session 关闭
+
+GET /items/2
+  -> get_session() yield Session
+  -> session.get(Item, 2)
+  -> 命中：200 + ItemRead
+  -> 未命中：404 + detail</code></pre>
     </section>
 
-    <section class="practice">
-      <h2>7. 课堂练习</h2>
-      <p>请你完成三个小实验：</p>
-      <ol>
-        <li>创建一个 <code>category="tool"</code> 的商品。</li>
-        <li>用 <code>GET /items?category=tool</code> 查到它。</li>
-        <li>重启服务后再查一次，确认数据仍然存在。</li>
-      </ol>
-      <p>完成标准：你能解释“重启后仍然存在”为什么说明数据库持久化成功。</p>
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <ul>
+        <li><strong>add vs commit：</strong><code>add</code> 只是登记变更，<code>commit</code> 才提交事务。</li>
+        <li><strong>flush vs commit：</strong>flush 发送 SQL 但不结束事务；commit 提交事务。当前课程先掌握 commit。</li>
+        <li><strong>refresh vs 重新查询：</strong>refresh 针对已有对象刷新字段；重新查询会得到另一个查询结果对象。</li>
+        <li><strong>Session vs Engine：</strong>engine 管连接配置，Session 管一次工作单元和 ORM 对象状态。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <ul>
+        <li>创建后返回 <code>id: null</code>：通常忘记 <code>commit</code> 或 <code>refresh</code>。解决：提交后刷新。</li>
+        <li>测试数据污染开发库：测试未覆盖 <code>get_session</code>。解决：使用内存 SQLite 和 dependency override。</li>
+        <li>Session 泄漏：手写 Session 但异常路径没关闭。解决：用 yield 依赖或上下文管理器。</li>
+        <li>查询列表越来越慢：Python 层过滤全量数据。解决：生产中改为 SQL where/limit/offset。</li>
+        <li>合法 ID 返回 500：未处理 <code>None</code>。解决：显式 404。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <ul>
+        <li><strong>查询下推：</strong>教学先全量读取再过滤；生产应构造 SQL 条件、分页和索引。</li>
+        <li><strong>事务边界：</strong>教学每个写接口简单 commit；生产要考虑异常 rollback、唯一约束冲突、幂等写入。</li>
+        <li><strong>连接池：</strong>教学 SQLite 配置极简；生产数据库需要连接池大小、超时、回收策略。</li>
+        <li><strong>观测性：</strong>教学不记录 SQL 指标；生产应关注慢查询、错误率、连接耗尽和事务锁等待。</li>
+      </ul>
     </section>
 
     <section class="checkpoint">
-      <h2>8. 小测：先回忆再展开</h2>
-      <details>
-        <summary>1. <code>yield session</code> 做了什么？</summary>
-        <p class="answer">它把创建好的数据库 Session 交给路径函数使用，函数结束后依赖继续清理资源。</p>
-      </details>
-      <details>
-        <summary>2. <code>commit</code> 的作用是什么？</summary>
-        <p class="answer">它把 Session 中准备好的数据库改动真正提交保存。</p>
-      </details>
-      <details>
-        <summary>3. <code>refresh</code> 为什么常跟在创建后面？</summary>
-        <p class="answer">它从数据库重新读取对象，让自动生成的主键等最新字段回到 Python 对象上。</p>
-      </details>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details><summary>1. 为什么 Session 适合通过 Depends 注入？</summary><p class="answer">Session 需要请求级创建和清理，Depends 能统一生命周期并方便测试替换。</p></details>
+      <details><summary>2. 创建数据时 <code>commit</code> 和 <code>refresh</code> 分别解决什么？</summary><p class="answer">commit 提交写入，refresh 把数据库生成或更新后的字段同步回 Python 对象。</p></details>
+      <details><summary>3. 查不到主键记录为什么是 404？</summary><p class="answer">因为请求参数合法，但业务资源不存在，属于资源未找到。</p></details>
     </section>
 
-    <section>
-      <h2>9. 本节总结</h2>
-      <p>现在你的 <code>items</code> 接口已经从内存字典升级为 SQLite 数据库。<code>Depends(get_session)</code> 让每个请求获得一个可控的数据库 Session；<code>select</code>、<code>get</code>、<code>add</code>、<code>commit</code>、<code>refresh</code> 是数据库 CRUD 的基本动作。</p>
-      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/sql-databases/">FastAPI SQL Databases</a>、<a href="https://fastapi.tiangolo.com/tutorial/dependencies/dependencies-with-yield/">FastAPI Dependencies with yield</a>。</p>
+    <section class="practice">
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details><summary>1. Web API 中数据库 Session 生命周期应如何设计？</summary><p class="answer">通常每个请求创建一个短生命周期 Session，请求结束后关闭，写操作在明确事务边界提交或回滚。</p></details>
+      <details><summary>2. 为什么不建议路径函数里到处手动创建 Session？</summary><p class="answer">重复、易泄漏、难测试，也会让事务和资源生命周期散落在业务代码中。</p></details>
+      <details><summary>3. 为什么生产列表查询要把过滤分页交给数据库？</summary><p class="answer">数据库能利用索引和查询优化器，避免应用层加载大量无关数据。</p></details>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/sql-databases/">FastAPI SQL Databases</a>、<a href="https://fastapi.tiangolo.com/tutorial/dependencies/dependencies-with-yield/">Dependencies with yield</a>。</p>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

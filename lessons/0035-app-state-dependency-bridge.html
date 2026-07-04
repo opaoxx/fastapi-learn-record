@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lesson 0035 - App State Dependency Bridge</title>
+  <title>Lesson 0035 - App State Dependency Bridge Final Review</title>
   <link rel="stylesheet" href="../assets/course.css">
 </head>
 <body>
@@ -19,249 +19,150 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0035</p>
-      <h1>把 app.state 变成依赖：从“能访问”走向“会设计”</h1>
-      <p class="lead">第 34 课我们已经能在 lifespan 里创建长期复用的 <code>httpx.AsyncClient</code>，并把它放进 <code>app.state</code>。本节要补上更像真实项目的一步：不要让每个路由都直接伸手去拿 <code>request.app.state</code>，而是把应用级资源封装成一个 FastAPI 依赖。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>app.state 依赖桥：把应用级资源封装成可替换 Depends</h1>
+      <p class="lead"><code>app.state</code> 能存资源，但 endpoint 不应该到处直接读取内部状态。本节用 <code>get_provider_http_client(request)</code> 把 lifespan-managed client 封装成 FastAPI 依赖，让路由声明“我需要一个 AsyncClient”，测试通过 <code>dependency_overrides</code> 替换资源。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解 <code>lifespan</code>、<code>app.state</code>、<code>Depends</code> 三者的职责边界。</li>
-        <li>理解为什么“资源所有权”和“资源使用权”应该分开设计。</li>
-        <li>学会编写从 <code>Request</code> 中读取应用级资源的依赖函数。</li>
-        <li>理解依赖覆盖 <code>app.dependency_overrides</code> 如何让外部资源在测试中可替换。</li>
-        <li>能回答面试问题：为什么不要在路由里到处散落 <code>request.app.state.xxx</code>？</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>app.state Dependency Bridge
+├─ lifespan：拥有资源生命周期
+├─ app.state：保存应用级资源
+├─ dependency：get_provider_http_client(request)
+│  └─ return request.app.state.provider_http_client
+├─ endpoint：Depends(get_provider_http_client)
+├─ 测试：app.dependency_overrides
+└─ 设计原则：资源所有权、存储位置、使用点分离</code></pre>
     </section>
 
     <section>
-      <h2>1. 背景：上一课的代码“能用”，但还不够好</h2>
-      <p>第 34 课的教学端点大概是这样写的：</p>
-      <pre><code>def read_provider_http_client_state(request: Request) -&gt; ProviderHttpClientStateResponse:
-    provider_http_client = request.app.state.provider_http_client
-    return ProviderHttpClientStateResponse(
-        provider=request.app.state.provider_http_client_provider,
-        timeout_seconds=request.app.state.provider_http_client_timeout_seconds,
-        client_ready=not provider_http_client.is_closed,
-    )</code></pre>
-      <p>这段代码没有错。FastAPI 的 <code>Request</code> 可以拿到底层 ASGI 应用对象，应用对象上有 <code>state</code>，所以路由确实能访问 lifespan 保存的资源。</p>
-      <p>问题在于：如果后面的十几个路由都这样写，项目会慢慢出现三个坏味道。</p>
-      <ul>
-        <li><strong>知识散落：</strong>每个路由都要知道资源存在 <code>app.state.provider_http_client</code> 这个具体位置。</li>
-        <li><strong>测试困难：</strong>测试想替换 client 时，必须修改 app 的内部状态，而不是替换一个清楚的依赖入口。</li>
-        <li><strong>演进困难：</strong>如果以后资源从 <code>app.state</code> 迁移到容器、工厂或 provider manager，所有路由都可能要改。</li>
-      </ul>
-      <p>真实后端项目最怕的不是“某一行代码不好看”，而是内部实现细节到处扩散。扩散之后，未来改动就会从局部修改变成全局搜刮。</p>
-    </section>
-
-    <section class="callout">
-      <h2>2. 核心概念：资源所有权 vs 资源使用权</h2>
-      <p>本节的关键不是语法，而是边界。</p>
-      <div class="two-col">
-        <div>
-          <h3>资源所有权</h3>
-          <p>谁负责创建资源、保存资源、关闭资源。对于长期复用的 HTTP client，本项目交给 <code>lifespan</code>。</p>
-        </div>
-        <div>
-          <h3>资源使用权</h3>
-          <p>某个 endpoint 或 service 在处理请求时需要使用资源。使用者不应该关心资源究竟存在哪里、什么时候创建、什么时候关闭。</p>
-        </div>
-      </div>
-      <p>这就是本节要建立的心智模型：</p>
-      <pre><code>lifespan owns the resource
-app.state stores the resource
-Depends exposes the resource
-endpoint uses the resource</code></pre>
-      <p>换句话说：<code>app.state</code> 是储藏室，不是每个业务函数都应该直接翻找的抽屉。<code>Depends</code> 是对外提供资源的稳定入口。</p>
+      <h2>② 核心概念底层原理</h2>
+      <p>资源所有权和资源使用权应分离。lifespan 负责创建与关闭 HTTP client，<code>app.state</code> 负责保存资源，依赖函数负责把资源暴露给路由，endpoint 只使用资源。</p>
+      <p>如果路由到处写 <code>request.app.state.provider_http_client</code>，资源存储细节会扩散。未来改成容器、provider manager 或多 client 路由时，需要改大量 endpoint。依赖函数把这个细节集中到一个出口。</p>
+      <p>FastAPI 依赖函数也能接收 <code>Request</code>。因此依赖函数可以读取 <code>request.app.state</code>，再把结果作为普通参数注入 endpoint。测试可以覆盖依赖，而无需篡改 app 内部状态。</p>
     </section>
 
     <section>
-      <h2>3. FastAPI 运行机制：依赖函数是请求处理前的准备步骤</h2>
-      <p>FastAPI 官方文档把依赖注入描述为：声明路径操作函数需要什么，FastAPI 在处理请求时会帮你执行这些依赖，并把返回值传给函数。我们可以把一次请求想成下面这条链路：</p>
-      <pre><code>HTTP request
-  -&gt; route matching
-  -&gt; resolve dependencies
-       -&gt; get_provider_http_client(request)
-       -&gt; return app.state.provider_http_client
-  -&gt; call endpoint(provider_http_client=...)
-  -&gt; serialize response</code></pre>
-      <p>这里有一个容易被初学者忽略的点：依赖函数本身也可以接收 <code>Request</code>。所以我们不需要在 endpoint 里直接读 <code>request.app.state</code>，可以把这个动作移到依赖函数里。</p>
-      <p>这样 endpoint 的签名就从“我知道内部状态在哪里”变成“我需要一个 HTTP client”。这个变化很小，但设计含义很大。</p>
-    </section>
-
-    <section>
-      <h2>4. 本节项目改动概览</h2>
-      <ul>
-        <li>在 <code>first_api/dependencies.py</code> 中新增 <code>get_provider_http_client()</code>。</li>
-        <li>让 <code>GET /provider/http-client</code> 通过 <code>Depends</code> 接收 <code>httpx.AsyncClient</code>。</li>
-        <li>补充测试：用 <code>app.dependency_overrides</code> 替换这个依赖，证明路由已经通过依赖入口获取 client。</li>
-      </ul>
-      <p>注意，本节没有急着发起真实外部 HTTP 请求。原因很简单：先把“资源怎样进入路由”讲清楚，再接真实 provider endpoint，学习负担会低很多。</p>
-    </section>
-
-    <section>
-      <h2>5. 代码精读一：依赖函数作为 app.state 的出口</h2>
-      <pre><code>from typing import Annotated
-
-import httpx
-from fastapi import Query, Request
-
-from .schemas import ItemCategory
-
-
-def get_provider_http_client(request: Request) -&gt; httpx.AsyncClient:
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>def get_provider_http_client(request: Request) -&gt; httpx.AsyncClient:
     return request.app.state.provider_http_client</code></pre>
-      <p>这一小段代码值得逐行看。</p>
       <ul>
-        <li><code>Request</code> 不是请求体模型，而是当前 HTTP 请求的运行时对象。</li>
-        <li><code>request.app</code> 指向当前 FastAPI/Starlette 应用对象。</li>
-        <li><code>request.app.state</code> 是应用级状态容器，上一课的 lifespan 已经把 <code>provider_http_client</code> 放进去了。</li>
-        <li>函数返回值标注为 <code>httpx.AsyncClient</code>，这让路由签名和编辑器提示都更清楚。</li>
+        <li><code>request: Request</code>：当前 HTTP 请求对象，可访问应用实例。</li>
+        <li><code>request.app</code>：FastAPI/Starlette 应用对象。</li>
+        <li><code>request.app.state</code>：上一课 lifespan 存放应用级资源的位置。</li>
+        <li><code>provider_http_client</code>：长期复用的 AsyncClient。</li>
+        <li>函数本身不创建、不关闭 client，只负责取出资源；否则会混淆所有权。</li>
       </ul>
-      <p>这个函数非常短，但它把一个重要事实隔离起来：资源当前存储在 <code>app.state.provider_http_client</code>。以后如果换存储方式，优先改这个函数，而不是改所有路由。</p>
-    </section>
 
-    <section>
-      <h2>6. 代码精读二：路由声明“我需要一个 client”</h2>
-      <pre><code>@router.get(
-    "/provider/http-client",
-    response_model=ProviderHttpClientStateResponse,
-    summary="Inspect the lifespan-managed provider HTTP client",
-)
-def read_provider_http_client_state(
+      <pre><code>def read_provider_http_client_state(
     request: Request,
     provider_http_client: Annotated[
         httpx.AsyncClient,
         Depends(get_provider_http_client),
     ],
-) -&gt; ProviderHttpClientStateResponse:
-    return ProviderHttpClientStateResponse(
-        provider=request.app.state.provider_http_client_provider,
-        timeout_seconds=request.app.state.provider_http_client_timeout_seconds,
-        client_ready=not provider_http_client.is_closed,
-    )</code></pre>
-      <p><code>Annotated[httpx.AsyncClient, Depends(get_provider_http_client)]</code> 可以读成一句话：</p>
-      <blockquote>
-        <p>这个参数在 Python 类型上是 <code>httpx.AsyncClient</code>，在 FastAPI 运行时由 <code>get_provider_http_client</code> 这个依赖函数提供。</p>
-      </blockquote>
-      <p>这就是 FastAPI 里 <code>Annotated</code> 常见的双层含义：第一层是给 Python 和编辑器看的类型，第二层是给 FastAPI 看的额外参数来源或校验规则。</p>
-      <p>这里还保留了 <code>request: Request</code>，因为这个教学端点要展示 provider 和 timeout 元信息，它们也存在 <code>app.state</code> 中。后面的真实 provider 调用端点，通常只需要注入 client 和 settings，不一定要让路由自己读取这么多内部状态。</p>
-    </section>
-
-    <section>
-      <h2>7. 代码精读三：依赖覆盖让测试不碰真实资源</h2>
-      <pre><code>def test_provider_http_client_dependency_can_be_overridden() -&gt; None:
-    replacement_client = httpx.AsyncClient(timeout=0.1, trust_env=False)
-    asyncio.run(replacement_client.aclose())
-    app.dependency_overrides[get_provider_http_client] = lambda: replacement_client
-
-    try:
-        with TestClient(app) as client:
-            response = client.get("/provider/http-client")
-    finally:
-        app.dependency_overrides.clear()
-
-    assert response.status_code == 200
-    assert response.json()["client_ready"] is False</code></pre>
-      <p>这个测试有点“故意刁钻”，但非常适合学习依赖注入。</p>
+) -&gt; ProviderHttpClientStateResponse:</code></pre>
       <ul>
-        <li>先创建一个 <code>replacement_client</code>。</li>
-        <li>马上关闭它，让它的 <code>is_closed</code> 变成 <code>True</code>。</li>
-        <li>用 <code>app.dependency_overrides</code> 把 <code>get_provider_http_client</code> 替换成返回这个关闭 client 的函数。</li>
-        <li>请求接口后，如果响应里的 <code>client_ready</code> 是 <code>false</code>，说明路由确实使用了被覆盖的依赖。</li>
+        <li><code>Annotated</code> 同时表达 Python 类型和 FastAPI 依赖来源。</li>
+        <li><code>httpx.AsyncClient</code> 让编辑器和读者知道参数类型。</li>
+        <li><code>Depends(get_provider_http_client)</code> 让 FastAPI 在调用 endpoint 前先解析依赖。</li>
+        <li>保留 <code>request</code> 是为了读取 provider/timeout 元信息；业务 endpoint 通常应进一步减少直接 state 读取。</li>
       </ul>
-      <p>如果路由仍然直接使用 <code>request.app.state.provider_http_client</code>，这个测试就不会观察到替换 client 的关闭状态。</p>
+
+      <pre><code>app.dependency_overrides[get_provider_http_client] = lambda: replacement_client</code></pre>
+      <p>这行是测试价值所在：只要 endpoint 通过依赖拿 client，测试就能替换它。若 endpoint 直接读 <code>app.state</code>，覆盖依赖不会生效。</p>
     </section>
 
     <section>
-      <h2>8. 为什么这对 AI 服务特别重要</h2>
-      <p>AI 服务端点经常会依赖外部资源：</p>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>HTTP request
+  -> FastAPI 匹配 /provider/http-client
+  -> 发现参数 provider_http_client 依赖 get_provider_http_client
+  -> 调用 get_provider_http_client(request)
+       -> request.app.state.provider_http_client
+  -> 把返回的 AsyncClient 注入 endpoint
+  -> endpoint 读取 client.is_closed
+  -> 返回 ProviderHttpClientStateResponse
+
+测试路径
+  -> dependency_overrides 替换 get_provider_http_client
+  -> endpoint 收到 replacement_client
+  -> 验证路由使用依赖入口</code></pre>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>层次</th><th>职责</th><th>不应承担</th></tr></thead>
+        <tbody>
+          <tr><td>lifespan</td><td>创建/关闭资源</td><td>处理业务请求</td></tr>
+          <tr><td>app.state</td><td>保存应用级资源</td><td>保存请求级状态</td></tr>
+          <tr><td>dependency</td><td>提供资源入口</td><td>拥有长期资源生命周期</td></tr>
+          <tr><td>endpoint</td><td>表达 HTTP 契约</td><td>知道所有内部存储细节</td></tr>
+          <tr><td>test override</td><td>替换依赖</td><td>污染后续测试</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
       <ul>
-        <li>模型 provider 的 HTTP client。</li>
-        <li>embedding 服务 client。</li>
-        <li>向量数据库连接。</li>
-        <li>对象存储 client。</li>
-        <li>限流器、缓存、队列连接。</li>
+        <li><strong>依赖覆盖无效</strong>：endpoint 未使用 <code>Depends</code>，直接读 state。解决：资源读取封装成依赖。</li>
+        <li><strong>测试互相污染</strong>：覆盖后未清理。解决：<code>finally: app.dependency_overrides.clear()</code>。</li>
+        <li><strong>依赖函数创建新 client</strong>：所有权混乱。解决：依赖只取资源，lifespan 负责创建和关闭。</li>
+        <li><strong>state 属性不存在</strong>：lifespan 未执行。解决：用 TestClient context 或确保服务器正常启动。</li>
+        <li><strong>业务代码依赖 state 路径</strong>：存储细节扩散。解决：统一从依赖函数拿资源。</li>
       </ul>
-      <p>如果所有 endpoint 都直接读内部状态，项目后期会很难替换真实 provider、demo provider、测试 fake provider。依赖函数的价值就是把“外部资源”变成一个清晰的参数来源。</p>
-      <p>这是从玩具项目走向工程项目的关键一步：业务函数应该依赖抽象的能力，而不是到处依赖资源藏在哪里。</p>
-    </section>
-
-    <section class="practice">
-      <h2>9. 课堂实验</h2>
-      <p>先运行测试，观察本节新增的依赖覆盖测试：</p>
-      <pre><code>.\.venv\Scripts\python.exe -m pytest tests/test_system_api.py -q</code></pre>
-      <p>预期看到：</p>
-      <pre><code>4 passed</code></pre>
-      <p>再启动服务，访问教学端点：</p>
-      <pre><code>fastapi dev first_api/main.py</code></pre>
-      <pre><code>http://127.0.0.1:8000/provider/http-client</code></pre>
-      <p>正常情况下应该仍然看到：</p>
-      <pre><code>{
-  "provider": "demo",
-  "timeout_seconds": 10.0,
-  "client_ready": true
-}</code></pre>
-      <p>这说明我们没有改变接口的外部契约，只是改善了内部获取资源的方式。</p>
     </section>
 
     <section>
-      <h2>10. 常见错误与诊断</h2>
-      <div class="two-col">
-        <div class="callout">
-          <h3>错误一：在 endpoint 里到处写 app.state</h3>
-          <p>短期方便，长期会让存储细节扩散。优先把它封装成依赖函数。</p>
-        </div>
-        <div class="callout">
-          <h3>错误二：依赖函数偷偷创建新 client</h3>
-          <p>本节的依赖函数只“取出”资源，不“拥有”资源。长期 client 的创建和关闭仍然属于 lifespan。</p>
-        </div>
-        <div class="callout">
-          <h3>错误三：测试后忘记清理 overrides</h3>
-          <p><code>app.dependency_overrides</code> 是全局字典。测试结束要清理，否则会影响后面的测试。</p>
-        </div>
-        <div class="callout">
-          <h3>错误四：把请求级数据放进 app.state</h3>
-          <p><code>app.state</code> 是应用级共享状态，不适合保存某个用户、某次请求独有的数据。</p>
-        </div>
-      </div>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>资源数量</td><td>一个 provider client</td><td>多个 provider、cache、queue、DB pool</td></tr>
+          <tr><td>依赖组织</td><td>简单函数</td><td>容器、provider manager、typed resource registry</td></tr>
+          <tr><td>测试替换</td><td>dependency_overrides</td><td>fixture、mock server、contract test、DI container override</td></tr>
+          <tr><td>错误处理</td><td>直接假设 state 存在</td><td>启动校验、readiness probe、明确 startup failure</td></tr>
+          <tr><td>安全</td><td>教学观察端点</td><td>内部端点鉴权、隐藏资源状态细节</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>11. 面试视角：怎样解释这个设计</h2>
-      <blockquote>
-        <p>我会让 lifespan 管理长期资源的生命周期，例如创建和关闭 HTTP client；用 app.state 保存应用级资源；再用依赖函数把资源暴露给路由。这样 endpoint 不需要知道资源存储细节，测试时也可以通过 dependency_overrides 替换资源。这个设计把资源所有权、存储位置和业务使用点分开了。</p>
-      </blockquote>
-      <p>这段回答比“我用 Request 能拿到 app.state”更像工程师，因为它解释了为什么这样设计，而不只是解释能不能访问。</p>
-    </section>
-
-    <section class="checkpoint">
-      <h2>12. 小测：先回忆，再展开</h2>
-      <details>
-        <summary>1. 本节中，谁拥有 <code>AsyncClient</code> 的生命周期？</summary>
-        <p class="answer"><code>lifespan</code>。它在应用启动时创建 client，在应用关闭时关闭 client。</p>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open>
+        <summary>1. 为什么不要在多个 endpoint 里直接读 <code>request.app.state.xxx</code>？</summary>
+        <p class="answer">这会扩散资源存储细节，降低可测试性和可演进性；依赖函数能集中封装资源入口。</p>
       </details>
       <details>
-        <summary>2. <code>get_provider_http_client()</code> 的主要职责是什么？</summary>
-        <p class="answer">从当前请求的 <code>request.app.state</code> 中取出应用级 HTTP client，并把它作为依赖返回给路由。</p>
+        <summary>2. <code>get_provider_http_client</code> 是否拥有 client 生命周期？</summary>
+        <p class="answer">不拥有。它只从 app.state 取出 client，生命周期仍由 lifespan 管理。</p>
       </details>
       <details>
-        <summary>3. 为什么不要在很多路由里直接写 <code>request.app.state.provider_http_client</code>？</summary>
-        <p class="answer">因为这会让资源存储细节扩散，降低可测试性和可演进性；封装成依赖后，路由只声明自己需要一个 client。</p>
+        <summary>3. <code>dependency_overrides</code> 为什么能测试替换资源？</summary>
+        <p class="answer">FastAPI 会用 overrides 中的函数替代原依赖，因此 endpoint 收到测试提供的资源。</p>
       </details>
       <details>
-        <summary>4. <code>app.dependency_overrides</code> 在测试中解决了什么问题？</summary>
-        <p class="answer">它允许测试用 fake、mock 或替换资源覆盖真实依赖，从而避免测试依赖真实外部服务或真实应用资源。</p>
+        <summary>4. <code>Annotated[T, Depends(...)]</code> 如何理解？</summary>
+        <p class="answer"><code>T</code> 是 Python 类型，<code>Depends(...)</code> 是 FastAPI 运行时参数来源。</p>
       </details>
     </section>
 
     <section>
-      <h2>13. 本节总结</h2>
-      <p>本节没有增加新的业务接口，但它修正了一个非常重要的架构姿势：应用级资源可以保存在 <code>app.state</code>，但 endpoint 不应该到处直接读取内部状态。更好的方式是用依赖函数提供资源，让路由通过 <code>Depends</code> 声明自己需要什么。</p>
-      <p>下一课建议学习：真正把 <code>check_provider_health()</code> 接到一个 FastAPI endpoint 上，并用依赖覆盖或 MockTransport 测试成功、超时和 provider 错误。到那时，今天这节课的“依赖桥”会直接发挥作用。</p>
-      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/dependencies/">FastAPI Dependencies</a>、<a href="https://fastapi.tiangolo.com/advanced/testing-dependencies/">FastAPI Testing Dependencies with Overrides</a>、<a href="https://fastapi.tiangolo.com/advanced/events/">FastAPI Lifespan Events</a>、<a href="https://starlette.dev/applications/">Starlette Applications app.state</a>。</p>
-      <p class="small">如果这里还有点绕，可以问我：“lifespan、app.state、Depends 三者到底谁负责什么？”这个问题吃透之后，后面接真实 AI provider 会顺很多。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open>
+        <summary>题 1：如何把 lifespan 创建的资源注入 endpoint？</summary>
+        <p class="answer">startup 时放入 app.state，写依赖函数从 Request 中读取 app.state，再用 Depends 注入 endpoint。测试时可覆盖依赖。</p>
+      </details>
+      <details>
+        <summary>题 2：为什么区分资源所有权和使用权？</summary>
+        <p class="answer">所有权决定创建和关闭，使用权决定业务调用。混在一起会导致泄漏、重复创建、难测试和难替换。</p>
+      </details>
+      <details>
+        <summary>题 3：依赖函数和 service 函数有什么不同？</summary>
+        <p class="answer">依赖函数负责为请求解析参数或资源；service 函数表达业务用例。依赖可以调用 service，但二者职责不同。</p>
+      </details>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

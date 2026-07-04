@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lesson 0002 - Request Body and Pydantic</title>
+  <title>Lesson 0002 - 请求体与 Pydantic 契约</title>
   <link rel="stylesheet" href="../assets/course.css">
 </head>
 <body>
@@ -19,218 +19,141 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0002 Revised</p>
-      <h1>请求体与 Pydantic 模型：从原理到代码</h1>
-      <p class="lead">本节先讲清楚 FastAPI 为什么需要 Pydantic、Pydantic 模型如何工作，再回到 <code>POST /predict</code> 编程实践。目标不是记住几行代码，而是理解“接口契约”这个后端核心概念。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>请求体与 Pydantic：把不可信 JSON 变成稳定接口契约</h1>
+      <p class="lead">本节聚焦 <code>POST /predict</code>：客户端提交 JSON，请求体由 Pydantic 校验，服务层执行预测，响应模型保持对外稳定。重点不是“怎么写 BaseModel”，而是掌握 API 边界的契约化设计。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解什么是 HTTP 请求体，以及为什么 AI 服务通常使用 <code>POST</code> 接收 JSON。</li>
-        <li>理解 Pydantic 模型不是普通类，而是“数据结构 + 类型约束 + 校验规则 + 文档 schema”。</li>
-        <li>理解 <code>PredictionRequest</code> 里 <code>text</code>、<code>mode</code>、<code>temperature</code> 三个字段分别承担什么职责。</li>
-        <li>能读懂 <code>422 Unprocessable Entity</code>，知道它不是程序崩了，而是请求数据没有通过接口契约。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>请求体与 Pydantic
+├─ HTTP 请求体：POST/PUT/PATCH 携带业务数据
+├─ Pydantic 模型：字段结构 + 类型约束 + 默认值 + JSON Schema
+├─ FastAPI 推断规则：Pydantic 参数默认来自 body
+├─ 校验结果
+│  ├─ 成功：构造 PredictionRequest 对象，进入路径函数
+│  └─ 失败：返回 422，路径函数不会执行
+├─ 响应契约：PredictionResponse 固定 label/score/source/text_length
+└─ AI 服务意义：先校验输入，再进入成本更高的推理或 provider 调用</code></pre>
     </section>
 
     <section>
-      <h2>1. 背景知识：什么是请求体</h2>
-      <p>一个 HTTP 请求可以粗略分成三部分：请求方法、路径、请求体。</p>
-      <pre><code>POST /predict
-Content-Type: application/json
-
-{
-  "text": "FastAPI is pleasant",
-  "mode": "careful",
-  "temperature": 0.2
-}</code></pre>
-      <p><code>GET /health</code> 适合“向服务器要信息”。但 <code>POST /predict</code> 更像“把一份材料交给服务器处理”。AI 服务正是这种形态：客户端提交文本、图片 URL、模型参数，后端调用模型或规则函数，然后返回结果。</p>
-      <div class="callout">
-        <p><strong>官方依据：</strong>FastAPI 官方文档说明，请求体是客户端发送给 API 的数据；声明请求体时使用 Pydantic 模型；发送数据通常使用 <code>POST</code>、<code>PUT</code>、<code>PATCH</code> 等方法。</p>
-      </div>
+      <h2>② 核心概念底层原理</h2>
+      <p><strong>请求体是 HTTP 消息体，不是 URL 参数。</strong><code>GET /items/1</code> 的关键数据在路径；<code>POST /predict</code> 的关键数据在 JSON body。AI 推理、文件任务、创建资源都通常使用请求体，因为输入结构复杂且可能较长。</p>
+      <p><strong>Pydantic 是边界层数据校验器。</strong>外部 JSON 没有 Python 类型，字段可能缺失、类型可能错误、值可能越界。Pydantic 根据模型定义执行解析、转换、约束检查和错误收集，最后生成 Python 对象或结构化错误。</p>
+      <p><strong>422 与 400 的区别。</strong>FastAPI 默认把模型校验失败映射为 <code>422 Unprocessable Entity</code>：请求 JSON 语法可解析，但语义不符合接口契约。<code>400</code> 更常用于无法理解的通用坏请求或自定义协议错误。</p>
+      <p><strong>教学 Demo 与真实 AI 服务的相同点。</strong>即使当前预测逻辑是 demo，<code>PredictionRequest</code> 仍然模拟真实 provider 请求边界：文本长度、模式枚举、温度范围都是推理入口必须控制的约束。</p>
     </section>
 
     <section>
-      <h2>2. 核心概念：Pydantic 模型是什么</h2>
-      <p>Pydantic 官方把模型描述为继承 <code>BaseModel</code> 的类，字段通过 Python 类型注解定义。你可以先把它理解成后端接口的“数据协议说明书”。</p>
+      <h2>③ 全套代码逐行精读解析</h2>
       <pre><code>class PredictionRequest(BaseModel):
-    text: str = Field(min_length=3, max_length=500)
+    text: str = PydanticField(
+        min_length=3,
+        max_length=500,
+        examples=["FastAPI makes backend APIs pleasant."],
+    )
     mode: Literal["fast", "careful"] = "fast"
-    temperature: float = Field(default=0.2, ge=0, le=1)</code></pre>
-      <p>这段代码同时表达了四层含义：</p>
-      <ol>
-        <li><strong>结构：</strong>请求 JSON 应该有哪些字段。</li>
-        <li><strong>类型：</strong>每个字段应该是什么 Python 类型，如 <code>str</code>、<code>float</code>。</li>
-        <li><strong>约束：</strong>字段还要满足额外规则，如长度范围、数值范围、固定枚举值。</li>
-        <li><strong>文档：</strong>FastAPI 会把这些信息转成 OpenAPI schema，然后显示在 <code>/docs</code>。</li>
-      </ol>
-      <p>所以，Pydantic 模型不只是“装数据的类”。它站在 API 边界上，负责把外部传来的不可信 JSON 转换成后端可以放心使用的 Python 对象。</p>
+    temperature: float = PydanticField(default=0.2, ge=0, le=1)
+
+class PredictionResponse(BaseModel):
+    label: Literal["positive", "neutral"]
+    score: float
+    source: str
+    text_length: int</code></pre>
+      <ul>
+        <li><code>class PredictionRequest(BaseModel)</code>：声明请求体模型。若不继承 <code>BaseModel</code>，FastAPI 无法按 Pydantic 模型生成 body schema。</li>
+        <li><code>text: str</code>：主输入必须是字符串。若传数组/对象，校验失败，避免后续 <code>len</code>、分词、provider 调用出现类型错误。</li>
+        <li><code>PydanticField(...)</code>：这里把 Pydantic 的 <code>Field</code> 起别名，避免与 SQLModel 的 <code>Field</code> 混淆。</li>
+        <li><code>min_length=3</code>：拒绝过短输入。没有该约束，空文本可能进入模型调用，浪费成本且结果无意义。</li>
+        <li><code>max_length=500</code>：限制教学接口输入规模。生产中通常还会按 token、文件大小、用户套餐做更细限制。</li>
+        <li><code>examples=[...]</code>：进入 OpenAPI 示例，提高 GitHub 项目可读性和接口自解释能力。</li>
+        <li><code>mode: Literal["fast", "careful"]</code>：枚举约束。若用普通 <code>str</code>，调用者传 <code>"slow"</code> 也会进入业务逻辑，后续分支容易漏处理。</li>
+        <li><code>= "fast"</code>：默认值。请求不传 <code>mode</code> 时，Pydantic 自动补齐。</li>
+        <li><code>temperature: float</code>：AI 参数雏形。虽然当前服务层不一定使用该值，它仍属于公开请求契约。</li>
+        <li><code>ge=0, le=1</code>：数值闭区间约束。没有约束时，负数或超大值可能传到真实模型 provider 造成错误或不可控输出。</li>
+        <li><code>PredictionResponse</code>：成功响应模型。<code>label</code> 限定分类结果，<code>score</code> 表示置信度，<code>source</code> 标识预测来源，<code>text_length</code> 回显输入长度用于调试。</li>
+      </ul>
+      <pre><code>@router.post("/predict", response_model=PredictionResponse)
+async def predict(
+    payload: PredictionRequest,
+    response: Response,
+    settings: Annotated[Settings, Depends(get_settings)],
+    ai_client: Annotated[AIClient, Depends(get_ai_client)],
+    provider_http_client: Annotated[httpx.AsyncClient, Depends(get_provider_http_client)],
+) -> PredictionResponse:</code></pre>
+      <p><code>payload: PredictionRequest</code> 是本节核心：FastAPI 看到 Pydantic 模型参数后，从 JSON body 取数据并校验。后面几个参数来自依赖注入，说明真实预测接口不仅依赖 body，还依赖配置、AI 客户端和 provider HTTP client。</p>
     </section>
 
     <section>
-      <h2>3. 原理流程：一次 POST 请求发生了什么</h2>
-      <p>当客户端请求 <code>POST /predict</code> 时，FastAPI 和 Pydantic 大致按这个顺序工作：</p>
-      <pre><code>浏览器 / 前端 / HTTP 客户端
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>客户端 POST /predict
+Content-Type: application/json
+{"text":"FastAPI is pleasant","mode":"careful","temperature":0.2}
         |
-        | 发送 JSON 请求体
-        v
-FastAPI 根据 @app.post("/predict") 找到 predict 函数
+FastAPI 匹配 /predict 路径操作
         |
-        | 看到参数 payload: PredictionRequest
-        v
-Pydantic 读取 PredictionRequest 的字段定义
+读取函数签名 payload: PredictionRequest
         |
-        | 校验 text / mode / temperature
-        v
-校验成功：构造 payload 对象，进入函数
-校验失败：直接返回 422，函数不会执行</code></pre>
-      <p>这就是为什么你在函数里可以直接写 <code>payload.text</code>、<code>payload.mode</code>：因为函数执行时，<code>payload</code> 已经不是原始 JSON 字符串，而是通过校验后的 <code>PredictionRequest</code> 对象。</p>
+Pydantic 校验 text/mode/temperature
+        ├─ 失败：生成 422，predict 不执行
+        └─ 成功：构造 payload 对象
+        |
+解析 Depends：settings / ai_client / provider_http_client
+        |
+调用 run_prediction(...)
+        |
+构造 PredictionResponse
+        |
+按 response_model 输出稳定 JSON</code></pre>
     </section>
 
     <section>
-      <h2>4. 字段逐行讲解</h2>
-
-      <h3>4.1 <code>text</code>：核心输入</h3>
-      <pre><code>text: str = Field(
-    min_length=3,
-    max_length=500,
-    examples=["FastAPI makes backend APIs pleasant."],
-)</code></pre>
-      <p><code>text</code> 是这个预测接口的主输入。AI 场景里，它可以是一段用户评论、一段提示词、一段待分类文本。</p>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
       <ul>
-        <li><code>str</code> 表示它应该是字符串。</li>
-        <li><code>min_length=3</code> 表示太短的文本没有处理价值。</li>
-        <li><code>max_length=500</code> 表示暂时限制输入规模，避免接口被过长文本拖慢。</li>
-        <li><code>examples</code> 会影响文档展示，让调用者知道应该传什么。</li>
+        <li><strong>请求模型 vs 响应模型：</strong>请求模型约束外部输入；响应模型约束内部输出。两者不应混用，否则可能泄漏内部字段或限制输入演进。</li>
+        <li><strong>类型注解 vs 运行时校验：</strong>普通 Python 类型注解默认不校验；Pydantic 会在模型构造时做运行时校验。</li>
+        <li><strong>默认值 vs 可选字段：</strong><code>mode = "fast"</code> 是有默认值；<code>str | None = None</code> 才表示允许为空。</li>
+        <li><strong>Literal vs Enum：</strong><code>Literal</code> 适合少量字符串选项；复杂业务状态建议用 <code>Enum</code> 提升复用和可维护性。</li>
       </ul>
-
-      <h3>4.2 <code>mode</code>：推理模式</h3>
-      <pre><code>mode: Literal["fast", "careful"] = "fast"</code></pre>
-      <p>这里的 <code>mode</code> 不是 FastAPI 内置参数，是我们自己设计的业务字段。它表示“这次预测希望用什么处理策略”。</p>
-      <ul>
-        <li><code>"fast"</code>：默认模式，表示快速返回。真实 AI 项目里可以对应小模型、短超时、低成本推理。</li>
-        <li><code>"careful"</code>：谨慎模式，表示愿意多花一点计算换更稳的结果。真实 AI 项目里可以对应大模型、多轮检查、更长超时。</li>
-        <li><code>= "fast"</code>：这是默认值，不是第三个可选模式。调用者不传 <code>mode</code> 时，Pydantic 会把它补成 <code>"fast"</code>。</li>
-      </ul>
-      <p><code>Literal["fast", "careful"]</code> 的作用是枚举约束：请求里只能传这两个字符串。如果传 <code>"slow"</code>、<code>"accurate"</code>、<code>1</code>，都会被判定为非法请求。</p>
-
-      <h3>4.3 <code>temperature</code>：AI 参数的雏形</h3>
-      <pre><code>temperature: float = Field(default=0.2, ge=0, le=1)</code></pre>
-      <p><code>temperature</code> 是许多生成式 AI 接口常见的参数。现在我们的 demo 还没有真的调用大模型，但提前学习这个字段很有价值。</p>
-      <ul>
-        <li><code>float</code> 表示它是浮点数。</li>
-        <li><code>default=0.2</code> 表示调用者不传时默认比较稳定。</li>
-        <li><code>ge=0</code> 表示 greater than or equal，必须大于等于 0。</li>
-        <li><code>le=1</code> 表示 less than or equal，必须小于等于 1。</li>
-      </ul>
-      <p>真实大模型里，temperature 往往控制输出随机性。值越低，输出越稳定；值越高，输出越发散。不同模型服务的具体范围可能不同，所以以后要以对应模型文档为准。</p>
     </section>
 
     <section>
-      <h2>5. 对照代码：路径函数如何拿到模型对象</h2>
-      <pre><code>@app.post("/predict", response_model=PredictionResponse)
-def predict(payload: PredictionRequest) -&gt; PredictionResponse:
-    positive_words = {"good", "great", "love", "pleasant", "nice", "happy"}
-    tokens = {word.strip(".,!?;:").lower() for word in payload.text.split()}
-    is_positive = bool(tokens &amp; positive_words)
-    careful_bonus = 0.04 if payload.mode == "careful" else 0.0
-
-    score = (0.91 if is_positive else 0.55) + careful_bonus
-
-    return PredictionResponse(
-        label="positive" if is_positive else "neutral",
-        score=round(score, 2),
-        source="rule-based-demo",
-        text_length=len(payload.text),
-    )</code></pre>
-      <p>关键点是函数签名里的 <code>payload: PredictionRequest</code>。FastAPI 看到这个类型后，会把请求体交给 Pydantic 处理。处理成功后，函数里拿到的就是一个对象，而不是字典。</p>
-      <p><code>payload.mode</code> 当前只影响 <code>careful_bonus</code>：如果是 <code>"careful"</code>，分数加 <code>0.04</code>。这只是教学 demo，用来说明“请求参数可以改变后端处理策略”。真实 AI 项目里，mode 可能会决定模型版本、检索深度、最大 token 数、是否启用重排或复核。</p>
-    </section>
-
-    <section>
-      <h2>6. 实验一：合法请求</h2>
-      <p>打开 <code>http://127.0.0.1:8000/docs</code>，找到 <code>POST /predict</code>，填入：</p>
-      <pre><code>{
-  "text": "FastAPI is pleasant",
-  "mode": "careful",
-  "temperature": 0.2
-}</code></pre>
-      <p>你应该看到类似结果：</p>
-      <pre><code>{
-  "label": "positive",
-  "score": 0.95,
-  "source": "rule-based-demo",
-  "text_length": 19
-}</code></pre>
-      <p>解释：<code>pleasant</code> 命中了正向词，所以基础分是 <code>0.91</code>；<code>mode</code> 是 <code>careful</code>，额外加 <code>0.04</code>；最终四舍五入为 <code>0.95</code>。</p>
-    </section>
-
-    <section>
-      <h2>7. 实验二：故意触发 422</h2>
-      <p>把请求体改成：</p>
-      <pre><code>{
-  "text": "hi",
-  "mode": "slow",
-  "temperature": 2
-}</code></pre>
-      <p>它会失败，因为同时违反了三个约束：</p>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
       <ul>
-        <li><code>text</code> 长度只有 2，小于 <code>min_length=3</code>。</li>
-        <li><code>mode</code> 是 <code>"slow"</code>，不在 <code>"fast"</code> / <code>"careful"</code> 枚举里。</li>
-        <li><code>temperature</code> 是 <code>2</code>，大于 <code>le=1</code>。</li>
+        <li><strong>422：字段缺失。</strong>请求体缺少必填 <code>text</code>。解决：按 <code>/docs</code> schema 传完整 JSON。</li>
+        <li><strong>422：枚举错误。</strong><code>mode</code> 传 <code>"slow"</code>。解决：只能传 <code>"fast"</code> 或 <code>"careful"</code>。</li>
+        <li><strong>422：数值越界。</strong><code>temperature</code> 大于 1 或小于 0。解决：遵守 <code>ge=0, le=1</code>。</li>
+        <li><strong>415/解析异常：</strong>客户端没发 JSON 或 <code>Content-Type</code> 错误。解决：用 <code>Content-Type: application/json</code> 并发送合法 JSON。</li>
+        <li><strong>把 body 写成 query：</strong><code>/predict?text=...</code> 不会填充 <code>PredictionRequest</code>。解决：POST JSON body。</li>
       </ul>
-      <p>这时 <code>predict</code> 函数不会执行。FastAPI 会把 Pydantic 的校验错误整理成 HTTP <code>422</code> 响应返回给调用者。</p>
     </section>
 
-    <section class="practice">
-      <h2>8. 课堂练习</h2>
-      <p>请你在 <code>/docs</code> 里测试下面三组请求，并写下它们为什么成功或失败：</p>
-      <pre><code>// A. 不传 mode，观察默认值
-{
-  "text": "FastAPI is pleasant",
-  "temperature": 0.2
-}
-
-// B. mode 写错
-{
-  "text": "FastAPI is pleasant",
-  "mode": "slow",
-  "temperature": 0.2
-}
-
-// C. temperature 超范围
-{
-  "text": "FastAPI is pleasant",
-  "mode": "fast",
-  "temperature": 1.5
-}</code></pre>
-      <p>完成标准：你能说出每组请求是被哪一条模型规则接受或拒绝的。</p>
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <ul>
+        <li><strong>输入限制：</strong>教学按字符限制；生产常按 token、字节数、用户额度、请求频率、敏感内容策略限制。</li>
+        <li><strong>错误响应：</strong>教学可直接看 Pydantic 422；生产通常会统一错误格式、隐藏内部字段、加入 trace id。</li>
+        <li><strong>模型参数：</strong>教学只保留 <code>mode</code>/<code>temperature</code>；生产会包含模型名、超时、stream、top_p、max_tokens、工具调用等参数。</li>
+        <li><strong>兼容性：</strong>教学可以直接改字段；生产 API 字段变更需要版本化、灰度、兼容窗口和契约测试。</li>
+      </ul>
     </section>
 
     <section class="checkpoint">
-      <h2>9. 小测：先回忆再展开</h2>
-      <details>
-        <summary>1. <code>BaseModel</code> 的核心作用是什么？</summary>
-        <p class="answer">它让一个 Python 类变成 Pydantic 模型，从而支持字段定义、类型校验、数据转换、序列化和 JSON Schema 生成。</p>
-      </details>
-      <details>
-        <summary>2. <code>mode: Literal["fast", "careful"] = "fast"</code> 有几层含义？</summary>
-        <p class="answer">字段名是 <code>mode</code>；允许值只能是 <code>"fast"</code> 或 <code>"careful"</code>；默认值是 <code>"fast"</code>。</p>
-      </details>
-      <details>
-        <summary>3. 为什么 Pydantic 对 AI 服务尤其重要？</summary>
-        <p class="answer">因为 AI 调用通常成本更高、参数更多，提前校验可以避免非法输入进入昂贵或不可控的推理流程。</p>
-      </details>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details><summary>1. 为什么 <code>PredictionRequest</code> 参数默认来自请求体？</summary><p class="answer">它是 Pydantic 模型类型，FastAPI 会把这类复杂模型参数推断为 body 参数。</p></details>
+      <details><summary>2. <code>mode: Literal["fast", "careful"] = "fast"</code> 表达了什么？</summary><p class="answer">字段名为 mode，合法值只能是 fast/careful，未传时默认 fast。</p></details>
+      <details><summary>3. 请求体校验失败时业务函数会执行吗？</summary><p class="answer">不会。FastAPI 在进入路径函数前完成校验，失败直接返回 422。</p></details>
     </section>
 
-    <section>
-      <h2>10. 本节总结</h2>
-      <p>FastAPI 负责 HTTP 路由和文档生成，Pydantic 负责把外部 JSON 变成可信的 Python 对象。对于后端工程师来说，Pydantic 模型就是接口契约；对于 AI 服务工程师来说，它还是推理入口的安全边界。</p>
-      <p>复习用：<a href="../reference/0002-request-body-pydantic-cheatsheet.html">请求体和 Pydantic 速查</a>。上一课：<a href="./0001-first-fastapi-api.html">第一个 FastAPI API</a>。</p>
-      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/body/">FastAPI 官方 Request Body</a>、<a href="https://fastapi.tiangolo.com/tutorial/body-fields/">FastAPI 官方 Body - Fields</a>、<a href="https://pydantic.dev/docs/validation/latest/concepts/models/">Pydantic 官方 Models</a>、<a href="https://pydantic.dev/docs/validation/latest/concepts/fields/">Pydantic 官方 Fields</a>。</p>
-      <p class="small">你要是愿意，可以把三组实验的结论发给我，我来像批作业一样帮你看。</p>
+    <section class="practice">
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details><summary>1. Pydantic 在 FastAPI 中承担什么角色？</summary><p class="answer">它承担 API 边界的数据解析、类型转换、约束校验、序列化和 JSON Schema 生成，是接口契约的运行时基础。</p></details>
+      <details><summary>2. 为什么 AI 接口更需要严格请求体校验？</summary><p class="answer">AI 调用通常成本高、延迟高、参数多，非法输入若进入 provider 层会浪费资源、放大错误并增加排障难度。</p></details>
+      <details><summary>3. 422 是否代表服务器崩溃？</summary><p class="answer">不是。422 表示服务器理解请求格式，但请求数据不满足模型约束，是客户端侧契约错误。</p></details>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/body/">FastAPI Request Body</a>、<a href="https://docs.pydantic.dev/latest/concepts/models/">Pydantic Models</a>。</p>
     </section>
+
     <nav class="course-nav bottom" aria-label="课程底部导航">
       <span class="nav-title">继续学习</span>
       <span class="nav-links">

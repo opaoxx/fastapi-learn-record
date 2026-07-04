@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lesson 0021 - AI Client Errors</title>
+  <title>Lesson 0021 - AI Client Errors Final Review</title>
   <link rel="stylesheet" href="../assets/course.css">
 </head>
 <body>
@@ -19,36 +19,38 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0021</p>
-      <h1>AI 客户端错误：把模型失败变成稳定 API 响应</h1>
-      <p class="lead">真实模型会失败：超时、限流、服务不可用、输出异常。本节学习如何把内部异常转换成调用方看得懂的 HTTP 错误。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>AI 客户端错误契约：把内部模型失败映射为稳定 503 响应</h1>
+      <p class="lead">AI 调用失败不是简单的 Python 异常打印问题，而是 API 契约问题。本节把 <code>AIClientError</code>、<code>PredictionServiceError</code>、<code>HTTPException</code> 与 <code>ErrorResponse</code> 串起来，建立“内部失败可变、外部响应稳定”的错误边界。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解为什么不能把 Python 原始异常直接暴露给前端。</li>
-        <li>学习自定义 <code>AIClientError</code>。</li>
-        <li>用 <code>HTTPException</code> 返回稳定的 <code>503</code> 错误。</li>
-        <li>理解错误响应模型为什么也是 API 契约的一部分。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>AI 错误处理链路
+├─ 内部异常：AIClientError
+│  ├─ message：人类可读说明
+│  └─ error_code：程序可判断错误码
+├─ 服务层异常：PredictionServiceError
+│  ├─ backend：demo/provider
+│  ├─ elapsed_ms：耗时
+│  └─ error_code/message
+├─ HTTP 映射：HTTPException(status_code=503)
+│  ├─ detail.error_code
+│  ├─ detail.message
+│  └─ X-Prediction-* 响应头
+├─ 响应模型：ErrorResponse
+└─ 测试策略：dependency_overrides 注入失败客户端</code></pre>
     </section>
 
     <section>
-      <h2>1. 为什么 AI 接口更需要错误契约</h2>
-      <p>普通 CRUD 接口常见错误比较固定：资源不存在、参数错误、未授权。AI 接口多了一类问题：后端自己收到了合法请求，但模型服务暂时不能给出结果。</p>
-      <p>例如：</p>
-      <ul>
-        <li>模型服务超时。</li>
-        <li>第三方 API 限流。</li>
-        <li>模型输出格式不符合预期。</li>
-        <li>GPU 或远程推理服务不可用。</li>
-      </ul>
-      <p>这些不是用户请求格式错了，所以不适合返回 <code>422</code>。它们通常更接近 <code>503 Service Unavailable</code>。</p>
+      <h2>② 核心概念底层原理</h2>
+      <p>同步接口 <code>POST /predict</code> 的语义是“本次请求立即返回预测结果”。如果模型不可用，错误仍发生在同一个 HTTP 请求周期内，因此 router 可以把内部异常转换成 <code>503 Service Unavailable</code>。503 表示服务当前无法完成请求，常见于上游模型超时、限流、临时不可用或返回非法格式。</p>
+      <p>不要把 <code>Exception</code> 原文直接返回给客户端。原始异常消息不稳定，可能包含内部类名、路径、堆栈、provider 细节或敏感配置。正确做法是定义稳定错误码，例如 <code>test_ai_unavailable</code>、<code>demo_ai_failure</code>、<code>ai_provider_http_error</code>，让前端、测试和日志系统按错误码处理。</p>
+      <p>与 422、500 的区别：422 是请求参数不符合契约，问题在客户端输入；500 是服务端未分类 bug；503 是后端依赖或能力暂不可用，通常具备临时性和可重试语义。AI provider 错误多数不应伪装成 422。</p>
     </section>
 
     <section>
-      <h2>2. 自定义异常：AIClientError</h2>
+      <h2>③ 全套代码逐行精读解析</h2>
       <pre><code>class AIClientError(Exception):
     def __init__(
         self,
@@ -58,108 +60,145 @@
         super().__init__(message)
         self.message = message
         self.error_code = error_code</code></pre>
-      <p>这个异常有两个稳定字段：</p>
       <ul>
-        <li><code>error_code</code>：给程序判断，例如 <code>demo_ai_failure</code>。</li>
-        <li><code>message</code>：给人阅读，例如“模型暂时不可用”。</li>
+        <li><code>class AIClientError(Exception)</code>：把 AI 边界失败从普通异常中分类出来；没有分类时 router 很难判断该返回 503 还是 500。</li>
+        <li><code>message</code> 默认值提供安全的通用说明；不传时也不会暴露内部异常。</li>
+        <li><code>error_code</code> 默认值提供程序稳定分支；前端不要依赖英文 message 做逻辑判断。</li>
+        <li><code>super().__init__(message)</code> 保留 Python 异常标准行为，日志和调试仍可读取异常文本。</li>
+        <li><code>self.message/self.error_code</code> 固化结构化字段；如果只使用 <code>str(exc)</code>，测试和客户端都缺少稳定键。</li>
       </ul>
-      <p>这比直接返回 <code>str(exc)</code> 更稳定，因为前端可以根据 <code>error_code</code> 做提示、重试或日志分类。</p>
-    </section>
 
-    <section>
-      <h2>3. 错误响应模型</h2>
       <pre><code>class ErrorDetail(BaseModel):
     error_code: str
     message: str
 
 class ErrorResponse(BaseModel):
     detail: ErrorDetail</code></pre>
-      <p>FastAPI 的 <code>HTTPException</code> 默认把错误内容放进 <code>detail</code> 字段，所以这里的响应模型也按这个形状设计。</p>
-      <pre><code>{
-  "detail": {
-    "error_code": "demo_ai_failure",
-    "message": "The demo AI client was asked to simulate a failure."
-  }
-}</code></pre>
-    </section>
+      <ul>
+        <li><code>ErrorDetail</code> 对齐 FastAPI 错误响应习惯，把结构化错误放在 <code>detail</code> 内。</li>
+        <li><code>error_code</code> 是机器读字段，适合前端分支、监控聚合、测试断言。</li>
+        <li><code>message</code> 是人类读字段，适合 UI 提示和调试摘要。</li>
+        <li><code>ErrorResponse</code> 让 OpenAPI 文档明确 503 响应形状；不声明会让调用方只能猜错误体。</li>
+      </ul>
 
-    <section>
-      <h2>4. 在 /predict 中转换异常</h2>
       <pre><code>@router.post(
     "/predict",
     response_model=PredictionResponse,
-    responses={503: {"model": ErrorResponse}},
+    responses={status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ErrorResponse}},
 )
-def predict(...):
+async def predict(...):
     try:
-        prediction = ai_client.predict_sentiment(payload.text, payload.mode)
-    except AIClientError as exc:
+        result = await run_prediction(...)
+    except PredictionServiceError as exc:
+        log_prediction_failed(exc)
         raise HTTPException(
-            status_code=503,
-            detail={
-                "error_code": exc.error_code,
-                "message": exc.message,
-            },
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"error_code": exc.error_code, "message": exc.message},
+            headers=build_prediction_headers(...),
         ) from exc</code></pre>
-      <p>这里有两个动作：内部用 <code>AIClientError</code> 表示模型失败；对外用 <code>HTTPException</code> 表示 HTTP 响应失败。内部异常和外部响应不要混在一起。</p>
-    </section>
-
-    <section>
-      <h2>5. 为什么是 503</h2>
-      <p><code>503 Service Unavailable</code> 表示服务当前无法处理请求，通常是临时状态。AI 模型服务超时、临时不可用、限流时，用 503 比 500 更友好。</p>
-      <p>区别可以这样记：</p>
       <ul>
-        <li><code>422</code>：用户请求内容不合法。</li>
-        <li><code>401</code>：用户没通过鉴权。</li>
-        <li><code>404</code>：资源不存在。</li>
-        <li><code>503</code>：后端依赖的服务暂时不可用。</li>
+        <li><code>responses={503: ...}</code> 把错误模型写入 OpenAPI；生产协作中错误契约和成功契约同等重要。</li>
+        <li><code>try</code> 包住 service 调用，而不是包住整个函数，避免吞掉响应构造等无关 bug。</li>
+        <li><code>except PredictionServiceError</code> 只捕获已分类业务失败；未知异常继续交给框架变成 500，便于暴露真实 bug。</li>
+        <li><code>log_prediction_failed(exc)</code> 在抛 HTTP 错误前记录结构化日志；否则只看访问日志很难知道 provider 和耗时。</li>
+        <li><code>HTTPException(status_code=503)</code> 把内部失败映射为 HTTP 语义。</li>
+        <li><code>detail={...}</code> 必须是可 JSON 序列化对象；直接放异常实例会序列化失败。</li>
+        <li><code>headers=build_prediction_headers(...)</code> 给调用方补充后端、耗时、错误码等调试信息。</li>
+        <li><code>from exc</code> 保留异常链，服务端日志能追溯根因；不影响对外响应体。</li>
       </ul>
     </section>
 
     <section>
-      <h2>6. 测试错误响应</h2>
-      <pre><code>class FailingAIClient:
-    def predict_sentiment(self, text: str, mode: str) -&gt; PredictionResult:
-        raise AIClientError(
-            message="The test AI client is unavailable.",
-            error_code="test_ai_unavailable",
-        )
-
-app.dependency_overrides[get_ai_client] = override_failing_ai_client</code></pre>
-      <p>测试里不用真的让模型挂掉，而是用依赖覆盖注入一个必定失败的客户端。这样错误路径也能被稳定测试。</p>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>客户端 POST /predict
+  -> FastAPI 校验 PredictionRequest
+  -> 注入 settings、ai_client、provider_http_client
+  -> run_prediction()
+       -> DemoAIClient / provider adapter 执行预测
+       -> AIClientError 或 provider 错误
+       -> 封装为 PredictionServiceError
+  -> router 捕获 PredictionServiceError
+       -> log_prediction_failed()
+       -> build_prediction_headers()
+       -> raise HTTPException(503, detail=...)
+  -> FastAPI 生成 JSON 错误响应
+  -> 客户端收到 detail.error_code/detail.message</code></pre>
+      <p>这个链路体现了三层错误边界：provider 原始错误在最内层，service 统一业务错误语义，router 最后映射 HTTP。这样后续把 demo 模型换成真实 provider 时，前端仍读取同一套错误结构。</p>
     </section>
 
-    <section class="practice">
-      <h2>7. 课堂练习</h2>
-      <p>在 <code>/predict</code> 中发送包含 <code>simulate-ai-failure</code> 的文本：</p>
-      <pre><code>{
-  "text": "please simulate-ai-failure for this request",
-  "mode": "fast",
-  "temperature": 0.2
-}</code></pre>
-      <p>观察响应状态码和 <code>detail.error_code</code>。</p>
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>概念</th><th>正确用法</th><th>误区</th></tr></thead>
+        <tbody>
+          <tr><td><code>AIClientError</code></td><td>AI client 边界异常</td><td>直接作为 HTTP 响应返回</td></tr>
+          <tr><td><code>HTTPException</code></td><td>router 层 HTTP 映射</td><td>在底层 service 到处抛</td></tr>
+          <tr><td><code>error_code</code></td><td>稳定机器码</td><td>用 message 文案做程序判断</td></tr>
+          <tr><td>503</td><td>依赖能力暂不可用</td><td>所有异常都返回 500</td></tr>
+          <tr><td>422</td><td>请求参数不合法</td><td>模型失败也返回 422</td></tr>
+        </tbody>
+      </table>
     </section>
 
-    <section class="checkpoint">
-      <h2>8. 小测：先回忆再展开</h2>
-      <details>
-        <summary>1. 为什么不直接把原始异常返回给前端？</summary>
-        <p class="answer">因为原始异常不稳定，可能泄露内部实现，也不方便前端按错误类型处理。</p>
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <ul>
+        <li><strong>前端拿不到 <code>detail.error_code</code></strong>：抛错时 <code>detail</code> 写成字符串。解决：传入字典 <code>{"error_code": ..., "message": ...}</code>。</li>
+        <li><strong>OpenAPI 看不到 503 模型</strong>：路由没有配置 <code>responses</code>。解决：补 <code>responses={503: {"model": ErrorResponse}}</code>。</li>
+        <li><strong>测试误连真实模型</strong>：没有覆盖 <code>get_ai_client</code>。解决：使用 <code>dependency_overrides</code> 注入失败替身。</li>
+        <li><strong>错误码无法聚合</strong>：每次 message 文案不同。解决：固定 <code>error_code</code>，message 只做人类提示。</li>
+        <li><strong>异常链丢失</strong>：<code>raise HTTPException(...)</code> 没有 <code>from exc</code>。解决：保留异常因果，便于服务端排障。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>错误触发</td><td><code>simulate-ai-failure</code> 标记</td><td>超时、限流、HTTP 状态码、非法响应、熔断</td></tr>
+          <tr><td>错误分类</td><td>少量错误码</td><td>错误 taxonomy、可重试/不可重试分类、provider 维度</td></tr>
+          <tr><td>响应头</td><td>教学用 X-Prediction-* 信息</td><td>trace id、request id、retry-after、rate-limit headers</td></tr>
+          <tr><td>日志</td><td>基本结构化日志</td><td>集中式日志、链路追踪、指标、告警规则</td></tr>
+          <tr><td>安全</td><td>安全 message</td><td>严格禁止泄露密钥、URL、栈信息、用户敏感输入</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open>
+        <summary>1. 为什么 AI 模型失败适合返回 503？</summary>
+        <p class="answer">请求本身可能合法，但后端依赖的模型能力暂时不可用；503 能表达临时不可用和潜在重试语义。</p>
       </details>
       <details>
-        <summary>2. <code>error_code</code> 和 <code>message</code> 分别给谁用？</summary>
-        <p class="answer"><code>error_code</code> 主要给程序判断，<code>message</code> 主要给人阅读。</p>
+        <summary>2. <code>error_code</code> 和 <code>message</code> 分别服务谁？</summary>
+        <p class="answer"><code>error_code</code> 服务程序判断、测试和监控聚合；<code>message</code> 服务人类阅读和 UI 提示。</p>
       </details>
       <details>
-        <summary>3. 模型服务临时不可用为什么适合 503？</summary>
-        <p class="answer">因为请求本身可能合法，只是后端依赖的服务当前无法完成处理。</p>
+        <summary>3. 为什么不要捕获所有 Exception 后都返回 503？</summary>
+        <p class="answer">未知异常可能是代码 bug 或数据损坏，全部伪装成 503 会隐藏真实问题。只应把已分类的依赖失败映射为 503。</p>
+      </details>
+      <details>
+        <summary>4. <code>responses={503: {"model": ErrorResponse}}</code> 的价值是什么？</summary>
+        <p class="answer">它让 OpenAPI 暴露错误响应契约，调用方可以提前知道失败时的 JSON 结构。</p>
       </details>
     </section>
 
     <section>
-      <h2>9. 本节总结</h2>
-      <p>本节让同步 AI 接口具备了稳定失败契约：内部抛 <code>AIClientError</code>，router 捕获后返回 <code>503</code> 和结构化 <code>detail</code>。</p>
-      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/handling-errors/">FastAPI Handling Errors</a>、<a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/503">MDN 503 Service Unavailable</a>。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open>
+        <summary>题 1：如何设计 AI 接口的错误响应？</summary>
+        <p class="answer">内部用业务异常分类 provider 失败，对外统一状态码和结构化错误体，至少包含稳定 error_code 与安全 message；同时记录日志、耗时、provider、trace id，避免暴露原始异常。</p>
+      </details>
+      <details>
+        <summary>题 2：503 和 500 在 AI 服务中的区别是什么？</summary>
+        <p class="answer">503 表示依赖服务暂不可用或过载，调用方可考虑重试；500 表示服务端内部未处理错误。模型超时、限流常映射为 503，代码 bug 不应伪装成 503。</p>
+      </details>
+      <details>
+        <summary>题 3：为什么错误响应也属于 API 契约？</summary>
+        <p class="answer">前端、SDK、监控、自动重试都依赖错误结构。如果错误体不稳定，成功接口再稳定也无法支撑可靠系统。</p>
+      </details>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

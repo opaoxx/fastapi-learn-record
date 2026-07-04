@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lesson 0009 - Update and Delete CRUD</title>
+  <title>Lesson 0009 - PATCH 更新与 DELETE 删除</title>
   <link rel="stylesheet" href="../assets/course.css">
 </head>
 <body>
@@ -19,68 +19,63 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0009</p>
-      <h1>更新和删除：补齐 CRUD 闭环</h1>
-      <p class="lead">前面已经会创建和读取数据库记录。本节补上更新和删除，形成完整 CRUD：Create、Read、Update、Delete。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>PATCH 更新与 DELETE 删除：补齐 CRUD 的状态变更语义</h1>
+      <p class="lead">本节关注 CRUD 中最容易写错的两类接口：部分更新与删除。核心不是记住 <code>PATCH</code> 和 <code>DELETE</code>，而是理解可选字段、未传字段、空值、事务提交、204 响应和 404 边界。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解 CRUD 四个动作和 HTTP 方法的对应关系。</li>
-        <li>理解为什么部分更新通常用 <code>PATCH</code>。</li>
-        <li>看懂 <code>ItemUpdate</code> 为什么所有字段都是可选的。</li>
-        <li>掌握 <code>exclude_unset</code>、<code>sqlmodel_update</code>、<code>delete</code> 的作用。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Update/Delete CRUD
+├─ PATCH：部分更新
+│  ├─ ItemUpdate：所有字段可选
+│  ├─ model_dump(exclude_unset=True)：只取客户端传入字段
+│  ├─ sqlmodel_update(update_data)：写回 ORM 对象
+│  └─ add + commit + refresh：提交并返回最新对象
+├─ DELETE：删除资源
+│  ├─ 先 get：确认资源存在
+│  ├─ session.delete(item)：标记删除
+│  ├─ commit：提交删除
+│  └─ 204 No Content：成功且无响应体
+└─ 共同边界：合法 ID 不存在 -> 404；参数非法 -> 422</code></pre>
     </section>
 
     <section>
-      <h2>1. CRUD 是什么</h2>
-      <p>CRUD 是后端最基础的数据操作模型：</p>
-      <ul>
-        <li><strong>Create</strong>：创建资源，例如 <code>POST /items</code>。</li>
-        <li><strong>Read</strong>：读取资源，例如 <code>GET /items</code>、<code>GET /items/{item_id}</code>。</li>
-        <li><strong>Update</strong>：更新资源，例如 <code>PATCH /items/{item_id}</code>。</li>
-        <li><strong>Delete</strong>：删除资源，例如 <code>DELETE /items/{item_id}</code>。</li>
-      </ul>
-      <p>求职项目里，只要你能把一个资源完整做出 CRUD，就已经具备了普通后端接口的主干能力。</p>
+      <h2>② 核心概念底层原理</h2>
+      <p><strong>CRUD 是资源状态机。</strong>Create 产生资源，Read 观察资源，Update 改变资源，Delete 移除资源。HTTP 方法不是装饰语，而是客户端、缓存、网关、文档和测试理解接口语义的协议。</p>
+      <p><strong>PATCH 与 PUT 的关键区别是“局部”与“整体”。</strong>PUT 通常表示用客户端提交的完整表示替换资源；PATCH 表示只提交需要修改的字段。本项目用 PATCH，因此更新模型必须允许字段缺省。</p>
+      <p><strong>未传字段与显式传 null 必须区分。</strong>部分更新里，未传字段应保持原值；显式传 <code>null</code> 是否允许取决于业务模型。<code>exclude_unset=True</code> 的价值就在于只处理“客户端真的传了”的字段。</p>
+      <p><strong>删除不是把对象从 Python 列表移除。</strong>ORM 删除需要把对象标记为 deleted，再提交事务。提交前数据库状态尚未最终改变。</p>
     </section>
 
     <section>
-      <h2>2. PUT 和 PATCH 的区别</h2>
-      <p>更新接口常见两种方法：</p>
-      <ul>
-        <li><code>PUT</code>：更偏向“整体替换”，客户端通常要提交完整资源。</li>
-        <li><code>PATCH</code>：更偏向“部分更新”，客户端只提交要改的字段。</li>
-      </ul>
-      <p>本项目使用 <code>PATCH</code>，因为新手最容易理解：只想改价格，就只传价格；只想改库存，就只传库存。</p>
-    </section>
-
-    <section>
-      <h2>3. ItemUpdate 模型</h2>
+      <h2>③ 全套代码逐行精读解析</h2>
       <pre><code>class ItemUpdate(SQLModel):
     name: str | None = Field(default=None, min_length=2, max_length=80)
     category: ItemCategory | None = None
     price: float | None = Field(default=None, ge=0)
     in_stock: bool | None = None</code></pre>
-      <p>这里所有字段都是可选的，因为 <code>PATCH</code> 支持部分更新。客户端可以只传：</p>
-      <pre><code>{
-  "price": 18.0
-}</code></pre>
-      <p>但可选不等于随便传。比如 <code>price</code> 如果传了，就必须大于等于 0；<code>category</code> 如果传了，就必须是 <code>book</code>、<code>course</code> 或 <code>tool</code>。</p>
-    </section>
+      <ul>
+        <li><code>ItemUpdate(SQLModel)</code>：更新请求模型，不是数据库表模型。</li>
+        <li><code>str | None = None</code>：字段可缺省，支持部分更新。</li>
+        <li><code>min_length/max_length</code>：如果客户端传了 <code>name</code>，仍必须满足名称规则。</li>
+        <li><code>ItemCategory | None</code>：分类可不改；一旦改，只能是合法分类。</li>
+        <li><code>price ... ge=0</code>：价格可不改；一旦改，不能为负。</li>
+      </ul>
 
-    <section>
-      <h2>4. 更新接口逐行讲解</h2>
-      <pre><code>@router.patch("/{item_id}", response_model=ItemRead)
+      <pre><code>@router.patch(
+    "/{item_id}",
+    response_model=ItemRead,
+    dependencies=[Depends(require_api_key)],
+)
 def update_item(
-    item_id: Annotated[int, Path(ge=1)],
+    item_id: Annotated[int, Path(ge=1, description="The numeric ID of the item.")],
     payload: ItemUpdate,
     session: Annotated[Session, Depends(get_session)],
-) -&gt; Item:
+) -> Item:
     item = session.get(Item, item_id)
     if item is None:
-        raise HTTPException(status_code=404, detail=f"Item {item_id} was not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Item {item_id} was not found.")
 
     update_data = payload.model_dump(exclude_unset=True)
     item.sqlmodel_update(update_data)
@@ -88,90 +83,107 @@ def update_item(
     session.commit()
     session.refresh(item)
     return item</code></pre>
-      <p>关键点：</p>
       <ul>
-        <li><code>session.get(Item, item_id)</code>：先找到要更新的记录。</li>
-        <li><code>exclude_unset=True</code>：只取客户端真的传了的字段。</li>
-        <li><code>sqlmodel_update</code>：把更新字段写回数据库对象。</li>
-        <li><code>commit</code>：保存改动。</li>
-        <li><code>refresh</code>：刷新对象，返回最新数据。</li>
+        <li><code>@router.patch("/{item_id}")</code>：更新指定资源，资源身份来自路径。</li>
+        <li><code>dependencies=[Depends(require_api_key)]</code>：状态变更接口必须鉴权。</li>
+        <li><code>Path(ge=1)</code>：非法 ID 在业务前返回 422。</li>
+        <li><code>payload: ItemUpdate</code>：请求体只包含要更新字段。</li>
+        <li><code>session.get</code>：先确认资源存在；不存在返回 404。</li>
+        <li><code>model_dump(exclude_unset=True)</code>：避免未传字段被默认 <code>None</code> 覆盖数据库原值。</li>
+        <li><code>sqlmodel_update(update_data)</code>：把变更应用到 ORM 对象。</li>
+        <li><code>session.add(item)</code>：确保对象处于 Session 跟踪中。</li>
+        <li><code>commit/refresh</code>：提交事务并返回最新状态。</li>
+      </ul>
+
+      <pre><code>@router.delete(
+    "/{item_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_api_key)],
+)
+def delete_item(
+    item_id: Annotated[int, Path(ge=1, description="The numeric ID of the item.")],
+    session: Annotated[Session, Depends(get_session)],
+) -> None:
+    item = session.get(Item, item_id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Item {item_id} was not found.")
+
+    session.delete(item)
+    session.commit()</code></pre>
+      <ul>
+        <li><code>status_code=204</code>：删除成功但没有响应体。若返回 JSON，应使用 200 或 202 等其他语义。</li>
+        <li><code>session.delete(item)</code>：标记删除，等待提交。</li>
+        <li><code>commit()</code>：真正提交删除。忘记 commit 会导致删除没有落库。</li>
+        <li><code>-> None</code>：函数不返回 body，与 204 保持一致。</li>
       </ul>
     </section>
 
     <section>
-      <h2>5. 删除接口逐行讲解</h2>
-      <pre><code>@router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_item(
-    item_id: Annotated[int, Path(ge=1)],
-    session: Annotated[Session, Depends(get_session)],
-) -&gt; None:
-    item = session.get(Item, item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail=f"Item {item_id} was not found.")
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>PATCH /items/3 {"price": 18.0}
+  -> API Key 校验
+  -> item_id 校验
+  -> ItemUpdate 校验 price >= 0
+  -> session.get(Item, 3)
+  -> payload.model_dump(exclude_unset=True) = {"price": 18.0}
+  -> item.sqlmodel_update(...)
+  -> commit + refresh
+  -> 200 + ItemRead
 
-    session.delete(item)
-    session.commit()</code></pre>
-      <p><code>204 No Content</code> 表示删除成功，但响应体为空。这是删除接口很常见的设计：客户端只需要知道删除成功，不一定需要服务器再返回被删除的对象。</p>
+DELETE /items/3
+  -> API Key 校验
+  -> item_id 校验
+  -> session.get(Item, 3)
+  -> session.delete(item)
+  -> commit
+  -> 204 No Content
+  -> 再 GET /items/3 返回 404</code></pre>
     </section>
 
     <section>
-      <h2>6. 实验：更新一条记录</h2>
-      <p class="small">学到第 12 课后，<code>POST</code>、<code>PATCH</code>、<code>DELETE</code> 都需要带 <code>X-API-Key: dev-secret-key</code>。</p>
-      <p>先创建一个商品，再更新它：</p>
-      <pre><code>POST /items
-{
-  "name": "Patch Practice Item",
-  "category": "tool",
-  "price": 10,
-  "in_stock": true
-}
-
-PATCH /items/{new_id}
-{
-  "price": 12.5,
-  "in_stock": false
-}</code></pre>
-      <p>你应该看到名称和分类保持不变，价格和库存发生变化。</p>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <ul>
+        <li><strong>未传字段 vs null：</strong>未传表示不修改；传 <code>null</code> 是否允许由字段类型决定。当前字段允许 None 进入模型，但实际更新语义要谨慎。</li>
+        <li><strong>PATCH vs PUT：</strong>PATCH 局部修改；PUT 整体替换。面试中不要混用。</li>
+        <li><strong>204 vs 200：</strong>204 不带 body；若要返回删除后的对象或状态消息，使用 200 更合理。</li>
+        <li><strong>404 vs 幂等删除：</strong>当前删除不存在资源返回 404；有些 API 会把重复删除设计成 204。关键是文档和测试要一致。</li>
+      </ul>
     </section>
 
     <section>
-      <h2>7. 实验：删除一条记录</h2>
-      <pre><code>DELETE /items/{new_id}
-GET /items/{new_id}</code></pre>
-      <p>删除请求应该返回 <code>204</code>。再次读取同一个 ID 应该返回 <code>404</code>，因为这个资源已经不存在。</p>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <ul>
+        <li>PATCH 后字段被清空：忘记 <code>exclude_unset=True</code>。解决：只 dump 已设置字段。</li>
+        <li>DELETE 返回 body 导致客户端困惑：204 不应返回内容。解决：函数返回 <code>None</code>。</li>
+        <li>更新不存在 ID 返回 500：未处理 <code>None</code>。解决：先查再 404。</li>
+        <li>写接口返回 401：缺少 <code>X-API-Key</code>。解决：带正确请求头。</li>
+        <li>PATCH 负价格返回 422：这是正确行为，说明模型约束生效。</li>
+      </ul>
     </section>
 
-    <section class="practice">
-      <h2>8. 课堂练习</h2>
-      <p>请你完成：</p>
-      <ol>
-        <li>创建一个 <code>category="course"</code> 的商品。</li>
-        <li>只用 <code>PATCH</code> 修改它的 <code>name</code>。</li>
-        <li>只用 <code>PATCH</code> 修改它的 <code>price</code>。</li>
-        <li>删除它，并解释为什么后续读取是 <code>404</code>。</li>
-      </ol>
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <ul>
+        <li><strong>并发更新：</strong>教学直接覆盖；生产要考虑乐观锁、版本号、更新时间戳和冲突检测。</li>
+        <li><strong>删除策略：</strong>教学物理删除；生产常用软删除以保留审计、恢复能力和外键历史。</li>
+        <li><strong>审计日志：</strong>教学不记录操作者；生产应记录谁在何时改了什么。</li>
+        <li><strong>权限控制：</strong>教学只校验 API Key；生产要校验资源级权限，例如用户只能改自己的数据。</li>
+      </ul>
     </section>
 
     <section class="checkpoint">
-      <h2>9. 小测：先回忆再展开</h2>
-      <details>
-        <summary>1. 为什么 <code>ItemUpdate</code> 的字段都是可选的？</summary>
-        <p class="answer">因为 <code>PATCH</code> 是部分更新，客户端只需要提交想改的字段。</p>
-      </details>
-      <details>
-        <summary>2. <code>exclude_unset=True</code> 避免了什么问题？</summary>
-        <p class="answer">它避免未传字段被当作 <code>None</code> 写回数据库，导致原数据被误清空。</p>
-      </details>
-      <details>
-        <summary>3. 删除成功为什么返回 <code>204</code>？</summary>
-        <p class="answer">因为 <code>204 No Content</code> 表示操作成功，但服务器没有响应体要返回。</p>
-      </details>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details><summary>1. <code>exclude_unset=True</code> 为什么是 PATCH 的关键？</summary><p class="answer">它只提取客户端实际传入的字段，避免未传字段被默认 None 覆盖。</p></details>
+      <details><summary>2. 删除成功为什么使用 204？</summary><p class="answer">204 表示请求成功且没有响应体，符合删除后不返回内容的设计。</p></details>
+      <details><summary>3. 更新前为什么必须先查询资源？</summary><p class="answer">需要确认资源存在，并拿到 ORM 对象才能应用变更；不存在应返回 404。</p></details>
     </section>
 
-    <section>
-      <h2>10. 本节总结</h2>
-      <p>现在 <code>items</code> 已经具备完整 CRUD。<code>PATCH</code> 用于部分更新，<code>DELETE</code> 用于删除资源。更新时先查、再改、再提交；删除时先查、再删、再提交。下一节会用自动化测试证明这些接口真的按预期工作。</p>
-      <p>推荐主资源：<a href="https://sqlmodel.tiangolo.com/tutorial/fastapi/update/">SQLModel Update Data with FastAPI</a>、<a href="https://sqlmodel.tiangolo.com/tutorial/fastapi/delete/">SQLModel Delete Data with FastAPI</a>。</p>
+    <section class="practice">
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details><summary>1. PATCH 和 PUT 的区别是什么？</summary><p class="answer">PUT 通常表示完整替换资源，PATCH 表示局部修改资源字段。</p></details>
+      <details><summary>2. 软删除和硬删除如何取舍？</summary><p class="answer">硬删除简单直接；软删除保留历史、支持恢复和审计，但查询必须过滤删除状态。</p></details>
+      <details><summary>3. 如何避免并发更新互相覆盖？</summary><p class="answer">可使用版本号、更新时间条件、乐观锁、事务隔离或业务冲突检测。</p></details>
+      <p>推荐主资源：<a href="https://sqlmodel.tiangolo.com/tutorial/fastapi/update/">SQLModel Update Data</a>、<a href="https://sqlmodel.tiangolo.com/tutorial/fastapi/delete/">SQLModel Delete Data</a>。</p>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

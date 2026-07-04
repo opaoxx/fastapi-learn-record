@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lesson 0015 - UploadFile Text Files</title>
+  <title>Lesson 0015 - UploadFile Final Review</title>
   <link rel="stylesheet" href="../assets/course.css">
 </head>
 <body>
@@ -19,131 +19,166 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0015</p>
-      <h1>文件上传 UploadFile：让 API 接收文本文件</h1>
-      <p class="lead">前面接口主要接收 JSON。真实 AI 服务常常需要接收文件：文档、图片、音频、表格。本节先从最简单的 UTF-8 文本文件开始。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>UploadFile 文本上传：multipart、字节边界、UTF-8 校验与最小暴露响应</h1>
+      <p class="lead">本节把文件上传从“会用表单传文件”提升到后端工程视角：浏览器用 <code>multipart/form-data</code> 传输文件，FastAPI 用 <code>UploadFile</code> 接收流式文件对象，后端必须做扩展名、大小、编码、存储和响应字段边界控制。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解文件上传为什么使用 <code>multipart/form-data</code>，而不是普通 JSON。</li>
-        <li>理解 <code>UploadFile</code> 和 <code>File()</code> 的作用。</li>
-        <li>看懂 <code>POST /files/text</code> 如何校验文件名、大小和编码。</li>
-        <li>理解为什么响应模型只返回文件元数据和预览，不返回完整内容。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>文本文件上传
+├─ 协议层：multipart/form-data，不是 application/json
+├─ FastAPI 参数：UploadFile + File(...)
+├─ 安全入口：/files 路由整体依赖 require_api_key
+├─ 校验顺序：文件名 -> 读取字节 -> 大小限制 -> UTF-8 解码
+├─ 持久化：UploadedTextFile 保存 filename/content_type/size/content/preview
+├─ 响应模型：UploadedTextFileRead 不返回完整 content
+└─ 生产边界：大文件进对象存储，数据库只保存元数据和引用</code></pre>
     </section>
 
     <section>
-      <h2>1. 为什么文件上传不是 JSON</h2>
-      <p>JSON 很适合传结构化文本，例如商品名称、价格、推理参数。但文件可能很大，也可能是二进制数据，直接塞进 JSON 不自然。</p>
-      <p>浏览器和 HTTP 客户端通常用 <code>multipart/form-data</code> 上传文件。FastAPI 官方文档也说明，接收上传文件时使用 <code>File</code>、<code>bytes</code> 或 <code>UploadFile</code>，文件会作为表单数据发送。</p>
+      <h2>② 核心概念底层原理</h2>
+      <p>JSON 适合结构化文本字段，不适合直接携带文件流。文件上传通常使用 <code>multipart/form-data</code>：请求体由多个 part 组成，每个 part 有自己的头部和内容；文件 part 可以包含文件名、媒体类型和原始字节。</p>
+      <p><code>UploadFile</code> 是 Starlette/FastAPI 对上传文件的抽象，提供 <code>filename</code>、<code>content_type</code> 与异步 <code>read()</code>。它比直接接收 <code>bytes</code> 更贴近文件语义，也更容易扩展到流式处理。</p>
+      <p>本项目只接受 UTF-8 <code>.txt</code>，不是因为真实系统只能处理文本，而是为了把学习焦点集中到文件入口的完整工程闭环：鉴权、格式校验、大小限制、编码校验、持久化、最小化响应。</p>
     </section>
 
     <section>
-      <h2>2. UploadFile 是什么</h2>
-      <pre><code>async def upload_text_file(
-    file: Annotated[UploadFile, File(description="A UTF-8 .txt file.")],
-    session: Annotated[Session, Depends(get_session)],
-) -&gt; UploadedTextFile:
-    ...</code></pre>
-      <p><code>UploadFile</code> 表示上传来的文件对象。它包含：</p>
-      <ul>
-        <li><code>filename</code>：客户端上传的文件名。</li>
-        <li><code>content_type</code>：客户端声明的媒体类型。</li>
-        <li><code>read()</code>：异步读取文件内容。</li>
-      </ul>
-      <p><code>File()</code> 告诉 FastAPI：这个参数来自文件表单字段，而不是 JSON 请求体。</p>
-    </section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>MAX_TEXT_FILE_BYTES = 20_000
 
-    <section>
-      <h2>3. 文件接口为什么也要 API Key</h2>
-      <p>上传文件会占用存储、数据库和后续 AI 处理成本，所以 <code>/files</code> 路由也被 <code>X-API-Key</code> 保护：</p>
-      <pre><code>router = APIRouter(
+router = APIRouter(
     prefix="/files",
     tags=["files"],
     dependencies=[Depends(require_api_key)],
 )</code></pre>
-      <p>这和第 12 课的写接口保护是同一个原则：会消耗资源或改变系统状态的接口，需要先做基本鉴权。</p>
+      <ul>
+        <li><code>MAX_TEXT_FILE_BYTES</code>：把大小限制定义为常量，避免魔法数字散落在业务逻辑中。</li>
+        <li><code>prefix="/files"</code>：文件能力统一挂在 <code>/files</code> 下。</li>
+        <li><code>dependencies=[Depends(require_api_key)]</code>：路由级鉴权，所有文件接口自动要求 <code>X-API-Key</code>。</li>
+      </ul>
+      <pre><code>@router.post("/text", response_model=UploadedTextFileRead, status_code=status.HTTP_201_CREATED)
+async def upload_text_file(
+    file: Annotated[UploadFile, File(description="A UTF-8 .txt file.")],
+    session: Annotated[Session, Depends(get_session)],
+) -> UploadedTextFile:</code></pre>
+      <ul>
+        <li><code>status_code=201</code>：上传成功会创建一个新的文件记录，使用 Created 语义。</li>
+        <li><code>UploadFile</code>：接收文件 part，而不是 JSON 字段。</li>
+        <li><code>File(...)</code>：显式告诉 FastAPI 该参数来自 multipart 表单文件。</li>
+        <li><code>async def</code>：因为 <code>await file.read()</code> 是异步读取。</li>
+      </ul>
+      <pre><code>if not file.filename or not file.filename.lower().endswith(".txt"):
+    raise HTTPException(status_code=422, detail="Only .txt files are accepted in this lesson.")</code></pre>
+      <p>先校验文件名是廉价校验。注意：扩展名不是绝对安全的文件类型判断，生产环境还要检查 MIME、魔数、内容扫描；但教学阶段先用它建立输入约束。</p>
+      <pre><code>raw_content = await file.read()
+if len(raw_content) > MAX_TEXT_FILE_BYTES:
+    raise HTTPException(status_code=413, detail=f"Text file must be at most {MAX_TEXT_FILE_BYTES} bytes.")</code></pre>
+      <p>读取后按字节数限制大小。<code>413</code> 表示请求实体过大，比 <code>422</code> 更贴近“体积超限”的 HTTP 语义。</p>
+      <pre><code>try:
+    content = raw_content.decode("utf-8")
+except UnicodeDecodeError as exc:
+    raise HTTPException(status_code=422, detail="Text file must be UTF-8 encoded.") from exc</code></pre>
+      <p>后续摘要逻辑按字符串处理，所以必须解码。用 <code>from exc</code> 保留异常链，便于调试根因。</p>
+      <pre><code>uploaded_file = UploadedTextFile(
+    filename=file.filename,
+    content_type=file.content_type or "application/octet-stream",
+    size_bytes=len(raw_content),
+    content=content,
+    preview=content[:160],
+)
+session.add(uploaded_file)
+session.commit()
+session.refresh(uploaded_file)
+return uploaded_file</code></pre>
+      <p><code>preview</code> 是响应展示字段，<code>content</code> 是内部处理字段。提交并刷新后，响应模型输出 <code>id/filename/content_type/size_bytes/preview</code>。</p>
     </section>
 
     <section>
-      <h2>4. 校验：文件名、大小、编码</h2>
-      <pre><code>if not file.filename or not file.filename.lower().endswith(".txt"):
-    raise HTTPException(status_code=422, detail="Only .txt files are accepted.")
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>浏览器/HTTP Client 构造 multipart/form-data
+  -> part name 必须是 file
+  -> 请求带 X-API-Key
+  -> require_api_key 通过
+  -> FastAPI 解析 multipart，把文件 part 封装为 UploadFile
+  -> 校验 filename 后缀 .txt
+  -> await file.read() 得到 bytes
+  -> 校验 len(raw_content) <= 20000
+  -> raw_content.decode("utf-8")
+  -> 写入 UploadedTextFile
+  -> 按 UploadedTextFileRead 返回 201</code></pre>
+    </section>
 
-raw_content = await file.read()
-if len(raw_content) &gt; MAX_TEXT_FILE_BYTES:
-    raise HTTPException(status_code=413, detail="Text file is too large.")
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>概念</th><th>正确理解</th><th>易错点</th></tr></thead>
+        <tbody>
+          <tr><td><code>UploadFile</code></td><td>上传文件对象，含元数据与读取方法</td><td>当成普通字符串字段</td></tr>
+          <tr><td><code>File()</code></td><td>声明参数来自表单文件</td><td>省略后误按查询/JSON 参数解析</td></tr>
+          <tr><td><code>content_type</code></td><td>客户端声明的媒体类型</td><td>误以为完全可信</td></tr>
+          <tr><td><code>413</code></td><td>请求体过大</td><td>所有错误都写 422</td></tr>
+          <tr><td><code>preview</code></td><td>对外展示摘要</td><td>把完整 content 返回给前端</td></tr>
+        </tbody>
+      </table>
+    </section>
 
-content = raw_content.decode("utf-8")</code></pre>
-      <p>这三个校验很重要：</p>
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
       <ul>
-        <li>只收 <code>.txt</code>，降低学习阶段的复杂度。</li>
-        <li>限制大小，避免一个请求塞爆内存或数据库。</li>
-        <li>要求 UTF-8，保证后续摘要任务能按文本处理。</li>
+        <li><strong>422: field required</strong>：表单字段名不是 <code>file</code>。解决：前端 <code>formData.append("file", file)</code>。</li>
+        <li><strong>422: Only .txt files</strong>：文件名不以 <code>.txt</code> 结尾。解决：上传正确扩展名的文本文件。</li>
+        <li><strong>413: file too large</strong>：超过 20000 字节。解决：缩小测试文件或提高常量并补测试。</li>
+        <li><strong>422: UTF-8 encoded</strong>：文件不是 UTF-8。解决：用编辑器转换编码为 UTF-8。</li>
+        <li><strong>401 Unauthorized</strong>：文件路由整体受 API Key 保护。解决：带上 <code>X-API-Key</code>。</li>
+        <li><strong>手写 Content-Type 导致上传失败</strong>：浏览器无法自动补 boundary。解决：使用 <code>FormData</code> 时不要手写 <code>Content-Type</code>。</li>
       </ul>
     </section>
 
     <section>
-      <h2>5. 数据库存什么</h2>
-      <pre><code>class UploadedTextFile(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
-    filename: str
-    content_type: str
-    size_bytes: int
-    content: str
-    preview: str</code></pre>
-      <p>教学阶段我们把文本内容直接存在 SQLite。真实项目里，较大的文件通常会放到对象存储，例如 S3、OSS、MinIO，数据库只保存文件 URL、大小、类型和归属信息。</p>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>存储</td><td>文本直接入 SQLite</td><td>S3/OSS/MinIO，对象存储保存文件，DB 保存引用</td></tr>
+          <tr><td>类型校验</td><td>扩展名 + UTF-8 解码</td><td>MIME、魔数、病毒扫描、内容安全检测</td></tr>
+          <tr><td>大小限制</td><td>应用层读取后检查</td><td>网关、反向代理、应用多层限制</td></tr>
+          <tr><td>权限</td><td>统一 API Key</td><td>用户身份、文件归属、访问审计</td></tr>
+          <tr><td>隐私</td><td>不在响应中返回完整 content</td><td>加密、脱敏、保留期、合规删除</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>6. 为什么响应不返回完整 content</h2>
-      <pre><code>class UploadedTextFileRead(SQLModel):
-    id: int
-    filename: str
-    content_type: str
-    size_bytes: int
-    preview: str</code></pre>
-      <p>响应模型不包含完整 <code>content</code>，只返回 <code>preview</code>。这是为了避免把用户上传的完整内容随便暴露出去，也避免响应过大。</p>
-    </section>
-
-    <section>
-      <h2>7. 实验：上传文本文件</h2>
-      <p>在 <code>/docs</code> 里找到 <code>POST /files/text</code>。先点击 Authorize 填入 <code>dev-secret-key</code>，然后上传一个 <code>.txt</code> 文件。</p>
-      <p>你应该得到 <code>201</code>，响应里包含 <code>id</code>、<code>filename</code>、<code>size_bytes</code> 和 <code>preview</code>。</p>
-    </section>
-
-    <section class="practice">
-      <h2>8. 课堂练习</h2>
-      <p>请你测试：</p>
-      <ol>
-        <li>上传 <code>notes.txt</code>，观察 <code>201</code>。</li>
-        <li>上传 <code>notes.md</code>，观察 <code>422</code>。</li>
-        <li>不带 API Key 上传，观察 <code>401</code>。</li>
-      </ol>
-    </section>
-
-    <section class="checkpoint">
-      <h2>9. 小测：先回忆再展开</h2>
-      <details>
-        <summary>1. 文件上传为什么常用 <code>multipart/form-data</code>？</summary>
-        <p class="answer">因为文件不是普通 JSON 字段，表单文件格式更适合传输文件内容和文件元数据。</p>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open>
+        <summary>1. 文件上传为什么使用 multipart/form-data？</summary>
+        <p class="answer">它能把文件字节和表单元数据拆成多个 part 传输，比把文件塞进 JSON 更符合浏览器和 HTTP 客户端的上传模型。</p>
       </details>
       <details>
-        <summary>2. <code>UploadFile</code> 比普通字符串多了什么？</summary>
-        <p class="answer">它带有文件名、内容类型和读取文件内容的方法。</p>
+        <summary>2. 为什么 UploadFile 接口要限制大小？</summary>
+        <p class="answer">防止单个请求消耗过多内存、磁盘或数据库空间，也为后续 AI 处理控制成本。</p>
       </details>
       <details>
-        <summary>3. 为什么响应只返回 <code>preview</code>？</summary>
-        <p class="answer">为了避免暴露完整上传内容，并控制响应体大小。</p>
+        <summary>3. 为什么响应模型不返回完整 content？</summary>
+        <p class="answer">完整上传内容可能含隐私且体积较大，响应应遵循最小暴露原则，仅返回元数据和预览。</p>
       </details>
     </section>
 
     <section>
-      <h2>10. 本节总结</h2>
-      <p><code>UploadFile</code> 是 FastAPI 接收文件上传的核心工具。文件上传接口要考虑鉴权、文件类型、大小限制、编码和响应暴露范围。下一节会把上传文件接到后台摘要任务中。</p>
-      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/request-files/">FastAPI Request Files</a>、<a href="https://fastapi.tiangolo.com/reference/uploadfile/">FastAPI UploadFile Reference</a>。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open>
+        <summary>题 1：设计文件上传接口时必须考虑哪些安全点？</summary>
+        <p class="answer">鉴权、大小限制、类型校验、编码校验、文件名清洗、内容扫描、存储隔离、访问控制、日志审计和响应最小化。</p>
+      </details>
+      <details>
+        <summary>题 2：UploadFile 与 bytes 参数有什么区别？</summary>
+        <p class="answer"><code>bytes</code> 更像直接把内容读入内存；<code>UploadFile</code> 保留文件元数据并提供文件对象接口，更适合真实上传场景和后续流式扩展。</p>
+      </details>
+      <details>
+        <summary>题 3：为什么不能信任 content_type？</summary>
+        <p class="answer">它来自客户端声明，攻击者可以伪造；生产环境需要结合扩展名、魔数、解析结果和安全扫描综合判断。</p>
+      </details>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

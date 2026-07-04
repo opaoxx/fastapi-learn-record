@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lesson 0001 - Run Your First FastAPI API</title>
+  <title>Lesson 0001 - FastAPI 最小应用闭环</title>
   <link rel="stylesheet" href="../assets/course.css">
 </head>
 <body>
@@ -18,91 +18,135 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0001</p>
-      <h1>跑起来你的第一个 FastAPI API</h1>
-      <p class="lead">目标很小：理解一个接口从代码到浏览器访问的完整闭环。这个闭环以后会变成普通后端接口、AI 推理接口、求职项目接口。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>FastAPI 最小应用闭环：ASGI 应用、路径操作与自动文档</h1>
+      <p class="lead">本节把“第一个接口”重构为可复习、可面试、可写项目的核心笔记：从 ASGI 应用对象到路由注册、请求分发、JSON 响应和 OpenAPI 文档生成，建立 FastAPI 后续所有章节的底层坐标系。</p>
     </header>
 
     <section>
-      <h2>你今天只需要掌握一件事</h2>
-      <p>FastAPI 的核心动作是：创建一个 <code>app</code>，把一个 URL 和一个 Python 函数绑定起来，然后让服务器接收 HTTP 请求。</p>
-      <div class="callout">
-        <p><strong>官方说法对照：</strong>FastAPI 官方教程把这叫做 <em>path operation</em>。路径是 <code>/health</code> 这样的 URL 片段，operation 是 <code>GET</code>、<code>POST</code> 这样的 HTTP 方法，函数就是请求到来后被调用的 Python 函数。</p>
-      </div>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>FastAPI 最小闭环
+├─ 应用对象：app = FastAPI(...)
+│  ├─ 保存元数据：title / summary / description / version
+│  ├─ 持有路由表：include_router(...) 注册 path operation
+│  └─ 作为 ASGI callable 被 uvicorn/fastapi dev 调用
+├─ 路径操作：@router.get("/") + Python 函数
+│  ├─ path：URL 路径，例如 /
+│  ├─ operation：HTTP 方法，例如 GET
+│  └─ handler：请求命中后执行的函数
+├─ 响应序列化：dict / Pydantic model -> JSON Response
+├─ 自动文档：类型注解 + response_model + 元数据 -> OpenAPI -> /docs
+└─ 项目闭环：源码 -> 启动服务 -> 请求接口 -> 验证响应 -> 阅读文档</code></pre>
     </section>
 
     <section>
-      <h2>先看代码</h2>
-      <p>工作区里已经有一个小示例：<code>first_api/main.py</code>。</p>
-      <pre><code>from fastapi import FastAPI
-from pydantic import BaseModel, Field
-
-app = FastAPI(title="First FastAPI API")
-
-@app.get("/")
-def read_root():
-    return {"message": "Hello FastAPI"}
-
-@app.get("/health")
-def health_check():
-    return {"status": "ok", "service": "first-api"}</code></pre>
-      <p>这两条接口都是普通后端最常见的 GET 接口。根接口确认服务能访问，健康检查接口常用于部署、监控和面试项目。</p>
+      <h2>② 核心概念底层原理</h2>
+      <p><strong>FastAPI 不是“网页框架”，而是 ASGI Web API 框架。</strong>ASGI 是 Python 异步服务网关接口，负责约定服务器和应用之间如何传递请求、响应、生命周期事件。开发时执行 <code>fastapi dev first_api/main.py</code>，本质是启动一个 ASGI 服务器，然后把 <code>first_api.main:app</code> 当成可调用应用载入。</p>
+      <p><strong>路径操作不是普通函数调用。</strong><code>@router.get("/")</code> 在模块导入阶段把函数注册进路由表；浏览器请求到来时，FastAPI 根据 HTTP 方法和路径匹配函数，再执行函数并把返回值转成 HTTP 响应。函数名本身不决定 URL，装饰器里的 path 才决定 URL。</p>
+      <p><strong>FastAPI 与 Flask 的常见区别。</strong>Flask 更偏手动组织请求解析和响应；FastAPI 把 Python 类型注解、Pydantic 校验、OpenAPI 文档生成和依赖注入集成到路由层。面试时不要只说“FastAPI 更快”，更关键的是“类型驱动的 API 契约更强”。</p>
+      <p><strong>FastAPI 与 Django 的常见区别。</strong>Django 是 batteries-included 的全栈 Web 框架，内置 ORM、后台、模板；FastAPI 更聚焦 API 服务，常用于前后端分离、微服务、AI 推理服务和异步 I/O 边界。</p>
     </section>
 
     <section>
-      <h2>跑起来</h2>
-      <p>在 PowerShell 里进入 <code>F:\teaching_me</code>，执行：</p>
-      <pre><code>python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install "fastapi[standard]"
-fastapi dev first_api/main.py</code></pre>
-      <p>成功后，浏览器打开：</p>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <p>当前项目入口在 <code>first_api/main.py</code>，系统基础接口在 <code>first_api/routers/system.py</code>。第一课关注最小闭环相关代码：</p>
+      <pre><code>settings = get_settings()
+frontend_dir = Path(__file__).parent / "frontend"
+
+app = FastAPI(
+    title=settings.app_name,
+    summary="A learning API that grows from backend basics into AI-service endpoints.",
+    description="A tiny learning API for backend basics and future AI service endpoints.",
+    version="0.1.0",
+    openapi_tags=openapi_tags,
+    lifespan=lifespan,
+)
+
+app.include_router(system.router)
+
+@router.get("/")
+def read_root() -> dict[str, str]:
+    return {"message": "Hello FastAPI,and hello world"}
+
+@router.get("/health", response_model=HealthResponse)
+def health_check() -> HealthResponse:
+    return HealthResponse(status="ok", service="first-api")</code></pre>
       <ul>
-        <li><code>http://127.0.0.1:8000/</code></li>
-        <li><code>http://127.0.0.1:8000/health</code></li>
-        <li><code>http://127.0.0.1:8000/docs</code></li>
+        <li><code>settings = get_settings()</code>：读取配置对象。若直接把标题写死，后续环境切换、测试覆盖、部署配置会更难维护。</li>
+        <li><code>frontend_dir = Path(__file__).parent / "frontend"</code>：用当前文件位置推导静态前端目录。若用相对字符串，工作目录变化时容易找不到文件。</li>
+        <li><code>app = FastAPI(...)</code>：创建主应用对象。缺少它，ASGI 服务器没有可加载入口。</li>
+        <li><code>title</code>、<code>summary</code>、<code>description</code>、<code>version</code>：进入 OpenAPI 元信息和 <code>/docs</code>。企业项目里这些字段会被 SDK 生成、接口网关、文档平台消费。</li>
+        <li><code>openapi_tags=openapi_tags</code>：给接口分组。缺失不影响运行，但文档会变得难扫读。</li>
+        <li><code>lifespan=lifespan</code>：注册启动/关闭生命周期。后续数据库建表、HTTP client 创建都依赖这里。</li>
+        <li><code>app.include_router(system.router)</code>：把系统路由模块挂载进主应用。若漏掉，<code>/</code> 和 <code>/health</code> 会返回 404。</li>
+        <li><code>@router.get("/")</code>：注册根路径 GET 操作。若写成 <code>@router.post("/")</code>，浏览器地址栏 GET 访问会变成 405。</li>
+        <li><code>def read_root() -> dict[str, str]</code>：同步路径函数，返回键和值都是字符串的字典；类型注解强化可读性。</li>
+        <li><code>return {"message": ...}</code>：FastAPI 将字典序列化为 JSON。若返回不可序列化对象，会触发响应编码错误。</li>
+        <li><code>@router.get("/health", response_model=HealthResponse)</code>：声明健康检查接口及成功响应模型。缺少 <code>response_model</code> 时仍可运行，但文档契约弱。</li>
+        <li><code>return HealthResponse(...)</code>：返回已校验模型对象。若 <code>status</code> 不是 <code>"ok"</code>，Pydantic 会按模型约束报错。</li>
       </ul>
-      <p><code>/docs</code> 是 FastAPI 自动生成的交互式 API 文档。以后做求职项目时，它会帮你展示接口能力。</p>
     </section>
 
     <section>
-      <h2>为什么这能通向 AI 服务</h2>
-      <p>AI 服务接口本质上也是 API：用户发一段文本、图片地址或参数，后端调用模型，再把结果返回。示例里已经放了一个假的 <code>/predict</code> 接口，用来提前建立这个感觉。</p>
-      <pre><code>@app.post("/predict")
-def predict(payload: PredictionRequest) -&gt; PredictionResponse:
-    ...</code></pre>
-      <p>先不用管模型怎么接。你今天只要记住：AI 推理函数外面包一层 FastAPI，就能被前端、脚本或其他服务调用。</p>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>1. 终端执行 fastapi dev first_api/main.py
+2. 开发服务器导入 first_api.main
+3. Python 执行模块顶层代码，创建 app，include_router 注册路由
+4. 浏览器请求 GET /health
+5. ASGI 服务器把 scope/method/path 交给 FastAPI
+6. FastAPI 在路由表中匹配 GET + /health
+7. 执行 health_check()
+8. 返回 HealthResponse 对象
+9. FastAPI 按 response_model 序列化为 JSON
+10. 客户端收到 200 + {"status":"ok","service":"first-api"}</code></pre>
+      <p>注意：<code>/docs</code> 不是你写的业务接口，而是 FastAPI 根据 OpenAPI schema 自动挂载的文档 UI。它能展示接口，是因为应用启动时已经收集了路由、模型、参数和响应元数据。</p>
     </section>
 
-    <section class="practice">
-      <h2>练习：改一个接口</h2>
-      <p>打开 <code>first_api/main.py</code>，把根接口返回的 <code>Hello FastAPI</code> 改成你自己的句子，然后重新刷新浏览器。</p>
-      <p>完成标准：你能在浏览器看到新的 JSON 返回。</p>
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <ul>
+        <li><strong>app 与 router：</strong><code>app</code> 是主 ASGI 应用；<code>router</code> 是路由分组容器。router 不独立对外服务，必须被 include。</li>
+        <li><strong>路径与函数名：</strong>URL 由装饰器路径决定，不由函数名决定；函数名主要影响可读性、调试栈和 OpenAPI operationId。</li>
+        <li><strong>返回 dict 与返回模型：</strong>dict 适合最小 demo；模型适合稳定契约。后续项目应优先用响应模型。</li>
+        <li><strong>200 与服务健康：</strong>健康检查返回 200 只能说明应用进程和该路由可用，不等于数据库、外部模型、缓存全部正常。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <ul>
+        <li><code>ModuleNotFoundError: No module named 'first_api'</code>：通常是启动目录不在项目根目录。解决：在 <code>F:\teaching_me</code> 执行命令。</li>
+        <li><code>Address already in use</code>：8000 端口被占用。解决：停止旧服务或使用 <code>fastapi dev first_api/main.py --port 8001</code>。</li>
+        <li><code>GET /health</code> 返回 404：多半是忘记 <code>app.include_router(system.router)</code> 或路由 path 写错。</li>
+        <li><code>/docs</code> 能打开但接口分组混乱：缺少 <code>tags</code> 或 <code>openapi_tags</code>，不影响运行但影响 GitHub 项目展示质量。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <ul>
+        <li><strong>启动方式：</strong>教学用 <code>fastapi dev</code> 热重载；生产通常用 <code>uvicorn</code>/<code>gunicorn</code>、进程管理器、容器和反向代理。</li>
+        <li><strong>健康检查：</strong>教学只返回固定 <code>ok</code>；生产要区分 liveness/readiness，并检查数据库、队列、外部 provider 的依赖状态。</li>
+        <li><strong>文档暴露：</strong>教学公开 <code>/docs</code> 方便学习；生产可能限制访问、分环境开启或挂到内部文档系统。</li>
+        <li><strong>配置来源：</strong>教学默认配置可以简单；生产必须从环境变量、密钥管理和部署平台注入。</li>
+      </ul>
     </section>
 
     <section class="checkpoint">
-      <h2>小测：遮住上面内容再答</h2>
-      <details>
-        <summary>1. <code>@app.get("/health")</code> 这行在做什么？</summary>
-        <p class="answer">它把 GET 请求的 <code>/health</code> 路径绑定到下面那个 Python 函数。</p>
-      </details>
-      <details>
-        <summary>2. 为什么返回字典时浏览器看到的是 JSON？</summary>
-        <p class="answer">FastAPI 会把可序列化的 Python 返回值转换成 HTTP 响应里的 JSON。</p>
-      </details>
-      <details>
-        <summary>3. <code>/docs</code> 对求职项目有什么用？</summary>
-        <p class="answer">它自动展示接口、参数和返回结构，让别人能直接试用你的 API。</p>
-      </details>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details><summary>1. FastAPI 中 <code>@router.get("/health")</code> 注册了哪三类信息？</summary><p class="answer">HTTP 方法 GET、路径 /health、处理函数 health_check。</p></details>
+      <details><summary>2. 为什么返回 Python 字典后客户端看到 JSON？</summary><p class="answer">FastAPI 会通过响应编码器把可序列化 Python 对象转换成 JSON 响应体，并设置对应内容类型。</p></details>
+      <details><summary>3. <code>response_model</code> 在第一课里解决什么问题？</summary><p class="answer">它把成功响应结构声明成契约，用于响应序列化、校验和 OpenAPI 文档生成。</p></details>
     </section>
 
-    <section>
-      <h2>下一步</h2>
-      <p>下一课建议学：<strong>请求体和 Pydantic 模型</strong>。这会让你能写 <code>POST /predict</code> 这种 AI 服务入口，也是后端面试里很常见的验证、类型和接口契约问题。</p>
-      <p>复习时可以看 <a href="../reference/0001-fastapi-first-api-cheatsheet.html">FastAPI 第一个 API 速查</a>。</p>
-      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/first-steps/">FastAPI 官方 First Steps</a>，再配合 <a href="https://fastapi.tiangolo.com/tutorial/">FastAPI Tutorial - User Guide</a>。</p>
-      <p class="small">有任何地方卡住，直接问我。你可以把报错贴过来，我会带你一起 debug。</p>
+    <section class="practice">
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details><summary>1. FastAPI 为什么能自动生成 Swagger 文档？</summary><p class="answer">FastAPI 在应用启动时收集路由、参数、类型注解、Pydantic 模型和响应模型，生成 OpenAPI schema；Swagger UI 再读取 schema 渲染交互式文档。</p></details>
+      <details><summary>2. 健康检查接口应该怎么设计才算靠谱？</summary><p class="answer">最小健康检查只验证进程可响应；生产级通常拆分 liveness 与 readiness，并检查数据库、外部依赖、关键配置和超时边界。</p></details>
+      <details><summary>3. <code>app.include_router()</code> 的工程价值是什么？</summary><p class="answer">它让主应用只负责组装模块，业务接口按领域拆到 router 文件，降低耦合、方便测试和团队协作。</p></details>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/first-steps/">FastAPI First Steps</a>、<a href="https://fastapi.tiangolo.com/advanced/events/">FastAPI Lifespan Events</a>。</p>
     </section>
+
     <nav class="course-nav bottom" aria-label="课程底部导航">
       <span class="nav-title">继续学习</span>
       <span class="nav-links">

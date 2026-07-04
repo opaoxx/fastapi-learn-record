@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lesson 0031 - Real AI Provider Boundary</title>
+  <title>Lesson 0031 - Real AI Provider Boundary Final Review</title>
   <link rel="stylesheet" href="../assets/course.css">
 </head>
 <body>
@@ -19,347 +19,177 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0031</p>
-      <h1>真实 AI Provider 边界：把不稳定的外部调用关进服务层</h1>
-      <p class="lead">前面的 <code>DemoAIClient</code> 只是本地模拟。真实项目里，AI 能力通常来自外部服务：它会超时、限流、返回 5xx、改响应格式，甚至在你演示项目时刚好不可用。本节学习如何先设计边界，再考虑接入真实 provider。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>真实 AI Provider 边界：Protocol、配置对象与可替换客户端</h1>
+      <p class="lead">真实 AI provider 是不稳定外部依赖：会超时、限流、变更响应格式、产生费用。后端不能让 router 直接认识厂商 SDK，而要把外部世界封装进 AI client 边界。本节把 <code>AIClient</code> 协议、<code>AIClientConfig</code> 配置对象和 <code>get_ai_client()</code> 工厂串成可替换、可测试、可演进的 provider 入口。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解为什么外部 AI provider 不能直接写在 router 里。</li>
-        <li>理解边界、协议、适配器、配置、超时、重试、错误映射和测试替身。</li>
-        <li>学会用 Python <code>Protocol</code> 描述 AI 客户端必须具备的能力。</li>
-        <li>学会把 provider、timeout、max_attempts 放进配置，而不是散落成魔法数字。</li>
-        <li>理解 FastAPI 的 <code>Depends</code> 和 <code>dependency_overrides</code> 如何让外部服务可替换、可测试。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>AI Provider Boundary
+├─ 外部问题：timeout / rate limit / 5xx / invalid response / cost
+├─ 内部协议：AIClient(Protocol)
+│  ├─ predict_sentiment(text, mode) -> PredictionResult
+│  └─ summarize(text) -> str
+├─ 配置对象：AIClientConfig
+│  ├─ provider
+│  ├─ timeout_seconds
+│  ├─ max_attempts
+│  └─ retry_* 参数
+├─ 适配器：DemoAIClient(config)
+├─ 工厂函数：get_ai_client() -> AIClient
+├─ FastAPI 注入：Depends(get_ai_client)
+└─ 测试替身：FixedAIClient / FailingAIClient</code></pre>
     </section>
 
     <section>
-      <h2>1. 背景：AI 服务最容易把项目拖乱</h2>
-      <p>普通 CRUD 接口主要依赖数据库，失败模式相对清楚。AI 服务接口多了一层不稳定性：</p>
-      <ul>
-        <li>网络请求可能超时。</li>
-        <li>provider 可能返回 429、500、503。</li>
-        <li>模型响应可能为空、格式不符合预期，或字段含义变化。</li>
-        <li>不同 provider 的请求参数和响应结构不同。</li>
-        <li>测试时不能每次都真的花钱调用外部模型。</li>
-      </ul>
-      <p>如果把真实 AI 调用直接写在 <code>routers/predictions.py</code> 或 <code>task_worker.py</code> 里，后面会很痛苦：路由会越来越胖，测试会越来越慢，错误处理会到处复制，换 provider 时要改很多地方。</p>
-      <p>所以本节的设计原则是：router 只认识“项目自己的 AI 客户端边界”，不认识具体厂商。</p>
-    </section>
-
-    <section class="callout">
-      <h2>2. 核心概念：边界是把外部世界翻译成内部语言</h2>
-      <p>真实 provider 讲的是外部语言：HTTP 状态码、厂商错误码、token 限制、模型名、响应 JSON。我们的项目应该讲内部语言：</p>
-      <pre><code>predict_sentiment(text, mode) -&gt; PredictionResult
-summarize(text) -&gt; str
-AIClientError(error_code, message)</code></pre>
-      <p>这层翻译边界的职责是：</p>
-      <ul>
-        <li>把项目请求转换成 provider 请求。</li>
-        <li>把 provider 响应转换成项目内部结果。</li>
-        <li>把 provider 失败转换成稳定的 <code>AIClientError</code>。</li>
-        <li>集中处理 timeout、retry、provider 配置和日志。</li>
-        <li>让测试可以用假客户端替代真实 provider。</li>
-      </ul>
-      <p>边界设计得好，后面接 OpenAI、Claude、本地模型或公司内部模型，router 都不用大改。</p>
+      <h2>② 核心概念底层原理</h2>
+      <p>边界层的职责是翻译：把项目内部的预测/摘要请求翻译成 provider 调用，把 provider 原始响应翻译成 <code>PredictionResult</code> 或摘要字符串，把 provider 失败翻译成稳定 <code>AIClientError</code>。边界层越清晰，router 越不需要知道厂商细节。</p>
+      <p><code>Protocol</code> 是结构化类型：对象不需要继承 <code>AIClient</code>，只要实现协议要求的方法，就可被当作 AI client 使用。这非常适合测试替身和多 provider adapter，因为我们关心行为形状，而不是继承树。</p>
+      <p><code>AIClientConfig</code> 把外部调用策略集中化。timeout、max_attempts、retry delay 不是随手写在 provider 函数里的魔法数字，而是 AI 边界的一部分。生产里这些参数决定响应时间、成本、重试风暴风险和错误恢复策略。</p>
     </section>
 
     <section>
-      <h2>3. 术语表：先把工程词说清楚</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>术语</th>
-            <th>含义</th>
-            <th>本项目例子</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Provider</td>
-            <td>提供 AI 能力的外部或内部服务。</td>
-            <td>现在是 <code>demo</code>，未来可以是真实模型服务。</td>
-          </tr>
-          <tr>
-            <td>Boundary</td>
-            <td>系统内部和外部服务之间的隔离层。</td>
-            <td><code>services/ai_clients.py</code></td>
-          </tr>
-          <tr>
-            <td>Protocol</td>
-            <td>按“方法形状”定义能力，不要求继承同一个父类。</td>
-            <td><code>AIClient</code></td>
-          </tr>
-          <tr>
-            <td>Adapter</td>
-            <td>把某个 provider 的 API 翻译成项目内部接口。</td>
-            <td><code>DemoAIClient</code> 是本地 demo adapter。</td>
-          </tr>
-          <tr>
-            <td>Timeout</td>
-            <td>外部调用最多等多久。</td>
-            <td><code>FIRST_API_AI_TIMEOUT_SECONDS</code></td>
-          </tr>
-          <tr>
-            <td>Retry</td>
-            <td>遇到特定临时失败时是否重试。</td>
-            <td><code>FIRST_API_AI_MAX_ATTEMPTS</code></td>
-          </tr>
-          <tr>
-            <td>Test double</td>
-            <td>测试中替代真实外部服务的假对象。</td>
-            <td><code>FixedAIClient</code>、<code>FailingAIClient</code></td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
-
-    <section>
-      <h2>4. 官方资料里的关键原则</h2>
-      <p>FastAPI 的依赖系统适合把共享组件注入到路径操作函数中，测试时可以用 <code>app.dependency_overrides</code> 替换依赖。这正好适合替换 AI provider。</p>
-      <p>Python 的 <code>typing.Protocol</code> 支持结构化子类型：只要对象实现了协议要求的方法，类型检查就可以把它视为该协议的实现，而不要求显式继承。</p>
-      <p>HTTPX 的 timeout 文档强调，网络请求必须有超时边界；transport 文档也提到连接层失败和连接超时可以在 transport 层重试。真实 AI provider 本质上也是 HTTP 外部依赖，所以 timeout 和 retry 必须提前进入设计。</p>
-    </section>
-
-    <section>
-      <h2>5. 本节项目改动概览</h2>
-      <ul>
-        <li>新增 <code>AIClientConfig</code>，集中保存 provider、timeout_seconds、max_attempts。</li>
-        <li>新增 <code>AIClient</code> Protocol，声明项目需要的 AI 能力。</li>
-        <li>让 <code>DemoAIClient</code> 接收配置，并继续返回稳定结果。</li>
-        <li>在 Settings 和 <code>.env.example</code> 中加入 AI provider 配置项。</li>
-        <li>让 <code>/predict</code> 和后台摘要任务依赖 <code>AIClient</code>，而不是硬绑定 <code>DemoAIClient</code>。</li>
-        <li>新增测试，确认配置留在 AI 客户端边界内。</li>
-      </ul>
-      <p>注意：本节还没有真正联网调用 AI provider。我们先把边界打好，再接真实服务。这个顺序很重要。</p>
-    </section>
-
-    <section>
-      <h2>6. 代码精读一：AIClientConfig</h2>
+      <h2>③ 全套代码逐行精读解析</h2>
       <pre><code>@dataclass(frozen=True)
 class AIClientConfig:
     provider: AIProvider = "demo"
     timeout_seconds: float = 10.0
-    max_attempts: int = 1</code></pre>
-      <p>这三个字段看起来简单，但它们代表外部调用的三个关键决策：</p>
+    max_attempts: int = 1
+    retry_base_delay_seconds: float = 0.1
+    retry_max_delay_seconds: float = 2.0
+    retry_jitter_seconds: float = 0.0</code></pre>
       <ul>
-        <li><code>provider</code>：当前选择哪个 provider。</li>
-        <li><code>timeout_seconds</code>：最多等多久，避免请求无限挂住。</li>
-        <li><code>max_attempts</code>：最多尝试几次，为后续重试策略留位置。</li>
+        <li><code>@dataclass(frozen=True)</code>：配置对象不可变，避免请求处理中被误改。</li>
+        <li><code>provider</code>：当前只允许 <code>demo</code>，但字段已经为真实 provider 切换留位置。</li>
+        <li><code>timeout_seconds</code>：外部调用最大等待时间；没有 timeout 会让请求无限挂住。</li>
+        <li><code>max_attempts</code>：重试次数上限；不设上限会放大 provider 故障。</li>
+        <li><code>retry_*</code>：后续课程用于退避、封顶和抖动，提前放入边界配置。</li>
       </ul>
-      <p>配置对象的价值不是“现在立刻用满”，而是提前把未来真实 provider 的不稳定因素放在一个清楚的位置。</p>
-    </section>
 
-    <section>
-      <h2>7. 代码精读二：Protocol 定义能力形状</h2>
       <pre><code>class AIClient(Protocol):
     def predict_sentiment(self, text: str, mode: str) -&gt; PredictionResult:
         ...
 
     def summarize(self, text: str) -&gt; str:
         ...</code></pre>
-      <p>这个协议没有实现任何逻辑，只定义“项目需要 AI 客户端会做什么”。它表达两件事：</p>
       <ul>
-        <li>同步预测接口需要 <code>predict_sentiment</code>。</li>
-        <li>后台摘要任务需要 <code>summarize</code>。</li>
+        <li><code>Protocol</code> 声明能力形状，不实现逻辑。</li>
+        <li><code>predict_sentiment</code> 服务同步预测接口。</li>
+        <li><code>summarize</code> 服务后台摘要任务。</li>
+        <li><code>...</code> 表示协议占位；如果在运行时直接调用协议方法，本身不会产生业务结果。</li>
       </ul>
-      <p>测试里的 <code>FixedAIClient</code> 没有继承 <code>AIClient</code>，但只要它实现了这两个方法，就能作为替身使用。这就是结构化类型的好处：关注行为形状，而不是继承关系。</p>
-    </section>
 
-    <section>
-      <h2>8. 代码精读三：DemoAIClient 变成一个 adapter</h2>
-      <pre><code>class DemoAIClient:
-    positive_words = {"good", "great", "love", "pleasant", "nice", "happy"}
-    failure_marker = "simulate-ai-failure"
-
-    def __init__(self, config: AIClientConfig | None = None) -&gt; None:
-        self.config = config or AIClientConfig()</code></pre>
-      <p><code>DemoAIClient</code> 仍然是本地模拟，但它现在更像一个 provider adapter。未来如果新增 <code>OpenAIClient</code>，它也应该实现同样的 <code>AIClient</code> 协议，把真实 API 响应翻译成 <code>PredictionResult</code> 或摘要字符串。</p>
-      <p>预测结果仍然返回：</p>
-      <pre><code>PredictionResult(
-    label="positive",
-    score=0.91,
-    source="demo-ai-client",
-)</code></pre>
-      <p>也就是说，内部响应契约没有变，变的是服务层的可替换性。</p>
-    </section>
-
-    <section>
-      <h2>9. 代码精读四：配置从 Settings 进入边界</h2>
-      <pre><code>class Settings(BaseSettings):
-    app_name: str = "First FastAPI API"
-    environment: str = "development"
-    api_key: str = "dev-secret-key"
-    ai_provider: Literal["demo"] = "demo"
-    ai_timeout_seconds: float = Field(default=10.0, gt=0)
-    ai_max_attempts: int = Field(default=1, ge=1, le=5)</code></pre>
-      <p>这里把 AI 配置放进环境变量系统：</p>
-      <pre><code>FIRST_API_AI_PROVIDER="demo"
-FIRST_API_AI_TIMEOUT_SECONDS="10"
-FIRST_API_AI_MAX_ATTEMPTS="1"</code></pre>
-      <p>真实项目里，不同环境可能使用不同 provider、timeout 和尝试次数。开发环境可以用 demo，测试环境用 fake，生产环境用真实 provider。</p>
-    </section>
-
-    <section>
-      <h2>10. 代码精读五：get_ai_client 是工厂函数</h2>
       <pre><code>def build_ai_client_config() -&gt; AIClientConfig:
     settings = get_settings()
     return AIClientConfig(
         provider=settings.ai_provider,
         timeout_seconds=settings.ai_timeout_seconds,
         max_attempts=settings.ai_max_attempts,
-    )
-
-
-def get_ai_client() -&gt; AIClient:
-    return DemoAIClient(config=build_ai_client_config())</code></pre>
-      <p><code>get_ai_client</code> 现在可以理解为 provider 工厂。今天它只返回 <code>DemoAIClient</code>，以后可以变成：</p>
-      <pre><code>if config.provider == "demo":
-    return DemoAIClient(config)
-if config.provider == "real":
-    return RealProviderClient(config)</code></pre>
-      <p>重要的是：router 不需要知道这些选择逻辑。router 只通过 <code>Depends(get_ai_client)</code> 拿到一个会 <code>predict_sentiment</code> 的对象。</p>
-    </section>
-
-    <section>
-      <h2>11. 代码精读六：router 依赖协议，不依赖具体类</h2>
-      <pre><code>def predict(
-    payload: PredictionRequest,
-    ai_client: Annotated[AIClient, Depends(get_ai_client)],
-) -&gt; PredictionResponse:</code></pre>
-      <p>这一行是本节的关键变化。旧写法是依赖 <code>DemoAIClient</code>，新写法是依赖 <code>AIClient</code>。这让路由表达的是“我需要一个具备 AIClient 能力的对象”，而不是“我只能用 DemoAIClient”。</p>
-      <p>错误处理仍然保持稳定：</p>
-      <pre><code>except AIClientError as exc:
-    raise HTTPException(
-        status_code=503,
-        detail={
-            "error_code": exc.error_code,
-            "message": exc.message,
-        },
+        retry_base_delay_seconds=settings.ai_retry_base_delay_seconds,
+        retry_max_delay_seconds=settings.ai_retry_max_delay_seconds,
+        retry_jitter_seconds=settings.ai_retry_jitter_seconds,
     )</code></pre>
-      <p>这就是边界的另一个价值：无论真实 provider 内部失败长什么样，API 调用方看到的失败形状都稳定。</p>
+      <p>这段代码把环境变量配置转成服务层配置对象。router 不读取环境变量，provider adapter 不散落 <code>get_settings()</code>，配置流向变得可测试、可替换。</p>
+
+      <pre><code>def get_ai_client() -&gt; AIClient:
+    return DemoAIClient(config=build_ai_client_config())</code></pre>
+      <p><code>get_ai_client()</code> 是 FastAPI 依赖入口。今天返回 demo adapter，未来可根据 <code>config.provider</code> 返回真实 provider adapter。调用方依赖的是 <code>AIClient</code> 协议，不依赖 <code>DemoAIClient</code> 具体类。</p>
     </section>
 
     <section>
-      <h2>12. 测试：替身对象不需要继承具体类</h2>
-      <pre><code>class FixedAIClient:
-    def predict_sentiment(self, text: str, mode: str) -&gt; PredictionResult:
-        return PredictionResult(
-            label="positive",
-            score=0.99,
-            source="fixed-test-client",
-        )
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>POST /predict
+  -> Depends(get_settings)
+  -> Depends(get_ai_client)
+       -> build_ai_client_config()
+       -> DemoAIClient(config)
+  -> run_prediction()
+       -> ai_client.predict_sentiment(text, mode)
+       -> PredictionResult
+  -> build_prediction_response()
+  -> PredictionResponse JSON
 
-    def summarize(self, text: str) -&gt; str:
-        return "fixed summary"</code></pre>
-      <p>测试通过 <code>app.dependency_overrides[get_ai_client]</code> 把真实依赖替换成 <code>FixedAIClient</code>。它不需要联网，不需要真实模型，不需要等待 provider 响应。</p>
-      <p>这就是外部服务测试的基本策略：接口层测试验证“我们的系统如何处理成功和失败”，而不是每次都真的打外部 API。</p>
+测试路径
+  -> app.dependency_overrides[get_ai_client] = override_ai_client
+  -> router 收到 FixedAIClient / FailingAIClient
+  -> 不访问真实 provider
+  -> 稳定验证成功与失败路径</code></pre>
     </section>
 
     <section>
-      <h2>13. 真实 provider 接入时的失败分类</h2>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
       <table>
-        <thead>
-          <tr>
-            <th>失败类型</th>
-            <th>边界层应该怎么处理</th>
-          </tr>
-        </thead>
+        <thead><tr><th>概念</th><th>正确理解</th><th>易错点</th></tr></thead>
         <tbody>
-          <tr>
-            <td>连接失败</td>
-            <td>映射成 <code>AIClientError("ai_provider_connect_error")</code>，必要时按策略重试。</td>
-          </tr>
-          <tr>
-            <td>请求超时</td>
-            <td>立刻停止等待，返回稳定错误；不要让 API 请求无限挂起。</td>
-          </tr>
-          <tr>
-            <td>429 限流</td>
-            <td>通常不要盲目重试；要考虑退避、队列或提示稍后再试。</td>
-          </tr>
-          <tr>
-            <td>5xx 临时故障</td>
-            <td>可以考虑有限重试；超过次数后映射为可恢复失败。</td>
-          </tr>
-          <tr>
-            <td>响应格式变化</td>
-            <td>在 adapter 内校验并转换，不让脏数据进入 router。</td>
-          </tr>
+          <tr><td>Provider</td><td>外部 AI 能力来源</td><td>直接写进 router</td></tr>
+          <tr><td>Boundary</td><td>外部语言到内部语言的翻译层</td><td>只当作目录分层</td></tr>
+          <tr><td>Protocol</td><td>行为形状约束</td><td>以为必须显式继承</td></tr>
+          <tr><td>Config</td><td>调用策略集中对象</td><td>魔法数字散落代码</td></tr>
+          <tr><td>Test double</td><td>替代真实 provider 的对象</td><td>测试里真调外部模型</td></tr>
         </tbody>
       </table>
-      <p>HTTPX 文档中 timeout 和 transport retry 的设计提醒我们：网络不可靠是常态。AI 服务更应该把这个现实写进边界层。</p>
-    </section>
-
-    <section class="practice">
-      <h2>14. 课堂实验</h2>
-      <p>运行测试：</p>
-      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_ai_client_dependency.py -q</code></pre>
-      <p>观察三件事：</p>
-      <ol>
-        <li><code>FixedAIClient</code> 可以替换 <code>get_ai_client</code>。</li>
-        <li><code>FailingAIClient</code> 抛出的 <code>AIClientError</code> 会变成稳定 503 响应。</li>
-        <li><code>DemoAIClient</code> 可以携带 <code>AIClientConfig</code>，但路由不需要知道配置细节。</li>
-      </ol>
     </section>
 
     <section>
-      <h2>15. 常见错误与诊断</h2>
-      <div class="two-col">
-        <div class="callout">
-          <h3>错误一：在 router 里直接写 provider SDK</h3>
-          <p>router 会变胖，测试会依赖网络，换 provider 时到处改。</p>
-        </div>
-        <div class="callout">
-          <h3>错误二：没有 timeout</h3>
-          <p>外部调用可能长期挂住，用户请求也跟着卡住。</p>
-        </div>
-        <div class="callout">
-          <h3>错误三：把 provider 错误原样透给前端</h3>
-          <p>前端会依赖厂商细节，也可能泄露不该暴露的信息。</p>
-        </div>
-        <div class="callout">
-          <h3>错误四：测试真的调用外部 AI</h3>
-          <p>测试会慢、贵、不稳定。应该用依赖覆盖和测试替身。</p>
-        </div>
-      </div>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <ul>
+        <li><strong>测试慢且偶发失败</strong>：测试访问真实 AI provider。解决：用 <code>dependency_overrides</code> 注入替身 client。</li>
+        <li><strong>provider 错误泄露到前端</strong>：adapter 未统一错误映射。解决：边界层转换为 <code>AIClientError</code>。</li>
+        <li><strong>切 provider 改动范围大</strong>：router 依赖具体类。解决：router 注入 <code>AIClient</code> 协议。</li>
+        <li><strong>请求长期卡住</strong>：没有 timeout。解决：把 <code>timeout_seconds</code> 放入配置并由 adapter 使用。</li>
+        <li><strong>重试无限放大故障</strong>：没有最大尝试次数。解决：配置 <code>max_attempts</code> 上限。</li>
+      </ul>
     </section>
 
     <section>
-      <h2>16. 面试视角：如何回答“AI 服务怎么接入后端？”</h2>
-      <blockquote>
-        <p>我不会把外部 AI provider 直接写进 FastAPI router，而是放在服务层 adapter 后面。router 依赖项目自己的 AIClient 协议，provider adapter 负责把内部请求转换为外部请求，把外部响应转换为内部结果，并把 timeout、限流、5xx、格式错误等失败映射为稳定的业务错误。测试中我会用 FastAPI dependency_overrides 替换 AI 客户端，避免真实联网调用。</p>
-      </blockquote>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>Provider</td><td>DemoAIClient 本地规则</td><td>外部 LLM、内部模型服务、本地推理集群</td></tr>
+          <tr><td>配置</td><td>少量 env 字段</td><td>密钥、模型版本、路由策略、配额、熔断</td></tr>
+          <tr><td>错误</td><td>AIClientError</td><td>错误 taxonomy、可重试分类、监控告警</td></tr>
+          <tr><td>测试</td><td>Fixed/Failing client</td><td>mock、contract test、record/replay、sandbox</td></tr>
+          <tr><td>安全</td><td>无真实密钥</td><td>密钥管理、审计、限流、数据脱敏</td></tr>
+        </tbody>
+      </table>
     </section>
 
-    <section class="checkpoint">
-      <h2>17. 小测：先回忆，再展开</h2>
-      <details>
-        <summary>1. 为什么 router 不应该直接调用真实 AI provider？</summary>
-        <p class="answer">因为会让路由耦合外部细节，导致测试慢、不稳定，换 provider 时修改范围变大。</p>
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open>
+        <summary>1. 为什么真实 AI provider 不应直接写在 router 里？</summary>
+        <p class="answer">router 会耦合厂商协议、异常、配置和测试细节，导致换 provider、写测试和统一错误处理都变困难。</p>
       </details>
       <details>
-        <summary>2. <code>AIClient</code> Protocol 解决了什么问题？</summary>
-        <p class="answer">它定义项目需要的 AI 能力形状，让具体实现和测试替身都能被替换使用。</p>
+        <summary>2. <code>AIClient</code> Protocol 的价值是什么？</summary>
+        <p class="answer">它让调用方依赖行为形状，具体实现可以是 demo、真实 provider 或测试替身。</p>
       </details>
       <details>
-        <summary>3. 为什么 timeout 应该进入 AI 客户端配置？</summary>
-        <p class="answer">因为外部调用可能无限等待，timeout 是保护 API 响应时间和系统资源的边界。</p>
+        <summary>3. timeout 为什么属于 provider 边界？</summary>
+        <p class="answer">timeout 决定外部调用最多占用请求多久，是保护 API 延迟和资源的关键策略。</p>
       </details>
       <details>
-        <summary>4. 为什么测试里应该用 <code>dependency_overrides</code>？</summary>
-        <p class="answer">因为它能替换外部服务依赖，让测试快速、稳定、便宜。</p>
+        <summary>4. 测试替身为什么不必继承 <code>DemoAIClient</code>？</summary>
+        <p class="answer">因为 Protocol 关注方法形状，只要实现同名方法并返回符合契约的结果即可。</p>
       </details>
     </section>
 
     <section>
-      <h2>18. 本节总结</h2>
-      <p>本节把 AI 能力从“一个 demo 类”推进到“可替换 provider 边界”。你现在应该能解释：真实 AI provider 是不稳定外部依赖，应该被封装在服务层 adapter 后面；FastAPI router 只依赖项目自己的协议；timeout、retry 和错误映射属于边界层职责；测试用替身对象验证我们自己的行为。</p>
-      <p>下一课建议学习：FastAPI async 基础。我们会讲 <code>async def</code>、事件循环、等待和阻塞的区别，以及为什么外部 HTTP 调用和数据库调用会影响并发。</p>
-      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/dependencies/">FastAPI Dependencies</a>、<a href="https://fastapi.tiangolo.com/advanced/testing-dependencies/">FastAPI Testing Dependencies with Overrides</a>、<a href="https://docs.python.org/3/library/typing.html">Python typing</a>、<a href="https://typing.python.org/en/latest/spec/protocol.html">Python Protocols</a>、<a href="https://www.python-httpx.org/advanced/timeouts/">HTTPX Timeouts</a>、<a href="https://www.python-httpx.org/advanced/transports/">HTTPX Transports</a>。</p>
-      <p class="small">如果你想继续加深，可以问我：“真实 OpenAIClient 应该怎么写才不会污染 router？”我们可以下一步按 adapter 形状设计。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open>
+        <summary>题 1：后端如何接入可替换 AI provider？</summary>
+        <p class="answer">定义内部协议，写 provider adapter 负责请求/响应/错误翻译；router 通过依赖注入拿协议对象；配置集中在 Settings/Config；测试用替身覆盖依赖，不直接访问真实 provider。</p>
+      </details>
+      <details>
+        <summary>题 2：为什么外部 AI 调用要封装 timeout 和 retry？</summary>
+        <p class="answer">外部网络和模型服务不可靠。timeout 防止无限等待，有限 retry 应对临时失败，但必须有上限和退避，避免放大故障。</p>
+      </details>
+      <details>
+        <summary>题 3：Protocol 和抽象基类怎么选？</summary>
+        <p class="answer">Protocol 更轻，适合 Python 结构化类型和测试替身；抽象基类适合需要共享实现或强制显式继承的场景。</p>
+      </details>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lesson 0030 - Schema Evolution and Backward Compatibility</title>
+  <title>Lesson 0030 - Schema Evolution Final Review</title>
   <link rel="stylesheet" href="../assets/course.css">
 </head>
 <body>
@@ -19,363 +19,156 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0030</p>
-      <h1>Schema 演进和向后兼容：JSON 形状变化不是小事</h1>
-      <p class="lead">第 29 课我们把 <code>/openapi.json</code> 看成 API 契约。这一课继续深入：当业务要继续长大，接口返回的 JSON 能不能随便改？什么时候可以加字段，什么时候必须升级版本，什么时候要写迁移计划？</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>Schema 演进与向后兼容：JSON 形状变化就是 API 变更</h1>
+      <p class="lead">当 <code>GET /tasks</code> 从裸数组升级成响应信封时，后端只是多包一层对象，调用方却必须重写解析路径。Schema 演进的核心判断标准不是“代码改得多不多”，而是“旧客户端是否还能不用修改继续工作”。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解 schema、schema 演进、向后兼容、破坏性变更、弃用和版本号。</li>
-        <li>能判断常见 API 变更是兼容还是不兼容。</li>
-        <li>理解为什么 <code>GET /tasks</code> 从裸数组升级成响应信封是一种契约变化。</li>
-        <li>学会用 <code>response_model</code>、<code>Field</code> 和测试守住响应形状。</li>
-        <li>形成真实项目里的变更流程：先分类，再迁移，再删除。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Schema 演进判断模型
+├─ Schema：JSON 形状、字段、类型、必填性、约束、语义
+├─ 兼容变更
+│  ├─ 新增可选响应字段
+│  ├─ 新增可选查询参数且默认行为不变
+│  └─ 扩展文档描述
+├─ 破坏性变更
+│  ├─ 顶层类型变化：array -> object
+│  ├─ 删除字段 / 字段改名
+│  ├─ 字段类型改变
+│  ├─ 新增必填请求字段
+│  └─ 默认语义改变
+├─ 项目案例：list[SummaryTaskRead] -> SummaryTaskListResponse
+└─ 防线：运行时契约测试 + OpenAPI schema 测试</code></pre>
     </section>
 
     <section>
-      <h2>1. 背景：为什么“改个字段名”会出事故</h2>
-      <p>后端初学阶段很容易有一个错觉：接口是我写的，所以我可以随时改返回值。比如把任务列表从：</p>
-      <pre><code>[
-  {"id": 1, "status": "completed"}
-]</code></pre>
-      <p>改成：</p>
-      <pre><code>{
-  "items": [
-    {"id": 1, "status": "completed"}
-  ],
-  "count": 12,
-  "limit": 5,
-  "offset": 0
-}</code></pre>
-      <p>从后端角度看，这只是“为了分页多包一层”。但从前端角度看，旧代码可能写的是：</p>
-      <pre><code>for (const task of tasks) {
-  renderTask(task);
-}</code></pre>
-      <p>如果 <code>tasks</code> 突然从数组变成对象，循环就会失败。也就是说，JSON 形状不是内部实现细节，而是调用方代码依赖的公共接口。</p>
-    </section>
-
-    <section class="callout">
-      <h2>2. 核心概念：schema 是数据的形状说明</h2>
-      <p>在本课程里，schema 可以先理解为“JSON 应该长什么样”。它至少描述：</p>
-      <ul>
-        <li>顶层类型：对象、数组、字符串、数字、布尔值。</li>
-        <li>字段集合：有哪些字段，字段名是什么。</li>
-        <li>字段类型：<code>items</code> 是数组，<code>count</code> 是整数。</li>
-        <li>是否必填：调用方能不能假设字段一定存在。</li>
-        <li>取值范围：<code>limit</code> 最小 1，最大 100。</li>
-        <li>语义：<code>count</code> 是当前筛选条件下的总数，而不是当前页条数。</li>
-      </ul>
-      <p>OpenAPI Specification 的价值就在这里：它提供一种机器可读的 API 描述格式，让路径、参数、请求体、响应体、安全方案等信息可以被文档、测试和客户端工具共同理解。</p>
+      <h2>② 核心概念底层原理</h2>
+      <p>Schema 不只是“有哪些字段”，还包括顶层类型、字段类型、是否必填、取值范围和业务语义。<code>count</code> 是整数并且 <code>ge=0</code>，这属于结构约束；<code>count</code> 表示当前筛选条件下总数，这属于语义约束。</p>
+      <p>向后兼容是调用方视角的概念：服务端升级后，旧客户端不改代码仍能工作，才叫兼容。后端觉得“只是字段改名”没有意义，因为旧客户端读取旧字段会失败。</p>
+      <p>版本化、弃用、迁移窗口是处理不兼容变更的工程手段。课程项目调用方少，可以直接升级；真实团队通常要新增版本或新 endpoint，保留旧契约一段时间，并用文档和测试引导迁移。</p>
     </section>
 
     <section>
-      <h2>3. 六个术语先讲清楚</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>术语</th>
-            <th>含义</th>
-            <th>本项目例子</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Schema</td>
-            <td>数据形状、字段、类型和约束的说明。</td>
-            <td><code>SummaryTaskListResponse</code></td>
-          </tr>
-          <tr>
-            <td>Schema 演进</td>
-            <td>接口形状随着业务变化而改变。</td>
-            <td>从任务裸数组到分页响应信封。</td>
-          </tr>
-          <tr>
-            <td>向后兼容</td>
-            <td>旧客户端不用改代码，也能继续和新服务通信。</td>
-            <td>新增一个可选查询参数，默认行为不变。</td>
-          </tr>
-          <tr>
-            <td>破坏性变更</td>
-            <td>旧客户端可能无法继续工作。</td>
-            <td>把 <code>count</code> 改名为 <code>total</code>。</td>
-          </tr>
-          <tr>
-            <td>弃用</td>
-            <td>暂时保留旧能力，但告诉调用方未来会移除。</td>
-            <td>旧参数保留一段时间并标记 deprecated。</td>
-          </tr>
-          <tr>
-            <td>版本化</td>
-            <td>用 <code>v1</code>、<code>v2</code> 或版本号表达不兼容边界。</td>
-            <td>未来可能出现 <code>/api/v2/tasks</code>。</td>
-          </tr>
-        </tbody>
-      </table>
-      <p>Google AIP 的向后兼容准则把 API 视为和用户之间的契约，并区分源码兼容、传输兼容和语义兼容。对我们现在的 FastAPI 项目，最重要的是传输兼容和语义兼容：JSON 能不能被旧客户端解析，以及字段含义有没有悄悄变掉。</p>
-    </section>
-
-    <section>
-      <h2>4. 兼容性判断表</h2>
-      <p>下面这张表是你以后做接口变更前可以先过一遍的“变更体检表”。</p>
-      <table>
-        <thead>
-          <tr>
-            <th>变更</th>
-            <th>通常是否兼容</th>
-            <th>原因</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>新增可选响应字段</td>
-            <td>通常兼容</td>
-            <td>宽松客户端会忽略不认识的字段；严格客户端仍需谨慎。</td>
-          </tr>
-          <tr>
-            <td>新增可选查询参数，默认行为不变</td>
-            <td>通常兼容</td>
-            <td>旧客户端不传新参数时仍得到旧行为。</td>
-          </tr>
-          <tr>
-            <td>新增必填请求字段</td>
-            <td>通常不兼容</td>
-            <td>旧客户端不会发送这个字段，请求会失败。</td>
-          </tr>
-          <tr>
-            <td>删除响应字段</td>
-            <td>不兼容</td>
-            <td>旧客户端可能正在读取该字段。</td>
-          </tr>
-          <tr>
-            <td>字段改名</td>
-            <td>不兼容</td>
-            <td>等价于删除旧字段再新增新字段。</td>
-          </tr>
-          <tr>
-            <td>字段类型改变</td>
-            <td>不兼容</td>
-            <td>解析逻辑会变，例如整数变字符串。</td>
-          </tr>
-          <tr>
-            <td>默认值改变</td>
-            <td>通常不兼容</td>
-            <td>旧客户端不传参数时观察到的行为变了。</td>
-          </tr>
-          <tr>
-            <td>枚举响应新增值</td>
-            <td>谨慎处理</td>
-            <td>旧客户端可能没有处理未知状态。</td>
-          </tr>
-        </tbody>
-      </table>
-      <p>SemVer 的基本思路也可以借来理解 API：补丁版本用于向后兼容的修复，次版本用于向后兼容的新功能，主版本用于不兼容变化。我们的课程项目还没有真正发布包版本，但这个思维很重要。</p>
-    </section>
-
-    <section>
-      <h2>5. 回看本项目：裸数组到信封为什么是破坏性变化</h2>
-      <p>早期任务列表如果返回裸数组，调用方会把响应当作数组：</p>
-      <pre><code>[
-  {"id": 3, "status": "completed"},
-  {"id": 2, "status": "failed"}
-]</code></pre>
-      <p>第 25、26 课之后，我们为了支持前端分页，把响应升级成：</p>
-      <pre><code>{
-  "items": [
-    {"id": 3, "status": "completed"},
-    {"id": 2, "status": "failed"}
-  ],
-  "count": 12,
-  "limit": 5,
-  "offset": 0
-}</code></pre>
-      <p>这个设计本身是对的，因为前端需要 <code>count</code> 才能判断下一页。但它不是“无痛小改”。它改变了顶层类型：从数组变成对象。任何旧客户端如果还把响应当数组处理，都会坏。</p>
-      <p>真实项目里遇到这种变化，常见做法不是直接改原接口，而是：</p>
-      <ul>
-        <li>保留旧接口一段时间，例如 <code>GET /tasks</code> 仍返回旧数组。</li>
-        <li>新增新接口，例如 <code>GET /tasks/search</code> 或 <code>GET /api/v2/tasks</code> 返回信封。</li>
-        <li>或者先让旧接口支持兼容输出，通知调用方迁移，再移除旧格式。</li>
-      </ul>
-      <p>课程项目因为调用方只有我们自己的前端和测试，所以可以直接升级。但学习时必须知道：在真实团队里，这会被当成契约变更来评审。</p>
-    </section>
-
-    <section>
-      <h2>6. 本节项目改动概览</h2>
-      <p>这一课做了一个保守但很实用的改动：不改变 JSON 返回值，只强化契约表达和测试。</p>
-      <ul>
-        <li>给 <code>SummaryTaskListResponse</code> 的四个字段补充 <code>Field</code> 描述和数值边界。</li>
-        <li>新增测试，确认 <code>GET /tasks</code> 返回的是对象信封，而不是裸数组。</li>
-        <li>新增 OpenAPI 测试，确认响应信封 schema 仍然要求 <code>items/count/limit/offset</code>。</li>
-      </ul>
-      <p>这类改动很适合教学项目和真实项目：对调用方没有新增负担，但让契约更清楚、更容易被工具检查。</p>
-    </section>
-
-    <section>
-      <h2>7. 代码精读一：用 Field 把字段语义写进 schema</h2>
+      <h2>③ 全套代码逐行精读解析</h2>
       <pre><code>class SummaryTaskListResponse(BaseModel):
-    items: list[SummaryTaskRead] = PydanticField(
-        description="The current page of summary tasks."
-    )
-    count: int = PydanticField(
-        ge=0,
-        description="Total number of tasks matching the current filter."
-    )
-    limit: int = PydanticField(
-        ge=1,
-        le=100,
-        description="Maximum number of tasks requested for this page."
-    )
-    offset: int = PydanticField(
-        ge=0,
-        description="Zero-based number of matching tasks skipped before this page."
-    )</code></pre>
-      <p>这段代码没有改变响应 JSON 的字段名，也没有新增字段。它改变的是 schema 的清晰度：</p>
+    items: list[SummaryTaskRead] = PydanticField(description="The current page of summary tasks.")
+    count: int = PydanticField(ge=0, description="Total number of tasks matching the current filter.")
+    limit: int = PydanticField(ge=1, le=100, description="Maximum number of tasks requested for this page.")
+    offset: int = PydanticField(ge=0, description="Zero-based number of matching tasks skipped before this page.")</code></pre>
       <ul>
-        <li><code>items</code>：说明这是当前页，不是全部任务。</li>
-        <li><code>count</code>：说明这是当前筛选条件下的总数，不是当前页数量。</li>
-        <li><code>limit</code>：把最大 100 的边界写进响应模型。</li>
-        <li><code>offset</code>：说明它是从 0 开始跳过的匹配记录数。</li>
+        <li><code>items</code> 新增了页级容器语义；旧裸数组客户端必须迁移到 <code>payload.items</code>。</li>
+        <li><code>count</code> 是新增字段，但由于顶层已经从数组变对象，整体仍是不兼容变更。</li>
+        <li><code>ge/le</code> 把约束写入 schema，让 OpenAPI 可见，也能被测试保护。</li>
+        <li>字段描述补充语义，防止后续维护者把 <code>count</code> 错写成当前页条数。</li>
       </ul>
-      <p>FastAPI 的 <code>response_model</code> 会把这些模型信息用于文档、验证、序列化和过滤。也就是说，模型不是“只给 Python 看”，它会影响 OpenAPI 契约。</p>
-    </section>
 
-    <section>
-      <h2>8. 代码精读二：运行时契约测试</h2>
       <pre><code>def test_list_summary_tasks_returns_response_envelope_contract() -&gt; None:
-    with TestClient(app) as client:
-        response = client.get("/tasks?limit=5&amp;offset=0", headers=API_KEY_HEADERS)
-
-    assert response.status_code == 200
+    response = client.get("/tasks?limit=5&amp;offset=0", headers=API_KEY_HEADERS)
     payload = response.json()
     assert isinstance(payload, dict)
     assert set(payload) == {"items", "count", "limit", "offset"}
-    assert isinstance(payload["items"], list)
-    assert isinstance(payload["count"], int)
-    assert isinstance(payload["limit"], int)
-    assert isinstance(payload["offset"], int)</code></pre>
-      <p>这个测试的目标很明确：守住 wire format，也就是网络上传输的 JSON 形状。</p>
-      <p>如果以后有人把接口改回：</p>
-      <pre><code>return items</code></pre>
-      <p>这个测试会在 <code>assert isinstance(payload, dict)</code> 失败。它不是在挑剔实现细节，而是在保护前端依赖的响应契约。</p>
-    </section>
-
-    <section>
-      <h2>9. 代码精读三：OpenAPI schema 测试</h2>
-      <pre><code>def test_openapi_documents_task_list_response_envelope_schema() -&gt; None:
-    with TestClient(app) as client:
-        response = client.get("/openapi.json")
-
-    schema = response.json()
-    envelope_schema = schema["components"]["schemas"]["SummaryTaskListResponse"]
-
-    assert envelope_schema["required"] == ["items", "count", "limit", "offset"]
-    assert set(envelope_schema["properties"]) == {"items", "count", "limit", "offset"}
-    assert envelope_schema["properties"]["count"]["minimum"] == 0
-    assert envelope_schema["properties"]["limit"]["minimum"] == 1
-    assert envelope_schema["properties"]["limit"]["maximum"] == 100
-    assert envelope_schema["properties"]["offset"]["minimum"] == 0</code></pre>
-      <p>这和上一个测试关注点不同：</p>
+    assert isinstance(payload["items"], list)</code></pre>
       <ul>
-        <li>运行时测试：真实接口现在返回什么。</li>
-        <li>OpenAPI 测试：文档和工具看到的契约是什么。</li>
+        <li><code>isinstance(payload, dict)</code> 保护顶层类型；若有人改回裸数组，该断言立刻失败。</li>
+        <li><code>set(payload)</code> 保护字段集合；字段改名、删除、增加未评审字段都会暴露。</li>
+        <li><code>items</code> 类型断言保护前端遍历路径。</li>
       </ul>
-      <p>两个都要有。否则可能出现一种尴尬状态：接口实际返回信封，但 OpenAPI 文档还像裸数组；或者文档写得很好，代码实际已经漂移。</p>
+
+      <pre><code>envelope_schema = schema["components"]["schemas"]["SummaryTaskListResponse"]
+assert envelope_schema["required"] == ["items", "count", "limit", "offset"]
+assert envelope_schema["properties"]["limit"]["maximum"] == 100</code></pre>
+      <p>运行时测试保护真实响应，OpenAPI 测试保护文档契约。两者必须同时存在，否则可能出现“接口返回对了，文档错了”或“文档写对了，运行时漂移”。</p>
     </section>
 
     <section>
-      <h2>10. 变更流程：真实项目怎么改 API</h2>
-      <ol>
-        <li>先写出当前契约：路径、参数、响应字段、字段语义、错误状态码。</li>
-        <li>判断变更类型：兼容、可能兼容、不兼容。</li>
-        <li>如果兼容，直接加测试和文档，然后发布。</li>
-        <li>如果不兼容，优先寻找兼容方案，例如新增字段而不是改名。</li>
-        <li>如果必须不兼容，新增版本或新路径，保留旧接口一段时间。</li>
-        <li>在文档里标记弃用，告诉调用方迁移目标和时间。</li>
-        <li>用测试守住旧版本和新版本各自的契约。</li>
-      </ol>
-      <p>FastAPI 的 <code>Query(deprecated=True)</code> 可以把旧查询参数标记为弃用，并显示在 OpenAPI 文档里。它不等于删除参数，而是给调用方一个迁移信号。</p>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>需求：前端需要分页按钮
+  -> 裸数组无法表达总数和偏移
+  -> 后端设计 SummaryTaskListResponse
+  -> 修改 response_model 和 service 返回
+  -> 前端从 response 改为 response.items
+  -> OpenAPI schema 从 array 变 object
+  -> 契约测试锁定 items/count/limit/offset
+  -> 后续变更先判断兼容性
+       兼容：新增可选字段/参数 + 测试
+       不兼容：版本化/弃用/迁移期</code></pre>
     </section>
 
     <section>
-      <h2>11. 课堂实验一：观察响应信封</h2>
-      <p>运行服务后请求：</p>
-      <pre><code>GET http://127.0.0.1:8000/tasks?limit=5&amp;offset=0
-X-API-Key: dev-secret-key</code></pre>
-      <p>你应该观察到顶层是对象，不是数组：</p>
-      <pre><code>{
-  "items": [...],
-  "count": 0,
-  "limit": 5,
-  "offset": 0
-}</code></pre>
-      <p>请特别看 <code>count</code> 和 <code>items.length</code> 的区别：当前页可能只有 5 条，但符合筛选条件的总数可能是 20 条。</p>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>变更</th><th>通常结论</th><th>原因</th></tr></thead>
+        <tbody>
+          <tr><td>新增可选查询参数，默认行为不变</td><td>兼容</td><td>旧客户端不传也能继续工作</td></tr>
+          <tr><td>新增必填请求字段</td><td>不兼容</td><td>旧客户端请求会 422</td></tr>
+          <tr><td>字段改名</td><td>不兼容</td><td>等价于删除旧字段</td></tr>
+          <tr><td>新增可选响应字段</td><td>通常兼容</td><td>宽松客户端会忽略未知字段</td></tr>
+          <tr><td>数组改对象</td><td>不兼容</td><td>顶层解析逻辑变化</td></tr>
+          <tr><td>枚举新增值</td><td>谨慎</td><td>旧客户端可能没有 default 分支</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>12. 课堂实验二：故意制造一次破坏性变更</h2>
-      <p>只做实验，不要提交这个改动。把 <code>SummaryTaskListResponse</code> 里的 <code>count</code> 临时改名为 <code>total</code>，然后运行：</p>
-      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_tasks_api.py tests\test_openapi_contract.py -q</code></pre>
-      <p>你会看到契约测试失败。这就是我们想要的效果：测试不是阻止你演进 API，而是提醒你“这次演进需要迁移策略”。</p>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <ul>
+        <li><strong>“只是改字段名”导致前端挂掉</strong>：字段名是公共契约。解决：新增字段并保留旧字段，或版本化。</li>
+        <li><strong>OpenAPI 与真实响应不一致</strong>：response_model 或实际返回漂移。解决：运行时和 OpenAPI 双测试。</li>
+        <li><strong>新增状态后前端白屏</strong>：枚举值扩展未处理 default。解决：前端对未知状态有 fallback。</li>
+        <li><strong>新增必填参数导致旧客户端 422</strong>：不兼容变更未评审。解决：先做可选参数，默认行为保持不变。</li>
+        <li><strong>版本号改了但迁移失败</strong>：版本化不是迁移策略。解决：写差异说明、保留旧接口、设置弃用窗口。</li>
+      </ul>
     </section>
 
     <section>
-      <h2>13. 常见错误与诊断</h2>
-      <div class="two-col">
-        <div class="callout">
-          <h3>错误一：把字段改名当作小重构</h3>
-          <p>字段名属于公共契约。改名等于删除旧字段再新增新字段。</p>
-        </div>
-        <div class="callout">
-          <h3>错误二：新增必填参数</h3>
-          <p>旧客户端不会发送新参数，所以请求可能从 200 变成 422。</p>
-        </div>
-        <div class="callout">
-          <h3>错误三：只测业务成功，不测响应形状</h3>
-          <p>业务仍然成功，但 JSON 形状变了，前端一样会坏。</p>
-        </div>
-        <div class="callout">
-          <h3>错误四：只版本化，不迁移</h3>
-          <p><code>v2</code> 不是魔法。你仍然要告诉调用方差异、迁移路径和保留时间。</p>
-        </div>
-      </div>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>调用方数量</td><td>自有前端和测试</td><td>多端、多团队、外部客户、SDK</td></tr>
+          <tr><td>不兼容处理</td><td>可同步修改</td><td>版本化、弃用、迁移公告、兼容层</td></tr>
+          <tr><td>契约检查</td><td>pytest 断言关键字段</td><td>OpenAPI diff、consumer-driven contract、CI gate</td></tr>
+          <tr><td>发布节奏</td><td>本地一次性更新</td><td>灰度、回滚、双版本并行</td></tr>
+          <tr><td>字段治理</td><td>少量 schema</td><td>字段生命周期、deprecated 标记、审计和数据字典</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>14. 面试视角：如何回答“怎么做 API 向后兼容？”</h2>
-      <p>可以这样答：</p>
-      <blockquote>
-        <p>我会先把 API 当成调用方依赖的契约，而不是后端内部实现。兼容变更通常包括新增可选字段或可选参数，并保持默认行为不变；破坏性变更包括删除字段、字段改名、字段类型变化、新增必填请求字段和改变默认语义。对 FastAPI 项目，我会用 Pydantic 响应模型表达 schema，用 OpenAPI 暴露契约，并用测试检查运行时响应和 OpenAPI schema 是否保持一致。如果必须做不兼容变化，我会新增版本或新路径，旧接口标记弃用并保留迁移窗口。</p>
-      </blockquote>
-    </section>
-
-    <section class="checkpoint">
-      <h2>15. 小测：先判断，再展开</h2>
-      <details>
-        <summary>1. 把 <code>count</code> 改名为 <code>total</code> 是兼容变更吗？</summary>
-        <p class="answer">不是。旧客户端读取 <code>count</code> 会失败；这等价于删除旧字段。</p>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open>
+        <summary>1. 什么是 schema？</summary>
+        <p class="answer">schema 是数据形状说明，包括顶层类型、字段、字段类型、必填性、约束范围和字段语义。</p>
       </details>
       <details>
-        <summary>2. 新增可选查询参数，但默认行为不变，通常兼容吗？</summary>
-        <p class="answer">通常兼容。旧客户端不传新参数时仍然得到旧行为。</p>
+        <summary>2. 为什么裸数组到 envelope 是破坏性变化？</summary>
+        <p class="answer">顶层 JSON 类型从数组变对象，旧客户端遍历数组的代码会失败。</p>
       </details>
       <details>
-        <summary>3. 为什么从裸数组改成响应信封是破坏性变化？</summary>
-        <p class="answer">因为顶层 JSON 类型从数组变成对象，旧客户端的解析代码可能直接失败。</p>
+        <summary>3. 新增可选字段一定安全吗？</summary>
+        <p class="answer">通常兼容，但严格客户端可能拒绝未知字段；仍需评估调用方解析策略。</p>
       </details>
       <details>
-        <summary>4. 运行时契约测试和 OpenAPI 契约测试分别守什么？</summary>
-        <p class="answer">前者守真实响应形状，后者守文档和工具看到的 schema。</p>
+        <summary>4. 运行时契约测试和 OpenAPI 测试分别保护什么？</summary>
+        <p class="answer">运行时测试保护真实 wire format；OpenAPI 测试保护文档、工具和 SDK 看到的 schema。</p>
       </details>
     </section>
 
     <section>
-      <h2>16. 本节总结</h2>
-      <p>这一节的核心观点很硬：API 返回的 JSON 形状不是随手可改的实现细节，而是调用方依赖的公共契约。新增可选能力通常容易兼容；删除、改名、改类型、改默认语义往往是破坏性变更。</p>
-      <p>下一课建议学习：真实 AI Provider 边界。我们会把 DemoAIClient 往真实外部服务的方向推进，重点讲超时、失败、重试边界和测试替身。</p>
-      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/response-model/">FastAPI Response Model</a>、<a href="https://fastapi.tiangolo.com/tutorial/query-params-str-validations/">FastAPI Query Validations</a>、<a href="https://google.aip.dev/180">Google AIP-180 Backwards Compatibility</a>、<a href="https://google.aip.dev/185">Google AIP-185 API Versioning</a>、<a href="https://semver.org/">Semantic Versioning 2.0.0</a>、<a href="https://spec.openapis.org/oas/latest.html">OpenAPI Specification</a>。</p>
-      <p class="small">如果你还不确定某个变更是否兼容，可以问我：“这个 API 改动算不算破坏性变更？”我会按调用方视角帮你拆。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open>
+        <summary>题 1：如何判断一个 API 变更是否向后兼容？</summary>
+        <p class="answer">站在旧客户端视角判断：不改代码还能否成功请求、解析响应并保持语义一致。删除字段、改名、改类型、新增必填字段、改变默认行为通常不兼容。</p>
+      </details>
+      <details>
+        <summary>题 2：必须做不兼容变更怎么办？</summary>
+        <p class="answer">新增版本或新路径，旧接口标记 deprecated 并保留迁移窗口；提供迁移文档、兼容测试和发布计划，必要时双写/双读过渡。</p>
+      </details>
+      <details>
+        <summary>题 3：FastAPI 项目如何防止 schema 漂移？</summary>
+        <p class="answer">用 Pydantic 模型表达请求响应，用 OpenAPI 暴露契约，用测试断言运行时 JSON 和 OpenAPI schema 的关键字段，并在 CI 中阻断未评审变更。</p>
+      </details>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

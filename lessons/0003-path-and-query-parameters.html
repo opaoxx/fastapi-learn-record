@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lesson 0003 - Path and Query Parameters</title>
+  <title>Lesson 0003 - 路径参数与查询参数</title>
   <link rel="stylesheet" href="../assets/course.css">
 </head>
 <body>
@@ -19,126 +19,154 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0003</p>
-      <h1>路径参数和查询参数：让 URL 会表达意图</h1>
-      <p class="lead">本节学习 FastAPI 最常用的两类 URL 参数：路径参数负责定位一个资源，查询参数负责筛选一批资源。理解它们，你就能读懂大多数 REST 风格接口。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>路径参数与查询参数：URL 资源建模的基础语法</h1>
+      <p class="lead">本节把 URL 参数从“会写”提升到“会设计”：路径参数定位单个资源，查询参数描述列表筛选、分页和搜索条件。掌握这部分，才能写出可读、可测试、可演进的 REST 风格 API。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解路径参数和查询参数在 URL 中的位置与职责。</li>
-        <li>能写出 <code>GET /items/{item_id}</code> 这种“按 ID 查单个资源”的接口。</li>
-        <li>能写出 <code>GET /items?category=book&amp;max_price=50</code> 这种“按条件筛选列表”的接口。</li>
-        <li>理解 FastAPI 如何根据函数参数名、类型注解和默认值判断参数来源。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>URL 参数建模
+├─ Path Parameter：路径参数
+│  ├─ 写法：/items/{item_id}
+│  ├─ 语义：定位唯一资源
+│  └─ 校验：Path(ge=1)
+├─ Query Parameter：查询参数
+│  ├─ 写法：/items?q=api&amp;limit=10
+│  ├─ 语义：筛选、分页、排序、搜索
+│  └─ 校验：Query(max_length=40), Query(ge=0)
+├─ FastAPI 推断规则
+│  ├─ 出现在路径模板中 -> path
+│  ├─ 简单类型且不在路径中 -> query
+│  └─ Pydantic 模型 -> body
+└─ 当前项目落点：routers/items.py 的 read_item 与 list_items</code></pre>
     </section>
 
     <section>
-      <h2>1. 背景知识：URL 不是随便写的字符串</h2>
-      <p>后端接口的 URL 应该表达“你要操作什么资源”。例如：</p>
-      <pre><code>GET /items/2
-GET /items?category=book&amp;max_price=50&amp;in_stock=true</code></pre>
-      <p>第一行里的 <code>2</code> 是路径的一部分，表示要找 ID 为 2 的商品。第二行里的 <code>category</code>、<code>max_price</code>、<code>in_stock</code> 在问号后面，表示对商品列表进行筛选。</p>
-      <div class="callout">
-        <p><strong>一句话区分：</strong>路径参数用于“找哪一个”，查询参数用于“怎么筛选”。</p>
-      </div>
+      <h2>② 核心概念底层原理</h2>
+      <p><strong>URL 是资源定位语言。</strong><code>/items/2</code> 表示“ID 为 2 的商品资源”；<code>/items?category=book&amp;limit=10</code> 表示“商品集合中满足条件的一页”。路径参数改变资源身份，查询参数改变集合视图。</p>
+      <p><strong>路径匹配先于参数校验。</strong>FastAPI 先用路由表匹配 <code>/items/{item_id}</code>，再把 URL 里的字符串片段转换成 <code>int</code>，最后执行 <code>Path(ge=1)</code> 约束。转换或约束失败返回 422，函数不执行。</p>
+      <p><strong>查询参数天然是字符串。</strong>HTTP URL 中 <code>max_price=50</code> 原始值是字符串 <code>"50"</code>，FastAPI 根据类型注解转换成 <code>float</code>；<code>in_stock=true</code> 会按布尔规则转换。没有类型注解，后端就只能得到弱类型字符串。</p>
+      <p><strong>和请求体的边界。</strong>路径/查询适合轻量、可出现在 URL 中的条件；复杂对象、长文本、嵌套结构应放 body。把长文本塞进 query 会导致 URL 可读性差、长度限制和日志泄露风险。</p>
     </section>
 
     <section>
-      <h2>2. 路径参数：定位一个具体资源</h2>
-      <p>FastAPI 用花括号声明路径参数：</p>
-      <pre><code>@app.get("/items/{item_id}", response_model=Item)
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>@router.get("/{item_id}", response_model=ItemRead)
 def read_item(
-    item_id: Annotated[int, Path(ge=1, description="The numeric ID of the item.")]
-) -&gt; Item:
-    return get_item_or_404(item_id)</code></pre>
-      <p>这里有三层含义：</p>
-      <ol>
-        <li><code>"/items/{item_id}"</code> 声明 URL 里有一个动态片段。</li>
-        <li><code>item_id: int</code> 要求 FastAPI 把 URL 字符串转换成整数。</li>
-        <li><code>Path(ge=1)</code> 给路径参数增加规则：ID 必须大于等于 1。</li>
-      </ol>
-      <p>所以访问 <code>/items/2</code> 会得到 ID 为 2 的商品；访问 <code>/items/abc</code> 会失败，因为 <code>abc</code> 不能转换成整数；访问 <code>/items/0</code> 也会失败，因为不满足 <code>ge=1</code>。</p>
-    </section>
-
-    <section>
-      <h2>3. 查询参数：筛选一批资源</h2>
-      <p>查询参数在 URL 的问号后面，用 <code>&amp;</code> 连接多个条件：</p>
-      <pre><code>GET /items?q=python&amp;category=book&amp;max_price=50&amp;in_stock=true</code></pre>
-      <p>对应代码是：</p>
-      <pre><code>@app.get("/items", response_model=list[Item])
-def list_items(
-    q: Annotated[str | None, Query(max_length=40)] = None,
-    category: ItemCategory | None = None,
-    max_price: Annotated[float | None, Query(ge=0)] = None,
-    in_stock: bool | None = None,
-) -&gt; list[Item]:
-    ...</code></pre>
-      <p>这些参数没有出现在路径模板 <code>"/items"</code> 里，所以 FastAPI 会把它们当成查询参数。默认值是 <code>None</code>，表示这个筛选条件可以不传。</p>
-    </section>
-
-    <section>
-      <h2>4. FastAPI 的判断规则</h2>
-      <p>先记住这个入门规则，后面会越来越自然：</p>
+    item_id: Annotated[int, Path(ge=1, description="The numeric ID of the item.")],
+    session: Annotated[Session, Depends(get_session)],
+) -> Item:
+    item = session.get(Item, item_id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Item {item_id} was not found.")
+    return item</code></pre>
       <ul>
-        <li>函数参数名出现在路径里，例如 <code>{item_id}</code>，它就是路径参数。</li>
-        <li>函数参数是简单类型，并且没有出现在路径里，它通常就是查询参数。</li>
-        <li>函数参数是 Pydantic 模型，并且用于 <code>POST</code> 这类请求，它通常来自请求体。</li>
+        <li><code>@router.get("/{item_id}")</code>：在 <code>/items</code> router 前缀下形成 <code>GET /items/{item_id}</code>。若路径变量名与函数参数名不一致，FastAPI 无法正确注入。</li>
+        <li><code>response_model=ItemRead</code>：对外只返回读模型。若直接暴露数据库模型，未来内部字段可能泄漏。</li>
+        <li><code>Annotated[int, Path(...)]</code>：把类型 <code>int</code> 和参数元数据组合起来。<code>ge=1</code> 保证 ID 从 1 开始。</li>
+        <li><code>session: Annotated[Session, Depends(get_session)]</code>：数据库会话来自依赖注入，不来自 URL。</li>
+        <li><code>session.get(Item, item_id)</code>：按主键查询。若 ID 合法但数据库无记录，返回 <code>None</code>。</li>
+        <li><code>if item is None</code>：业务不存在分支。不能让 <code>None</code> 继续返回，否则与 <code>ItemRead</code> 响应模型不匹配。</li>
+        <li><code>raise HTTPException(...404...)</code>：合法 ID 找不到资源，语义是 404，而不是 422。</li>
+        <li><code>return item</code>：返回 ORM/SQLModel 对象，FastAPI 按 <code>ItemRead</code> 序列化。</li>
       </ul>
-      <p>因此 <code>read_item(item_id: int)</code> 从路径拿 ID；<code>list_items(category=...)</code> 从问号后面拿筛选条件；上一课的 <code>predict(payload: PredictionRequest)</code> 从 JSON 请求体拿数据。</p>
+
+      <pre><code>@router.get("", response_model=list[ItemRead])
+def list_items(
+    filters: Annotated[ItemFilters, Depends(ItemFilters)],
+    pagination: Annotated[Pagination, Depends(Pagination)],
+    session: Annotated[Session, Depends(get_session)],
+) -> list[Item]:
+    statement = select(Item)
+    items = list(session.exec(statement))
+
+    if filters.q is not None:
+        keyword = filters.q.lower()
+        items = [item for item in items if keyword in item.name.lower()]
+    if filters.category is not None:
+        items = [item for item in items if item.category == filters.category]
+    if filters.max_price is not None:
+        items = [item for item in items if item.price <= filters.max_price]
+    if filters.in_stock is not None:
+        items = [item for item in items if item.in_stock == filters.in_stock]
+
+    return items[pagination.skip : pagination.skip + pagination.limit]</code></pre>
+      <ul>
+        <li><code>@router.get("")</code>：空字符串与 router 前缀 <code>/items</code> 合成列表接口。</li>
+        <li><code>filters</code>：把多个 query 参数封装成对象，避免函数签名膨胀。</li>
+        <li><code>pagination</code>：分页参数同样来自 query。</li>
+        <li><code>select(Item)</code>：构造 SQLModel 查询语句。当前为了教学，先查询全部再在 Python 中过滤。</li>
+        <li><code>if filters.q is not None</code>：只在调用者传入搜索词时启用条件；空缺条件不应改变结果。</li>
+        <li><code>keyword = filters.q.lower()</code>：大小写归一。若不做归一，<code>API</code> 和 <code>api</code> 匹配结果会不一致。</li>
+        <li><code>items[pagination.skip : pagination.skip + pagination.limit]</code>：用切片实现 offset/limit。生产中应下推到 SQL，而不是先取全量。</li>
+      </ul>
     </section>
 
     <section>
-      <h2>5. 实验一：按 ID 查询</h2>
-      <p>打开 <code>http://127.0.0.1:8000/docs</code>，测试：</p>
-      <pre><code>GET /items/1
-GET /items/2
-GET /items/0
-GET /items/abc</code></pre>
-      <p>前两个应该成功，后两个应该返回 <code>422</code>。这里的 <code>422</code> 来自参数校验：URL 能被路由匹配，但参数类型或范围不符合声明。</p>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>GET /items/2
+  -> 匹配 /items/{item_id}
+  -> "2" 转 int 2
+  -> Path(ge=1) 通过
+  -> get_session() 产出数据库 Session
+  -> session.get(Item, 2)
+  -> 找到：200 + ItemRead JSON
+  -> 找不到：404 + detail
+
+GET /items?category=book&amp;skip=0&amp;limit=10
+  -> 匹配 /items
+  -> ItemFilters 从 query 解析 category
+  -> Pagination 从 query 解析 skip/limit
+  -> 数据库查询 Item
+  -> Python 层过滤 category
+  -> 切片分页
+  -> 200 + list[ItemRead]</code></pre>
     </section>
 
     <section>
-      <h2>6. 实验二：筛选列表</h2>
-      <p>测试这些地址：</p>
-      <pre><code>GET /items
-GET /items?category=book
-GET /items?max_price=20
-GET /items?in_stock=false
-GET /items?q=python</code></pre>
-      <p>你会看到返回列表逐渐变少，因为每个查询参数都在增加一个筛选条件。这个模式以后会出现在搜索页、商品页、日志页、模型任务列表等很多后端接口里。</p>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <ul>
+        <li><strong><code>/items/abc</code> vs <code>/items/999</code>：</strong>前者类型转换失败是 422；后者参数合法但资源不存在是 404。</li>
+        <li><strong>路径参数 vs 查询参数：</strong><code>item_id</code> 是资源身份，不应设计成 <code>/items?id=2</code>；筛选条件不是资源身份，不应设计成 <code>/items/category/book</code> 起步。</li>
+        <li><strong><code>skip/limit</code> vs 页码：</strong>offset 模式直接表示跳过多少条；page/page_size 需要转换。两者都常见，但响应契约要一致。</li>
+        <li><strong>教学过滤 vs SQL 过滤：</strong>当前先取全量再 Python 过滤便于教学；生产应把 where/limit/offset 下推到数据库。</li>
+      </ul>
     </section>
 
-    <section class="practice">
-      <h2>7. 课堂练习</h2>
-      <p>请你在 <code>/docs</code> 里找出下面请求各自返回几个商品：</p>
-      <pre><code>GET /items?category=course
-GET /items?category=tool&amp;in_stock=false
-GET /items?max_price=0
-GET /items?q=api</code></pre>
-      <p>完成标准：你能说出每个查询参数具体过滤了哪个字段。</p>
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <ul>
+        <li><code>422 int_parsing</code>：路径 ID 传了非数字。解决：传 <code>/items/1</code> 这种整数片段。</li>
+        <li><code>422 greater_than_equal</code>：<code>/items/0</code> 不满足 <code>Path(ge=1)</code>。</li>
+        <li><code>422 literal_error</code>：<code>category</code> 不是 <code>book/course/tool</code>。解决：遵守 <code>ItemCategory</code> 枚举。</li>
+        <li>布尔 query 传错：<code>in_stock=maybe</code> 无法转换。解决：使用 <code>true/false</code>。</li>
+        <li>分页参数过大：<code>limit=1000</code> 会被依赖中的 <code>Query(le=50)</code> 拦截。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <ul>
+        <li><strong>过滤位置：</strong>教学可以 Python 过滤；生产必须 SQL 层过滤并配索引，否则数据量变大后性能崩溃。</li>
+        <li><strong>分页策略：</strong>教学用 offset；生产大表可能使用 cursor/keyset pagination，避免深分页性能问题。</li>
+        <li><strong>参数上限：</strong>教学限制 <code>limit <= 50</code>；生产还会按用户权限、接口成本、缓存策略设置更严格边界。</li>
+        <li><strong>错误格式：</strong>教学保留 FastAPI 默认 422；生产常统一错误码、国际化消息、trace id。</li>
+      </ul>
     </section>
 
     <section class="checkpoint">
-      <h2>8. 小测：先回忆再展开</h2>
-      <details>
-        <summary>1. <code>/items/{item_id}</code> 中的 <code>{item_id}</code> 是什么？</summary>
-        <p class="answer">它是路径参数，用来从 URL 路径中捕获一个动态值。</p>
-      </details>
-      <details>
-        <summary>2. <code>/items?category=book</code> 中的 <code>category</code> 是什么？</summary>
-        <p class="answer">它是查询参数，用来筛选或修饰这次列表查询。</p>
-      </details>
-      <details>
-        <summary>3. 查询参数为什么常常有默认值？</summary>
-        <p class="answer">因为筛选条件通常是可选的，不传时接口应该返回更宽泛的结果。</p>
-      </details>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details><summary>1. <code>/items/{item_id}</code> 中 <code>{item_id}</code> 为什么必须和函数参数同名？</summary><p class="answer">FastAPI 根据路径模板变量名把 URL 片段注入到同名函数参数。</p></details>
+      <details><summary>2. 查询参数不传时为什么通常使用 <code>None</code>？</summary><p class="answer">None 表示筛选条件缺省，业务代码可以据此跳过该过滤分支。</p></details>
+      <details><summary>3. <code>GET /items/0</code> 为什么不是 404？</summary><p class="answer">因为 0 在进入业务查询前已经违反 Path(ge=1) 参数约束，所以是 422。</p></details>
     </section>
 
-    <section>
-      <h2>9. 本节总结</h2>
-      <p>路径参数定位资源，查询参数筛选资源。FastAPI 通过路径模板、函数参数名、类型注解和默认值来决定从哪里取数据。掌握这一节，你已经能写出常见的“详情接口”和“列表筛选接口”。</p>
+    <section class="practice">
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details><summary>1. REST API 中路径参数和查询参数如何取舍？</summary><p class="answer">路径参数表达资源身份和层级，查询参数表达集合筛选、分页、排序和可选视图控制。</p></details>
+      <details><summary>2. 为什么生产中不建议先查全表再 Python 过滤？</summary><p class="answer">全表读取会浪费内存和网络 I/O，无法利用数据库索引，数据量增大后延迟和资源占用会急剧恶化。</p></details>
+      <details><summary>3. FastAPI 如何知道一个参数来自 path 还是 query？</summary><p class="answer">参数名出现在路径模板中就是 path；简单类型参数未出现在路径模板且不是依赖/body 时通常推断为 query。</p></details>
       <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/path-params/">FastAPI Path Parameters</a>、<a href="https://fastapi.tiangolo.com/tutorial/query-params/">FastAPI Query Parameters</a>。</p>
     </section>
 

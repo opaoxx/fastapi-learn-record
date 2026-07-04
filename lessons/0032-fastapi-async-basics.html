@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lesson 0032 - FastAPI Async Basics</title>
+  <title>Lesson 0032 - FastAPI Async Basics Final Review</title>
   <link rel="stylesheet" href="../assets/course.css">
 </head>
 <body>
@@ -19,121 +19,44 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0032</p>
-      <h1>FastAPI async 基础：等待时让出执行权，而不是让 CPU 更快</h1>
-      <p class="lead">上一课我们把真实 AI provider 放到边界层。真实 provider 往往是外部 HTTP 调用，所以会遇到“等待”。这一节讲清楚 <code>async def</code>、<code>await</code>、事件循环、阻塞调用和同步数据库的关系。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>FastAPI async 基础：事件循环、await 与阻塞边界</h1>
+      <p class="lead">async 不是 CPU 加速器，而是等待型 I/O 的并发工具。当外部 AI provider、HTTP 服务或异步数据库在等待网络响应时，<code>await</code> 让当前协程交还执行权，事件循环可以处理其他请求。本节用 <code>GET /async/wait</code> 建立正确心智模型。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解并发和并行的区别。</li>
-        <li>理解事件循环为什么能在等待 I/O 时处理其他任务。</li>
-        <li>知道什么时候用 <code>async def</code>，什么时候普通 <code>def</code> 也可以。</li>
-        <li>理解 <code>await asyncio.sleep()</code> 和 <code>time.sleep()</code> 的本质区别。</li>
-        <li>知道当前项目里的 SQLModel 数据库代码仍然是同步代码，不能因为路由写了 <code>async def</code> 就自动变异步。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>FastAPI async 心智模型
+├─ async def：定义协程函数
+├─ await：等待可等待对象并让出执行权
+├─ event loop：调度协程任务
+├─ 适合 async：网络、文件、外部 HTTP、async DB 等 I/O 等待
+├─ 不适合只靠 async：CPU 密集计算、同步阻塞库
+├─ 教学端点：GET /async/wait?delay=0.05
+├─ 非阻塞等待：await asyncio.sleep(delay)
+└─ 参数保护：Query(ge=0, le=1)</code></pre>
     </section>
 
     <section>
-      <h2>1. 背景：AI 服务为什么绕不开 async</h2>
-      <p>一个真实 AI 服务接口经常要等待外部事情完成：</p>
-      <ul>
-        <li>等待浏览器上传文件。</li>
-        <li>等待数据库查询。</li>
-        <li>等待外部 AI provider 返回结果。</li>
-        <li>等待对象存储、消息队列或另一个微服务。</li>
-      </ul>
-      <p>这些等待不一定消耗 CPU。比如请求外部 AI 时，程序大部分时间不是在计算，而是在等网络响应。如果服务器在等待时什么都不能做，就会浪费吞吐量。</p>
-      <p>async 的意义就在这里：当一个任务等待 I/O 时，它可以主动让出执行权，让事件循环去处理别的任务。</p>
-    </section>
-
-    <section class="callout">
-      <h2>2. 核心概念：async 是等待效率，不是计算加速</h2>
-      <p>先把一句话记牢：</p>
-      <pre><code>async helps with waiting; it does not make CPU work faster.</code></pre>
-      <p>如果你的函数主要在等网络、等文件、等数据库、等外部 API，async 很有价值。如果你的函数主要在做 CPU 密集计算，比如压缩大文件、跑复杂算法、处理大图像，单纯写成 <code>async def</code> 并不会让它更快。</p>
-      <p>这也是为什么 AI 后端常常同时需要两种思维：</p>
-      <ul>
-        <li>I/O 等待型任务：适合 async，例如外部模型 API 调用。</li>
-        <li>CPU 计算型任务：需要线程池、进程池、任务队列或专门推理服务。</li>
-      </ul>
+      <h2>② 核心概念底层原理</h2>
+      <p>并发是多个任务交替推进，并行是多个任务在多个 CPU 核上真正同时执行。async 主要解决并发等待：一个请求在等外部 provider 时，线程不必傻等，可以让事件循环调度其他协程。</p>
+      <p><code>async def</code> 创建协程函数，调用它得到协程对象；只有被 <code>await</code>、任务调度或框架执行时，协程才真正推进。<code>await</code> 的关键不是“等待”，而是“等待期间让出执行权”。</p>
+      <p>阻塞调用会破坏 async。<code>time.sleep()</code>、同步 HTTP 请求、同步数据库驱动都会占住执行线程。把外层函数改成 <code>async def</code>，不会让同步库自动非阻塞。</p>
     </section>
 
     <section>
-      <h2>3. 术语表</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>术语</th>
-            <th>含义</th>
-            <th>本节例子</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Concurrency 并发</td>
-            <td>多个任务交替推进，看起来同时处理。</td>
-            <td>等待一个请求时处理另一个请求。</td>
-          </tr>
-          <tr>
-            <td>Parallelism 并行</td>
-            <td>多个任务真的同时在多个 CPU 核上运行。</td>
-            <td>多进程并行跑 CPU 计算。</td>
-          </tr>
-          <tr>
-            <td>Event loop 事件循环</td>
-            <td>负责调度 async task 的循环。</td>
-            <td>一个任务 await 时切去跑别的任务。</td>
-          </tr>
-          <tr>
-            <td>Coroutine 协程</td>
-            <td>由 <code>async def</code> 创建的可暂停函数。</td>
-            <td><code>async_wait()</code></td>
-          </tr>
-          <tr>
-            <td>await</td>
-            <td>等待一个可等待对象，并把执行权交还给事件循环。</td>
-            <td><code>await asyncio.sleep(delay)</code></td>
-          </tr>
-          <tr>
-            <td>Blocking 阻塞</td>
-            <td>当前执行线程被占住，不能做别的事。</td>
-            <td><code>time.sleep()</code>、同步网络请求。</td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
-
-    <section>
-      <h2>4. 官方资料里的关键点</h2>
-      <p>FastAPI 官方 async 文档说明：你可以在路径操作函数中使用 <code>async def</code>，也可以使用普通 <code>def</code>；FastAPI 会根据函数形态做合适处理。重点不是所有函数都强行 async，而是选择和内部调用相匹配的写法。</p>
-      <p>Python 官方 asyncio 文档说明：事件循环使用协作式调度。一个事件循环一次运行一个 task；当某个 task 在 <code>await</code> 等待 Future 完成时，事件循环可以运行其他 task、回调或 I/O 操作。</p>
-      <p>这两点合起来，就是 FastAPI async 的基础心智模型：你的代码需要在可等待的地方主动让出执行权。</p>
-    </section>
-
-    <section>
-      <h2>5. 本节项目改动概览</h2>
-      <ul>
-        <li>新增响应模型 <code>AsyncWaitResponse</code>。</li>
-        <li>新增公开接口 <code>GET /async/wait?delay=0.05</code>。</li>
-        <li>接口内部使用 <code>await asyncio.sleep(delay)</code> 模拟非阻塞等待。</li>
-        <li>新增测试验证响应结构和 <code>delay</code> 参数边界。</li>
-      </ul>
-      <p>这个接口不是业务功能，而是教学探针。它让我们能用项目自己的代码解释 async 机制。</p>
-    </section>
-
-    <section>
-      <h2>6. 代码精读一：响应模型</h2>
+      <h2>③ 全套代码逐行精读解析</h2>
       <pre><code>class AsyncWaitResponse(BaseModel):
     status: Literal["ok"]
     delay_seconds: float
     message: str</code></pre>
-      <p>这个模型保持简单：状态、等待秒数和说明文字。即使是教学接口，我们仍然用响应模型把 JSON 形状固定下来，这延续了前面 OpenAPI 契约和 schema 演进的思路。</p>
-    </section>
+      <ul>
+        <li><code>BaseModel</code>：即使是教学接口，也用响应模型固定 JSON 形状。</li>
+        <li><code>Literal["ok"]</code>：状态字段收窄为唯一成功值，OpenAPI 可见。</li>
+        <li><code>delay_seconds</code>：回显等待参数，便于测试断言。</li>
+        <li><code>message</code>：说明该端点是等待演示，不是 CPU 工作。</li>
+      </ul>
 
-    <section>
-      <h2>7. 代码精读二：async path operation</h2>
       <pre><code>@router.get(
     "/async/wait",
     response_model=AsyncWaitResponse,
@@ -142,7 +65,7 @@
 async def async_wait(
     delay: Annotated[
         float,
-        Query(ge=0, le=1, description="Seconds to await.")
+        Query(ge=0, le=1, description="Seconds to await. Kept small so the learning endpoint stays safe."),
     ] = 0.05,
 ) -&gt; AsyncWaitResponse:
     await asyncio.sleep(delay)
@@ -151,165 +74,103 @@ async def async_wait(
         delay_seconds=delay,
         message="The endpoint awaited without doing CPU work.",
     )</code></pre>
-      <p>这段代码有三个重点：</p>
       <ul>
-        <li><code>async def</code>：告诉 Python 这是协程函数，可以在内部使用 <code>await</code>。</li>
-        <li><code>Query(ge=0, le=1)</code>：限制等待时间，避免学习接口被故意请求很久。</li>
-        <li><code>await asyncio.sleep(delay)</code>：模拟异步 I/O 等待，等待期间事件循环可以处理别的任务。</li>
+        <li><code>@router.get</code> 注册公开教学端点。</li>
+        <li><code>response_model</code> 让响应进入 OpenAPI 契约。</li>
+        <li><code>async def</code> 允许函数体内使用 <code>await</code>。</li>
+        <li><code>Query(ge=0, le=1)</code> 防止用户请求超长等待。</li>
+        <li><code>await asyncio.sleep(delay)</code> 模拟非阻塞 I/O 等待；等待时事件循环可处理别的任务。</li>
+        <li><code>return AsyncWaitResponse(...)</code> 返回显式模型，避免随手 dict 字段漂移。</li>
       </ul>
-      <p>如果你把 <code>await asyncio.sleep(delay)</code> 换成 <code>time.sleep(delay)</code>，它就会变成阻塞等待。函数签名仍然可以是 <code>async def</code>，但内部阻塞调用会占住执行线程，破坏 async 的意义。</p>
     </section>
 
     <section>
-      <h2>8. 运行机制：一次 /async/wait 请求发生了什么</h2>
-      <ol>
-        <li>浏览器或测试客户端请求 <code>/async/wait?delay=0.05</code>。</li>
-        <li>FastAPI 解析查询参数，把字符串 <code>"0.05"</code> 转成 <code>float</code>。</li>
-        <li><code>Query</code> 校验 <code>delay</code> 是否在 0 到 1 之间。</li>
-        <li>FastAPI 调用 <code>async_wait</code> 协程。</li>
-        <li>代码执行到 <code>await asyncio.sleep(delay)</code>。</li>
-        <li>这个协程暂停，事件循环可以调度其他任务。</li>
-        <li>等待时间到后，协程恢复，返回 <code>AsyncWaitResponse</code>。</li>
-        <li>FastAPI 用响应模型序列化 JSON。</li>
-      </ol>
-      <p>这里最重要的是第 5 和第 6 步：await 不是“卡在那里什么都不能做”，而是“我在等，你先去处理别的”。</p>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>GET /async/wait?delay=0.05
+  -> FastAPI 解析 query 字符串为 float
+  -> Query 校验 0 <= delay <= 1
+  -> 调用 async_wait 协程
+  -> 执行到 await asyncio.sleep(delay)
+       -> 当前协程暂停
+       -> 事件循环可调度其他任务
+  -> sleep 完成后协程恢复
+  -> 返回 AsyncWaitResponse
+  -> FastAPI 序列化 JSON</code></pre>
     </section>
 
     <section>
-      <h2>9. def 和 async def 怎么选</h2>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
       <table>
-        <thead>
-          <tr>
-            <th>场景</th>
-            <th>建议</th>
-            <th>原因</th>
-          </tr>
-        </thead>
+        <thead><tr><th>概念</th><th>正确理解</th><th>错误理解</th></tr></thead>
         <tbody>
-          <tr>
-            <td>内部调用 async HTTP 客户端</td>
-            <td><code>async def</code></td>
-            <td>可以 <code>await</code> 网络 I/O。</td>
-          </tr>
-          <tr>
-            <td>内部调用 async 数据库驱动</td>
-            <td><code>async def</code></td>
-            <td>数据库等待可以让出执行权。</td>
-          </tr>
-          <tr>
-            <td>内部全是同步库</td>
-            <td>普通 <code>def</code> 通常更清楚</td>
-            <td>写成 async 也不能自动把同步库变异步。</td>
-          </tr>
-          <tr>
-            <td>CPU 密集计算</td>
-            <td>不要只靠 async</td>
-            <td>需要线程、进程、队列或专门计算服务。</td>
-          </tr>
-          <tr>
-            <td>教学演示非阻塞等待</td>
-            <td><code>async def</code></td>
-            <td><code>await asyncio.sleep</code> 能清楚展示让出执行权。</td>
-          </tr>
+          <tr><td>async</td><td>提升等待型并发效率</td><td>让 CPU 计算更快</td></tr>
+          <tr><td>await</td><td>等待并让出执行权</td><td>普通阻塞等待</td></tr>
+          <tr><td><code>asyncio.sleep</code></td><td>非阻塞等待</td><td>和 <code>time.sleep</code> 一样</td></tr>
+          <tr><td>同步 DB</td><td>仍然阻塞</td><td>外层 async 后自动异步</td></tr>
+          <tr><td>CPU 密集任务</td><td>线程/进程/队列/推理服务</td><td>简单加 async</td></tr>
         </tbody>
       </table>
-      <p>FastAPI 允许混用 <code>def</code> 和 <code>async def</code>。成熟项目里真正重要的是：不要在 <code>async def</code> 里面悄悄塞同步阻塞调用。</p>
     </section>
 
     <section>
-      <h2>10. 同步数据库 caveat：当前 SQLModel 代码仍然是同步的</h2>
-      <p>本项目现在的数据库依赖是同步 SQLModel/SQLite 形态：</p>
-      <pre><code>with Session(engine) as session:
-    ...</code></pre>
-      <p>这意味着现有 items 和 tasks 相关数据库操作不是 async 数据库操作。你不应该只是把它们的 router 函数改成 <code>async def</code>，然后以为数据库等待就会自动非阻塞。</p>
-      <p>如果未来要把数据库层改成真正 async，需要成套考虑 async engine、async session、驱动支持、事务管理和测试改造。这属于后面的高级主题。</p>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <ul>
+        <li><strong><code>coroutine was never awaited</code></strong>：调用协程未 await。解决：在 async 上下文使用 <code>await</code> 或创建任务。</li>
+        <li><strong>async endpoint 仍然卡住</strong>：内部调用同步阻塞库。解决：改用 async client，或把阻塞工作移到线程/进程/队列。</li>
+        <li><strong>delay=2 返回 422</strong>：这是预期保护。解决：教学端点只允许 0 到 1 秒。</li>
+        <li><strong>以为 async 等于多线程</strong>：async 是协作式调度，不是自动并行。</li>
+        <li><strong>同步 SQLModel 直接改 async</strong>：数据库调用并未异步。解决：需要 async engine/session/driver 成套迁移。</li>
+      </ul>
     </section>
 
     <section>
-      <h2>11. 测试精读</h2>
-      <pre><code>def test_async_wait_endpoint_returns_wait_metadata() -&gt; None:
-    with TestClient(app) as client:
-        response = client.get("/async/wait?delay=0")
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "status": "ok",
-        "delay_seconds": 0.0,
-        "message": "The endpoint awaited without doing CPU work.",
-    }</code></pre>
-      <p>测试里用 <code>delay=0</code> 是为了验证接口行为，同时不让测试真的等待。另一个测试请求 <code>delay=2</code>，应该得到 422，因为我们把最大等待限制为 1 秒。</p>
-    </section>
-
-    <section class="practice">
-      <h2>12. 课堂实验</h2>
-      <p>运行服务后访问：</p>
-      <pre><code>http://127.0.0.1:8000/async/wait?delay=0.2</code></pre>
-      <p>你应该看到：</p>
-      <pre><code>{
-  "status": "ok",
-  "delay_seconds": 0.2,
-  "message": "The endpoint awaited without doing CPU work."
-}</code></pre>
-      <p>再访问：</p>
-      <pre><code>http://127.0.0.1:8000/async/wait?delay=2</code></pre>
-      <p>你应该看到 422 校验错误。这个错误来自 <code>Query(le=1)</code>，说明异步端点仍然享受 FastAPI 的参数校验和 OpenAPI 文档生成。</p>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>等待模拟</td><td><code>asyncio.sleep</code></td><td>真实外部 HTTP、DB、对象存储、队列</td></tr>
+          <tr><td>数据库</td><td>同步 SQLModel/SQLite</td><td>可能使用 async driver 或独立线程池</td></tr>
+          <tr><td>CPU 任务</td><td>不涉及</td><td>进程池、任务队列、模型推理服务</td></tr>
+          <tr><td>超时控制</td><td>Query 限制 delay</td><td>客户端超时、服务端超时、取消传播</td></tr>
+          <tr><td>观测</td><td>响应回显 delay</td><td>trace、latency histogram、event loop blocking 监控</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>13. 常见错误与诊断</h2>
-      <div class="two-col">
-        <div class="callout">
-          <h3>错误一：以为 async 会让计算更快</h3>
-          <p>async 主要优化等待，不会让 CPU 密集计算自动加速。</p>
-        </div>
-        <div class="callout">
-          <h3>错误二：在 async 函数里调用 time.sleep</h3>
-          <p><code>time.sleep</code> 是阻塞等待，会占住执行线程。</p>
-        </div>
-        <div class="callout">
-          <h3>错误三：把同步数据库函数直接改成 async</h3>
-          <p>同步数据库驱动不会因为外层是 <code>async def</code> 就变成非阻塞。</p>
-        </div>
-        <div class="callout">
-          <h3>错误四：忘记 await</h3>
-          <p>调用协程但不 <code>await</code>，通常得到的是协程对象，而不是执行结果。</p>
-        </div>
-      </div>
-    </section>
-
-    <section>
-      <h2>14. 面试视角：如何回答 FastAPI async</h2>
-      <blockquote>
-        <p>FastAPI 支持普通 def 和 async def。async def 适合内部有可 await 的 I/O 操作，比如 async HTTP 客户端、async 数据库驱动或其他协程。await 时当前协程会暂停并把执行权交还给事件循环，使服务器能处理其他任务。async 不会让 CPU 密集计算变快，也不能把同步阻塞库自动变成异步；在 async endpoint 中调用阻塞函数反而会影响并发。</p>
-      </blockquote>
-    </section>
-
-    <section class="checkpoint">
-      <h2>15. 小测：先判断，再展开</h2>
-      <details>
-        <summary>1. <code>async def</code> 会让 CPU 密集计算更快吗？</summary>
-        <p class="answer">不会。async 主要提升等待型 I/O 的并发效率，不是计算加速器。</p>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open>
+        <summary>1. async 的核心价值是什么？</summary>
+        <p class="answer">在等待 I/O 时让出执行权，提高并发处理效率，而不是加速 CPU 计算。</p>
       </details>
       <details>
-        <summary>2. <code>await asyncio.sleep()</code> 和 <code>time.sleep()</code> 的关键区别是什么？</summary>
-        <p class="answer">前者让出执行权，后者阻塞当前执行线程。</p>
+        <summary>2. <code>await asyncio.sleep</code> 和 <code>time.sleep</code> 区别是什么？</summary>
+        <p class="answer">前者非阻塞并让事件循环调度其他任务；后者阻塞当前线程。</p>
       </details>
       <details>
-        <summary>3. 当前 SQLModel 同步数据库代码适合直接改成 <code>async def</code> 吗？</summary>
-        <p class="answer">不适合。同步数据库调用不会因为外层 async 就自动变成非阻塞。</p>
+        <summary>3. 为什么同步数据库不会因外层 async 自动变异步？</summary>
+        <p class="answer">阻塞行为由内部库决定；同步 driver 仍占用线程，外层函数签名无法改变它。</p>
       </details>
       <details>
-        <summary>4. FastAPI 能混用 <code>def</code> 和 <code>async def</code> 吗？</summary>
-        <p class="answer">可以。关键是根据内部调用是否可 await 来选择合适写法。</p>
+        <summary>4. 什么时候普通 <code>def</code> 反而更清楚？</summary>
+        <p class="answer">当函数内部全是同步库且没有可 await I/O 时，普通 def 更符合实际执行模型。</p>
       </details>
     </section>
 
     <section>
-      <h2>16. 本节总结</h2>
-      <p>这节课的核心是：async 不是神奇加速按钮，而是一种等待型并发工具。<code>async def</code> 创建协程，<code>await</code> 在等待点让出执行权，事件循环再调度其他任务。它适合外部 HTTP、async 数据库、文件或网络等待；不适合单靠它解决 CPU 密集计算。</p>
-      <p>下一课建议学习：异步外部 HTTP 客户端。我们可以把第 31 课的 AI provider 边界和本节 async 知识接起来，设计一个真实 provider adapter 应该如何用 async HTTP、timeout 和错误映射。</p>
-      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/async/">FastAPI Concurrency and async / await</a>、<a href="https://docs.python.org/3/library/asyncio-task.html">Python asyncio Coroutines and Tasks</a>、<a href="https://docs.python.org/3/howto/a-conceptual-overview-of-asyncio.html">Python asyncio Conceptual Overview</a>。</p>
-      <p class="small">如果你还绕，可以问我：“为什么 async 不是并行？”或者“为什么同步数据库不能直接改 async？”这两个问题很关键。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open>
+        <summary>题 1：FastAPI 中 <code>def</code> 和 <code>async def</code> 如何选择？</summary>
+        <p class="answer">内部使用 async I/O 客户端时选 async def；内部全是同步阻塞库时普通 def 更清晰。不要在 async endpoint 中执行长时间阻塞调用。</p>
+      </details>
+      <details>
+        <summary>题 2：async 能解决 CPU 密集任务吗？</summary>
+        <p class="answer">不能。CPU 密集任务需要并行计算、进程池、任务队列或专门推理服务，async 只改善等待型并发。</p>
+      </details>
+      <details>
+        <summary>题 3：事件循环一次能运行多少 Python task？</summary>
+        <p class="answer">单个事件循环同一时刻运行一个 task；task 在 await 处暂停后，事件循环调度其他 task。它是协作式并发，不是自动多核并行。</p>
+      </details>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

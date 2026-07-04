@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lesson 0011 - Settings and Environment Variables</title>
+  <title>Lesson 0011 - Settings 与环境变量</title>
   <link rel="stylesheet" href="../assets/course.css">
 </head>
 <body>
@@ -19,140 +19,143 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0011</p>
-      <h1>配置管理和环境变量：不要把秘密写死在代码里</h1>
-      <p class="lead">真实项目会有数据库地址、环境名称、API Key、模型服务地址等配置。它们不应该散落在代码里，而应该由统一的 Settings 对象管理。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>Settings 与环境变量：配置、密钥和运行环境的工程边界</h1>
+      <p class="lead">本节把配置管理讲成后端工程问题：业务代码不应写死环境差异，密钥不应进入 Git，公开接口不应泄漏敏感配置。<code>pydantic-settings</code> 负责把环境变量、<code>.env</code> 和类型校验统一到 <code>Settings</code> 对象。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解“配置”和“业务代码”的区别。</li>
-        <li>理解环境变量为什么适合保存不同环境的配置。</li>
-        <li>看懂 <code>pydantic-settings</code> 的 <code>BaseSettings</code>。</li>
-        <li>理解 <code>@lru_cache</code> 为什么常用于 settings。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>配置管理
+├─ 配置：运行时可变、业务逻辑不应硬编码的值
+├─ 环境变量：部署环境注入的 key/value
+├─ .env：本地开发配置文件，不提交真实密钥
+├─ .env.example：变量模板，可提交
+├─ BaseSettings：从环境变量/.env 构造 typed settings
+├─ env_prefix="FIRST_API_"：命名空间隔离
+├─ @lru_cache：缓存 Settings，避免每次请求重复读取
+├─ get_settings：依赖注入入口
+└─ /config/public：只暴露非敏感配置状态</code></pre>
     </section>
 
     <section>
-      <h2>1. 什么是配置</h2>
-      <p>配置是“部署或运行时会变化，但业务逻辑不应该变化”的信息。例如：</p>
-      <ul>
-        <li>应用名称：开发环境可能叫 <code>First FastAPI API</code>，生产环境可能叫正式服务名。</li>
-        <li>环境名称：<code>development</code>、<code>test</code>、<code>production</code>。</li>
-        <li>API Key：保护接口用的密钥。</li>
-        <li>数据库地址：本地 SQLite、测试数据库、生产数据库可能都不一样。</li>
-        <li>AI 服务密钥：例如 OpenAI、向量数据库、模型网关的 key。</li>
-      </ul>
-      <p>如果这些值硬编码在代码里，就会导致改环境必须改代码，还可能把秘密提交到 GitHub。</p>
+      <h2>② 核心概念底层原理</h2>
+      <p><strong>配置与代码解耦是十二要素应用的基本思想。</strong>同一份代码应能在本地、测试、生产运行，只通过环境变量改变数据库地址、API Key、provider URL、超时和重试参数。</p>
+      <p><strong>环境变量是进程启动时的外部输入。</strong>程序读取的是操作系统或部署平台提供的键值对。<code>.env</code> 是本地开发便利层，不是生产密钥管理方案。</p>
+      <p><strong>Settings 也是 API 边界。</strong>外部输入不只有 HTTP 请求，还有运行环境。<code>BaseSettings</code> 像 Pydantic 模型一样对配置做类型转换和约束，例如超时必须大于 0、最大尝试次数在 1 到 5 之间。</p>
+      <p><strong>公开配置接口必须最小泄露。</strong><code>/config/public</code> 可以告诉前端当前环境和是否配置了 API Key，但绝不能返回真实 key。安全设计里，能不暴露就不暴露。</p>
     </section>
 
     <section>
-      <h2>2. 环境变量是什么</h2>
-      <p>环境变量是操作系统或运行环境提供给程序的键值对。程序启动时读取它们，例如：</p>
-      <pre><code>FIRST_API_ENVIRONMENT=development
-FIRST_API_API_KEY=dev-secret-key</code></pre>
-      <p>FastAPI 官方设置文档推荐使用 Pydantic Settings 来处理应用配置，它可以从环境变量和 <code>.env</code> 文件读取值，并像 Pydantic 模型一样做类型处理。</p>
-      <div class="callout">
-        <p><strong>安全直觉：</strong><code>.env.example</code> 可以提交，因为它只展示变量名和示例值；真正的 <code>.env</code> 不提交，因为它可能包含真实密钥。</p>
-      </div>
-    </section>
-
-    <section>
-      <h2>3. settings.py 逐行讲解</h2>
+      <h2>③ 全套代码逐行精读解析</h2>
       <pre><code>class Settings(BaseSettings):
     app_name: str = "First FastAPI API"
     environment: str = "development"
     api_key: str = "dev-secret-key"
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_prefix="FIRST_API_",
-        extra="ignore",
-    )</code></pre>
-      <p>这段代码表示：</p>
+    ai_provider: Literal["demo"] = "demo"
+    ai_prediction_backend: Literal["demo", "provider"] = "demo"
+    ai_provider_health_url: str = "https://example.com"
+    ai_provider_prediction_url: str = "https://example.com/predict"
+    ai_timeout_seconds: float = Field(default=10.0, gt=0)
+    ai_max_attempts: int = Field(default=1, ge=1, le=5)
+    ai_retry_base_delay_seconds: float = Field(default=0.1, ge=0)
+    ai_retry_max_delay_seconds: float = Field(default=2.0, ge=0)
+    ai_retry_jitter_seconds: float = Field(default=0.0, ge=0)</code></pre>
       <ul>
-        <li><code>BaseSettings</code>：让这个类具备从环境变量读取值的能力。</li>
-        <li><code>app_name</code>、<code>environment</code>、<code>api_key</code>：三个配置字段。</li>
-        <li><code>env_file=".env"</code>：允许从项目根目录的 <code>.env</code> 文件读取配置。</li>
-        <li><code>env_prefix="FIRST_API_"</code>：环境变量统一加前缀，避免和系统里其他变量撞名。</li>
+        <li><code>BaseSettings</code>：启用从环境变量、<code>.env</code> 构造对象的能力。</li>
+        <li><code>app_name</code>：用于 FastAPI 文档标题，不应散落硬编码。</li>
+        <li><code>environment</code>：标识运行环境，便于日志、公开配置和排障。</li>
+        <li><code>api_key</code>：教学 API Key；生产密钥应由平台注入，不应使用默认值。</li>
+        <li><code>ai_provider</code>：当前 provider 标识，后续可扩展多 provider。</li>
+        <li><code>ai_prediction_backend</code>：控制 <code>/predict</code> 使用 demo 还是 provider。</li>
+        <li><code>ai_provider_health_url</code> / <code>ai_provider_prediction_url</code>：外部 provider 边界配置。</li>
+        <li><code>ai_timeout_seconds gt=0</code>：超时必须大于 0，否则 HTTP client 行为无意义。</li>
+        <li><code>ai_max_attempts ge=1 le=5</code>：至少尝试一次，同时限制重试上限，避免成本失控。</li>
+        <li><code>retry_* ge=0</code>：重试延迟参数不能为负。</li>
       </ul>
-      <p>例如字段 <code>api_key</code> 对应的环境变量就是 <code>FIRST_API_API_KEY</code>。</p>
-    </section>
 
-    <section>
-      <h2>4. get_settings 和缓存</h2>
-      <pre><code>@lru_cache
-def get_settings() -&gt; Settings:
-    return Settings()</code></pre>
-      <p><code>@lru_cache</code> 会缓存函数结果。第一次调用 <code>get_settings()</code> 时创建 Settings 对象，后面再调用会复用同一个对象。</p>
-      <p>官方文档也提到，用缓存可以避免每次请求都重新读取 dotenv 文件。测试时仍然可以通过依赖覆盖或清缓存来调整配置。</p>
-    </section>
-
-    <section>
-      <h2>5. main.py 如何使用 Settings</h2>
-      <pre><code>settings = get_settings()
-
-app = FastAPI(
-    title=settings.app_name,
-    ...
+      <pre><code>model_config = SettingsConfigDict(
+    env_file=".env",
+    env_prefix="FIRST_API_",
+    extra="ignore",
 )</code></pre>
-      <p>这表示应用标题不再写死，而是来自配置对象。以后你可以通过环境变量改变应用名称，而不用改业务代码。</p>
+      <ul>
+        <li><code>env_file=".env"</code>：本地开发读取项目根目录 <code>.env</code>。</li>
+        <li><code>env_prefix="FIRST_API_"</code>：字段 <code>api_key</code> 对应 <code>FIRST_API_API_KEY</code>，避免变量名冲突。</li>
+        <li><code>extra="ignore"</code>：忽略未声明配置项，避免其他环境变量干扰 Settings 构造。</li>
+      </ul>
+
+      <pre><code>@lru_cache
+def get_settings() -> Settings:
+    return Settings()</code></pre>
+      <ul>
+        <li><code>@lru_cache</code>：缓存 Settings 实例，避免每次请求重复读取和解析配置。</li>
+        <li><code>get_settings</code>：依赖注入入口，路由和安全模块通过 <code>Depends(get_settings)</code> 获取配置。</li>
+        <li>测试若要切换配置，应覆盖依赖或清理缓存，否则可能读到旧值。</li>
+      </ul>
     </section>
 
     <section>
-      <h2>6. 公开配置接口</h2>
-      <pre><code>@router.get("/config/public", response_model=PublicConfigResponse)
-def read_public_config(settings: Annotated[Settings, Depends(get_settings)]):
-    return PublicConfigResponse(
-        app_name=settings.app_name,
-        environment=settings.environment,
-        api_key_configured=bool(settings.api_key),
-    )</code></pre>
-      <p>这个接口展示的是“可以公开的配置”。注意它只返回 <code>api_key_configured</code>，不会返回真实 <code>api_key</code>。这是非常重要的安全边界。</p>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>应用启动
+  -> import first_api.settings
+  -> main.py 调用 get_settings()
+  -> 第一次调用：Settings() 读取 .env + 环境变量 + 默认值
+  -> pydantic-settings 做类型转换与约束校验
+  -> lru_cache 缓存 Settings 对象
+  -> app = FastAPI(title=settings.app_name, ...)
+
+GET /config/public
+  -> Depends(get_settings)
+  -> 复用缓存 Settings
+  -> 返回 app_name/environment/api_key_configured
+  -> 不返回 settings.api_key 原文</code></pre>
     </section>
 
     <section>
-      <h2>7. 实验：创建 .env</h2>
-      <p>复制 <code>.env.example</code> 为 <code>.env</code>，然后修改：</p>
-      <pre><code>FIRST_API_APP_NAME="My FastAPI Learning API"
-FIRST_API_ENVIRONMENT="local"
-FIRST_API_API_KEY="my-local-key"</code></pre>
-      <p>重启服务后访问：</p>
-      <pre><code>GET /config/public</code></pre>
-      <p>你应该看到新的 <code>app_name</code> 和 <code>environment</code>。真实 API Key 不会出现在响应里。</p>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <ul>
+        <li><strong>.env vs .env.example：</strong><code>.env</code> 是本地真实配置，应忽略；<code>.env.example</code> 是模板，可提交。</li>
+        <li><strong>默认值 vs 生产值：</strong>默认值方便教学，不代表生产安全。生产必须覆盖密钥和 provider 地址。</li>
+        <li><strong>配置校验 vs 请求校验：</strong>前者发生在应用读取配置时；后者发生在 HTTP 请求进入接口时。</li>
+        <li><strong>公开状态 vs 公开密钥：</strong>可以公开“是否配置”，不能公开“配置值”。</li>
+      </ul>
     </section>
 
-    <section class="practice">
-      <h2>8. 课堂练习</h2>
-      <p>请你完成：</p>
-      <ol>
-        <li>创建自己的 <code>.env</code>。</li>
-        <li>把 <code>FIRST_API_ENVIRONMENT</code> 改成 <code>student-local</code>。</li>
-        <li>重启服务，访问 <code>/config/public</code> 验证变化。</li>
-      </ol>
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <ul>
+        <li>改了 <code>.env</code> 不生效：服务未重启或 Settings 被缓存。解决：重启应用；测试中清缓存或覆盖依赖。</li>
+        <li>环境变量名写错：例如 <code>API_KEY</code> 不会映射到 <code>api_key</code>。解决：使用 <code>FIRST_API_API_KEY</code>。</li>
+        <li>真实 key 提交 GitHub：安全事故。解决：使用 <code>.gitignore</code>，只提交 <code>.env.example</code>。</li>
+        <li>公开接口泄漏 key：直接返回 <code>settings.api_key</code>。解决：只返回布尔状态或脱敏信息。</li>
+        <li>配置类型非法：<code>FIRST_API_AI_TIMEOUT_SECONDS=abc</code>。解决：按 Settings 字段类型和约束填写。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <ul>
+        <li><strong>密钥来源：</strong>教学可用 <code>.env</code>；生产应使用云平台 Secret、KMS、Vault 或容器编排密钥。</li>
+        <li><strong>默认密钥：</strong>教学保留 <code>dev-secret-key</code>；生产绝不能使用默认密钥。</li>
+        <li><strong>配置变更：</strong>教学重启即可；生产需要变更审批、滚动发布、回滚和审计。</li>
+        <li><strong>配置可观测：</strong>生产可暴露非敏感配置摘要，不能暴露 secret 原文。</li>
+      </ul>
     </section>
 
     <section class="checkpoint">
-      <h2>9. 小测：先回忆再展开</h2>
-      <details>
-        <summary>1. 为什么真实 <code>.env</code> 不应该提交？</summary>
-        <p class="answer">因为它可能包含 API Key、数据库密码、模型服务密钥等敏感信息。</p>
-      </details>
-      <details>
-        <summary>2. <code>FIRST_API_API_KEY</code> 为什么能对应 <code>api_key</code>？</summary>
-        <p class="answer">因为 Settings 配置了 <code>env_prefix="FIRST_API_"</code>，字段名会和前缀组合成环境变量名。</p>
-      </details>
-      <details>
-        <summary>3. 为什么公开接口只返回 <code>api_key_configured</code>？</summary>
-        <p class="answer">因为客户端可以知道密钥是否配置，但绝不能拿到真实密钥值。</p>
-      </details>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details><summary>1. 为什么真实 <code>.env</code> 不能提交？</summary><p class="answer">它可能包含 API Key、数据库密码、provider 密钥等敏感信息。</p></details>
+      <details><summary>2. <code>FIRST_API_API_KEY</code> 如何映射到 <code>api_key</code>？</summary><p class="answer">Settings 配置了 env_prefix FIRST_API_，环境变量名由前缀和字段名组合并转换得到。</p></details>
+      <details><summary>3. <code>@lru_cache</code> 用在 settings 上的意义是什么？</summary><p class="answer">缓存 Settings 实例，避免每次请求重复读取和解析配置。</p></details>
     </section>
 
-    <section>
-      <h2>10. 本节总结</h2>
-      <p>配置管理让代码和运行环境解耦。<code>BaseSettings</code> 负责从环境变量和 <code>.env</code> 读取配置，<code>.env.example</code> 负责告诉开发者需要哪些变量，真实 <code>.env</code> 负责保存本地秘密并被 Git 忽略。</p>
-      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/advanced/settings/">FastAPI Settings and Environment Variables</a>、<a href="https://pydantic.dev/docs/validation/latest/concepts/pydantic_settings/">Pydantic Settings</a>。</p>
+    <section class="practice">
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details><summary>1. 为什么配置不应该硬编码在业务代码里？</summary><p class="answer">硬编码会让环境切换必须改代码，也容易泄漏密钥并破坏部署一致性。</p></details>
+      <details><summary>2. 如何安全地向前端暴露配置？</summary><p class="answer">只暴露非敏感字段和脱敏状态，例如环境名、功能开关、是否配置 key，不暴露 secret 原文。</p></details>
+      <details><summary>3. pydantic-settings 相比手写 os.getenv 有什么优势？</summary><p class="answer">它提供类型转换、默认值、约束校验、env 文件读取和统一配置对象，降低散乱读取风险。</p></details>
+      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/advanced/settings/">FastAPI Settings</a>、<a href="https://docs.pydantic.dev/latest/concepts/pydantic_settings/">Pydantic Settings</a>。</p>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

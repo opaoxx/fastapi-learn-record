@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lesson 0016 - File Summary Tasks</title>
+  <title>Lesson 0016 - File Summary Tasks Final Review</title>
   <link rel="stylesheet" href="../assets/course.css">
 </head>
 <body>
@@ -19,136 +19,178 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0016</p>
-      <h1>上传文件创建摘要任务：文件型 AI 服务入口</h1>
-      <p class="lead">这一节把第 15 课的文件上传和第 13/14 课的后台任务合起来：先上传文本文件，再基于文件内容创建摘要任务。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>文件摘要任务：上传资源、任务资源与 source_file_id 溯源链路</h1>
+      <p class="lead">文件型 AI 服务不是“上传完立刻算完”，而是把文件资源和处理任务拆开：<code>POST /files/text</code> 创建输入资源，<code>POST /tasks/files/{file_id}/summary</code> 创建处理任务，<code>GET /tasks/{task_id}</code> 查询结果。本节聚焦这条链路的资源建模、错误语义和生产扩展。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解“上传文件”和“处理文件”为什么通常拆成两个接口。</li>
-        <li>看懂 <code>POST /tasks/files/{file_id}/summary</code>。</li>
-        <li>理解 <code>source_file_id</code> 如何把任务和文件关联起来。</li>
-        <li>建立文件型 AI 服务的基本工作流。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>文件摘要闭环
+├─ 输入资源：UploadedTextFile 保存上传文件内容与元数据
+├─ 处理资源：SummaryTask 保存处理状态、结果和错误
+├─ 关联字段：SummaryTask.source_file_id -> UploadedTextFile.id
+├─ 创建接口：POST /tasks/files/{file_id}/summary
+├─ 调度机制：创建 queued 任务后 add_task(process_summary_task, task.id)
+├─ 查询接口：GET /tasks/{task_id} / GET /tasks
+└─ 扩展方向：PDF、图片、音频、表格都可复用“文件 -> 任务 -> 状态”模型</code></pre>
     </section>
 
     <section>
-      <h2>1. 为什么拆成两步</h2>
-      <p>你可能会问：为什么不上传文件时立刻处理？真实项目里，拆成两步更灵活：</p>
-      <ul>
-        <li>一个文件可能被多次处理，例如摘要、分类、关键词提取。</li>
-        <li>上传成功和处理成功是两件事，错误原因也不同。</li>
-        <li>处理可能很慢，适合放到后台任务。</li>
-        <li>前端可以先展示“文件已上传”，再展示“任务处理中”。</li>
-      </ul>
+      <h2>② 核心概念底层原理</h2>
+      <p>上传文件和处理文件应拆成两个资源生命周期。上传成功只说明输入进入系统；摘要成功说明某个处理任务完成。二者失败原因完全不同：上传可能因为鉴权、格式、大小、编码失败；处理可能因为模型超时、外部依赖失败或文本无法摘要失败。</p>
+      <p><code>source_file_id</code> 是溯源字段。它让任务结果能回指输入文件，解决“这个摘要来自哪个文件”的问题。没有溯源字段，任务结果、用户上传记录、调试日志和审计信息会断裂。</p>
+      <p>该设计体现资源组合思想：文件是可复用输入，任务是一次处理动作。一个文件未来可以创建摘要、关键词提取、分类、向量化等多个任务；如果上传时强行处理，就会限制复用和错误恢复。</p>
     </section>
 
     <section>
-      <h2>2. 文件摘要接口</h2>
-      <pre><code>@router.post("/files/{file_id}/summary", response_model=SummaryTaskRead, status_code=202)
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>@router.post(
+    "/files/{file_id}/summary",
+    response_model=SummaryTaskRead,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Create a summary task from an uploaded text file",
+    responses={status.HTTP_404_NOT_FOUND: {"description": "The uploaded text file does not exist."}},
+)
 def create_file_summary_task(
-    file_id: Annotated[int, Path(ge=1)],
+    file_id: Annotated[int, Path(ge=1, description="The uploaded text file ID.")],
     background_tasks: BackgroundTasks,
     session: Annotated[Session, Depends(get_session)],
-) -&gt; SummaryTask:
-    uploaded_file = session.get(UploadedTextFile, file_id)
-    if uploaded_file is None:
-        raise HTTPException(status_code=404, detail=f"File {file_id} was not found.")
-    ...</code></pre>
-      <p>它先根据 <code>file_id</code> 找上传文件。如果文件不存在，就返回 <code>404</code>。如果存在，就用文件内容创建摘要任务。</p>
-    </section>
-
-    <section>
-      <h2>3. source_file_id 的作用</h2>
-      <pre><code>task = SummaryTask(
-    text=uploaded_file.content,
-    text_length=len(uploaded_file.content),
-    source_file_id=uploaded_file.id,
-    status="queued",
-)</code></pre>
-      <p><code>source_file_id</code> 表示这个任务来自哪个上传文件。以后你看到任务结果时，就能追溯输入来源。</p>
-      <p>这也是后端常见的关联关系：任务属于某个文件，评论属于某篇文章，订单属于某个用户。</p>
-    </section>
-
-    <section>
-      <h2>4. 完整工作流</h2>
-      <pre><code>POST /files/text
-  -> 得到 file_id
-
-POST /tasks/files/{file_id}/summary
-  -> 得到 task_id
-
-GET /tasks/{task_id}
-  -> 查看 status 和 result</code></pre>
-      <p>这就是文件型 AI 服务的最小闭环。把 demo 摘要函数替换成真实模型调用后，它就可以变成文档摘要 API 的雏形。</p>
-    </section>
-
-    <section>
-      <h2>5. 实验：上传后创建任务</h2>
-      <p>先上传文本文件：</p>
-      <pre><code>POST /files/text
-X-API-Key: dev-secret-key
-file = notes.txt</code></pre>
-      <p>拿到响应里的 <code>id</code> 后，创建摘要任务：</p>
-      <pre><code>POST /tasks/files/{file_id}/summary
-X-API-Key: dev-secret-key</code></pre>
-      <p>最后查询任务：</p>
-      <pre><code>GET /tasks/{task_id}
-X-API-Key: dev-secret-key</code></pre>
-    </section>
-
-    <section>
-      <h2>6. 和 VLM / 文档 AI 的关系</h2>
-      <p>当前只处理文本文件，但结构可以扩展：</p>
+) -> SummaryTask:</code></pre>
       <ul>
-        <li>图片上传后创建 VLM 描述任务。</li>
-        <li>PDF 上传后创建解析和摘要任务。</li>
-        <li>音频上传后创建转写任务。</li>
-        <li>表格上传后创建数据分析任务。</li>
+        <li><code>"/files/{file_id}/summary"</code>：路径表达“基于某个文件创建摘要任务”，不是读取文件本身。</li>
+        <li><code>response_model=SummaryTaskRead</code>：返回任务视图，包含 <code>source_file_id</code>，但不返回文件完整内容。</li>
+        <li><code>202</code>：创建的是后台处理任务，结果稍后查。</li>
+        <li><code>Path(ge=1)</code>：文件 id 必须是正整数；非法路径参数直接 422。</li>
       </ul>
-      <p>核心思想一样：文件进入系统，任务处理文件，状态接口返回结果。</p>
+      <pre><code>uploaded_file = session.get(UploadedTextFile, file_id)
+if uploaded_file is None:
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"File {file_id} was not found.",
+    )</code></pre>
+      <p>这里先验证输入资源存在。<code>file_id</code> 合法但库中没有文件，所以是 404。不能直接创建空任务，否则后续 worker 没有输入文本。</p>
+      <pre><code>task = create_summary_task_from_file(
+    session=session,
+    uploaded_file=uploaded_file,
+)
+
+background_tasks.add_task(process_summary_task, task.id)
+return task</code></pre>
+      <p>任务创建仍然走服务层，路由函数只负责编排：查文件、建任务、注册后台处理、返回任务。</p>
+      <pre><code>def create_summary_task_from_file(
+    session: Session,
+    uploaded_file: UploadedTextFile,
+) -> SummaryTask:
+    return create_summary_task(
+        session=session,
+        text=uploaded_file.content,
+        source_file_id=uploaded_file.id,
+    )</code></pre>
+      <p>这一层把文件内容转换为任务输入，把文件 id 写入 <code>source_file_id</code>。如果不写该字段，前端和运维无法从任务追溯来源。</p>
     </section>
 
-    <section class="practice">
-      <h2>7. 课堂练习</h2>
-      <p>请你完成：</p>
-      <ol>
-        <li>上传一个 <code>.txt</code> 文件。</li>
-        <li>基于它创建摘要任务。</li>
-        <li>查询任务结果，并指出 <code>source_file_id</code> 是哪个文件。</li>
-      </ol>
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>POST /files/text
+  -> 保存 UploadedTextFile(id=7, content="...", preview="...")
+  -> 返回 file_id=7
+
+POST /tasks/files/7/summary
+  -> Path 校验 file_id >= 1
+  -> session.get(UploadedTextFile, 7)
+  -> create_summary_task(text=file.content, source_file_id=7)
+  -> SummaryTask(id=15, status="queued")
+  -> add_task(process_summary_task, 15)
+  -> 返回 202 + task_id=15
+
+后台 worker
+  -> 读取 task 15
+  -> status=running
+  -> ai_client.summarize(task.text)
+  -> status=completed/result=...
+
+GET /tasks/15
+  -> 返回 source_file_id=7 + completed/result</code></pre>
     </section>
 
-    <section class="checkpoint">
-      <h2>8. 小测：先回忆再展开</h2>
-      <details>
-        <summary>1. 为什么上传和处理常拆成两个接口？</summary>
-        <p class="answer">因为文件保存和文件处理是两个不同阶段，拆开后更容易复用、排错和异步执行。</p>
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>对比项</th><th>上传文件</th><th>创建摘要任务</th></tr></thead>
+        <tbody>
+          <tr><td>接口</td><td><code>POST /files/text</code></td><td><code>POST /tasks/files/{file_id}/summary</code></td></tr>
+          <tr><td>结果</td><td>文件记录</td><td>任务记录</td></tr>
+          <tr><td>成功状态码</td><td>201 Created</td><td>202 Accepted</td></tr>
+          <tr><td>主要失败</td><td>格式、大小、编码、鉴权</td><td>文件不存在、后台处理失败</td></tr>
+          <tr><td>复用价值</td><td>一个文件可触发多个任务</td><td>一次任务对应一次处理</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <ul>
+        <li><strong>404 File was not found</strong>：任务接口引用了不存在的文件。解决：先上传文件，并使用响应里的 <code>id</code>。</li>
+        <li><strong>422 file_id</strong>：路径参数不是正整数。解决：使用 <code>/tasks/files/1/summary</code> 这类合法路径。</li>
+        <li><strong>source_file_id 为 null</strong>：调用的是原始文本任务 <code>/tasks/summaries</code>，不是文件任务。解决：确认调用路径。</li>
+        <li><strong>任务失败但上传成功</strong>：这是两个阶段，上传成功不保证处理成功。解决：查询任务 <code>error</code> 字段。</li>
+        <li><strong>重复处理同一文件</strong>：教学项目允许重复创建任务。生产环境若要防重复，应增加幂等键或唯一任务约束。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>文件内容</td><td>直接读数据库字段</td><td>从对象存储按 URI/版本读取</td></tr>
+          <tr><td>任务关联</td><td><code>source_file_id</code> 简单索引</td><td>外键、归属、版本、处理参数快照</td></tr>
+          <tr><td>处理类型</td><td>摘要一种任务</td><td>多任务类型：OCR、embedding、分类、抽取</td></tr>
+          <tr><td>幂等</td><td>允许重复提交</td><td>按文件版本+任务参数去重</td></tr>
+          <tr><td>审计</td><td>结果保存在任务表</td><td>任务日志、操作者、耗时、模型版本全记录</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open>
+        <summary>1. 为什么上传和处理要拆成两个接口？</summary>
+        <p class="answer">因为上传是输入资源创建，处理是异步任务执行；拆开后更容易复用文件、定位错误、扩展多种处理任务。</p>
       </details>
       <details>
-        <summary>2. <code>source_file_id</code> 表示什么？</summary>
-        <p class="answer">它表示任务来源于哪个上传文件，方便追踪输入和结果。</p>
+        <summary>2. source_file_id 解决什么问题？</summary>
+        <p class="answer">它建立任务到上传文件的溯源关系，使结果、日志、前端展示和审计都能追踪输入来源。</p>
       </details>
       <details>
-        <summary>3. 文件不存在时为什么返回 <code>404</code>？</summary>
-        <p class="answer">因为 <code>file_id</code> 合法，但数据库里没有对应文件资源。</p>
+        <summary>3. 文件不存在时为什么返回 404？</summary>
+        <p class="answer">路径参数合法，但服务器没有该文件资源；这符合资源不存在的 HTTP 语义。</p>
       </details>
     </section>
 
     <section>
-      <h2>9. 本节总结</h2>
-      <p>本节完成了文件型 AI 服务的最小闭环：上传文本文件，创建文件摘要任务，查询任务结果。后续可以把存储从 SQLite 换成对象存储，把 demo 摘要函数换成真实大模型。</p>
-      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/request-files/">FastAPI Request Files</a>、<a href="https://fastapi.tiangolo.com/tutorial/background-tasks/">FastAPI Background Tasks</a>。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open>
+        <summary>题 1：如何设计一个文档摘要服务的最小闭环？</summary>
+        <p class="answer">先上传文件并保存文件元数据和内容引用；再创建摘要任务并记录 source_file_id；后台 worker 读取文件内容执行摘要；客户端通过任务状态接口查询结果。</p>
+      </details>
+      <details>
+        <summary>题 2：为什么任务表要保存 source_file_id 而不是只保存 text？</summary>
+        <p class="answer">只保存 text 会丢失输入资源身份，无法追溯文件名、上传者、版本和复用关系；source_file_id 能把处理结果与原始输入资源连接起来。</p>
+      </details>
+      <details>
+        <summary>题 3：一个文件触发多个 AI 任务时如何建模？</summary>
+        <p class="answer">文件表保存输入资源，任务表保存任务类型、参数、状态、结果与 source_file_id；必要时增加 task_type、model_version、idempotency_key 和任务参数快照。</p>
+      </details>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">
       <span class="nav-title">继续学习</span>
       <span class="nav-links">
         <a href="../index.html">回到课程目录</a>
-        <a href="./0015-uploadfile-text-files.html">上一课：文件上传 UploadFile</a>
-        <a href="./0017-cors-browser-frontend.html">下一课：CORS 与浏览器前端</a>
+        <a href="./0015-uploadfile-text-files.html">上一课：UploadFile 文本文件</a>
+        <a href="./0017-cors-browser-frontend.html">下一课：CORS 浏览器前端</a>
         <a href="../reference/0016-file-summary-tasks-cheatsheet.html">查看本课速查</a>
       </span>
     </nav>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lesson 0014 - Task Status API</title>
+  <title>Lesson 0014 - Task Status API Final Review</title>
   <link rel="stylesheet" href="../assets/course.css">
 </head>
 <body>
@@ -19,148 +19,168 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0014</p>
-      <h1>任务状态 API：让客户端查询异步结果</h1>
-      <p class="lead">后台任务只是半个故事。客户端还需要知道任务现在排队、运行、完成还是失败。本节学习用数据库记录任务状态，并提供查询接口。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>任务状态 API：异步结果资源、状态机与分页列表契约</h1>
+      <p class="lead">后台任务只有“提交接口”是不完整的。客户端需要通过状态 API 判断任务排队、运行、成功或失败。本节围绕 <code>SummaryTask</code>、<code>GET /tasks/{task_id}</code> 与 <code>GET /tasks</code> 的 envelope 响应，建立可应试、可面试、可扩展的异步任务查询模型。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解任务状态模型：<code>queued</code>、<code>running</code>、<code>completed</code>、<code>failed</code>。</li>
-        <li>理解为什么异步任务要把状态存进数据库。</li>
-        <li>看懂 <code>GET /tasks/{task_id}</code> 和 <code>GET /tasks</code>。</li>
-        <li>理解这个模式如何迁移到真实 AI 推理服务。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>任务状态 API
+├─ 领域对象：SummaryTask 是可查询的异步任务资源
+├─ 状态字段：queued / running / completed / failed
+├─ 单资源查询：GET /tasks/{task_id} -> SummaryTaskRead
+├─ 列表查询：GET /tasks?status=&limit=&offset= -> SummaryTaskListResponse
+├─ 响应隔离：数据库保存 text，API 不返回 text
+├─ 错误语义：不存在返回 404，非法状态/分页参数返回 422
+└─ 前端契约：列表必须读取 items，而不是把响应当裸数组</code></pre>
     </section>
 
     <section>
-      <h2>1. 为什么需要任务状态</h2>
-      <p>如果接口只返回“任务已提交”，客户端仍然不知道后续发生了什么。任务可能成功、失败、排队很久，或者结果已经生成。</p>
-      <p>所以常见异步 API 会设计成两步：</p>
-      <pre><code>POST /tasks/summaries  -> 返回 task_id
-GET  /tasks/{task_id} -> 查询状态和结果</code></pre>
-      <p>这就是很多 AI 平台、文件处理平台、视频生成平台常见的工作流。</p>
+      <h2>② 核心概念底层原理</h2>
+      <p>异步任务系统的本质是把“处理过程”建模为一个资源。提交接口创建资源，状态接口读取资源，worker 更新资源。只要任务记录存在，客户端就不必依赖原始 HTTP 连接维持处理过程。</p>
+      <p><code>SummaryTask</code> 是数据库表模型，承载完整内部数据；<code>SummaryTaskRead</code> 是响应模型，只暴露客户端需要知道的字段。这种分离是 API 安全设计的基础：持久化字段不等于对外字段。</p>
+      <p>列表接口现在返回 <code>SummaryTaskListResponse</code> envelope，而不是裸数组。原因是分页和筛选必须携带元数据：<code>items</code> 是当前页，<code>count</code> 是匹配总数，<code>limit/offset</code> 是当前查询窗口。没有 envelope，前端无法正确计算下一页、空页和总量。</p>
     </section>
 
     <section>
-      <h2>2. SummaryTask 表模型</h2>
-      <pre><code>class SummaryTask(SQLModel, table=True):
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>TaskStatus = Literal["queued", "running", "completed", "failed"]
+
+class SummaryTask(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     text: str
     text_length: int
+    source_file_id: int | None = Field(default=None, index=True)
     status: str = Field(default="queued", index=True)
     result: str | None = None
     error: str | None = None</code></pre>
-      <p>字段含义：</p>
       <ul>
-        <li><code>text</code>：原始输入，后台任务需要它来生成摘要。</li>
-        <li><code>text_length</code>：返回给客户端的安全摘要信息，不直接暴露全文。</li>
-        <li><code>status</code>：任务状态。</li>
-        <li><code>result</code>：成功后的结果。</li>
-        <li><code>error</code>：失败时的错误信息。</li>
+        <li><code>TaskStatus</code>：限制查询参数只能是四种合法状态，非法值由 FastAPI/Pydantic 返回 422。</li>
+        <li><code>id</code>：任务主键，也是客户端轮询状态的稳定句柄。</li>
+        <li><code>text</code>：内部处理输入，保存在库中供 worker 使用，但不对外返回。</li>
+        <li><code>text_length</code>：对外暴露输入规模，避免泄漏原文。</li>
+        <li><code>source_file_id</code>：关联文件来源；手动文本任务为 <code>None</code>，文件任务指向上传文件。</li>
+        <li><code>status</code>：加索引是为了后续按状态筛选更快。</li>
+        <li><code>result/error</code>：成功和失败互斥表达；成功看 <code>result</code>，失败看 <code>error</code>。</li>
       </ul>
-    </section>
-
-    <section>
-      <h2>3. 响应模型为什么不返回 text</h2>
-      <pre><code>class SummaryTaskRead(SQLModel):
-    id: int
-    text_length: int
-    status: str
-    result: str | None = None
-    error: str | None = None</code></pre>
-      <p>数据库表里保存 <code>text</code>，但响应模型不返回 <code>text</code>。这是接口设计里的一个重要习惯：数据库保存什么，不代表 API 必须暴露什么。</p>
-      <p>真实 AI 服务里，用户输入可能包含隐私信息，默认不要在状态查询接口里原样返回全文。</p>
-    </section>
-
-    <section>
-      <h2>4. 状态流转</h2>
-      <pre><code>queued -> running -> completed
-queued -> running -> failed</code></pre>
-      <p>本项目的后台函数会先把状态改成 <code>running</code>，处理成功后改成 <code>completed</code>，如果发生异常就改成 <code>failed</code> 并记录 <code>error</code>。</p>
-      <p>虽然 demo 很快完成，但真实模型调用可能需要几秒甚至几分钟。状态流转能让前端展示“排队中、处理中、已完成、失败”。</p>
-    </section>
-
-    <section>
-      <h2>5. 查询单个任务</h2>
+      <pre><code>class SummaryTaskListResponse(BaseModel):
+    items: list[SummaryTaskRead]
+    count: int = PydanticField(ge=0)
+    limit: int = PydanticField(ge=1, le=100)
+    offset: int = PydanticField(ge=0)</code></pre>
+      <p><code>items</code> 使用响应模型列表，避免泄漏 <code>text</code>；<code>count</code> 不是当前页长度，而是匹配条件下的总数；<code>limit/offset</code> 回显服务端实际使用的分页参数。</p>
       <pre><code>@router.get("/{task_id}", response_model=SummaryTaskRead)
 def read_summary_task(
-    task_id: Annotated[int, Path(ge=1)],
+    task_id: Annotated[int, Path(ge=1, description="The summary task ID.")],
     session: Annotated[Session, Depends(get_session)],
-) -&gt; SummaryTask:
-    task = session.get(SummaryTask, task_id)
+) -> SummaryTask:
+    task = read_summary_task_record(session, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail=f"Task {task_id} was not found.")
     return task</code></pre>
-      <p>它和 <code>GET /items/{item_id}</code> 很像：按主键查询，找不到返回 <code>404</code>。这说明你前面学的资源详情接口模式正在复用。</p>
+      <p><code>Path(ge=1)</code> 先挡住非正数 id；数据库查不到时返回 404，表示“参数格式合法，但资源不存在”。</p>
+      <pre><code>@router.get("", response_model=SummaryTaskListResponse)
+def list_summary_tasks(
+    session: Annotated[Session, Depends(get_session)],
+    task_status: Annotated[TaskStatus | None, Query(alias="status")] = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> SummaryTaskListResponse:
+    return list_summary_task_records(session=session, task_status=task_status, offset=offset, limit=limit)</code></pre>
+      <p><code>Query(alias="status")</code> 让 URL 使用简洁的 <code>?status=completed</code>，但 Python 变量仍可命名为 <code>task_status</code>，避免与 <code>status</code> 模块混淆。</p>
     </section>
 
     <section>
-      <h2>6. 查询任务列表</h2>
-      <pre><code>@router.get("", response_model=list[SummaryTaskRead])
-def list_summary_tasks(session: Annotated[Session, Depends(get_session)]):
-    return list(session.exec(select(SummaryTask)))</code></pre>
-      <p>这个接口可以帮助开发者或前端查看已有任务。后续可以继续扩展分页、按状态筛选、按用户筛选。</p>
-    </section>
-
-    <section>
-      <h2>7. 实验：提交并查询</h2>
+      <h2>④ 核心机制运行全流程拆解</h2>
       <pre><code>POST /tasks/summaries
-X-API-Key: dev-secret-key
-
-{
-  "text": "FastAPI background tasks let an API accept work quickly and continue processing after sending the initial response."
-}
+  -> 创建 queued 任务
+  -> 后台 worker 改为 running
+  -> AIClient.summarize 成功：result=摘要，status=completed
+  -> AIClientError/异常：error=错误信息，status=failed
 
 GET /tasks/{task_id}
-X-API-Key: dev-secret-key</code></pre>
-      <p>在当前 TestClient 和本地 demo 中，任务通常会很快变成 <code>completed</code>，并出现 <code>result</code>。</p>
+  -> Path 校验 task_id >= 1
+  -> session.get(SummaryTask, task_id)
+  -> None: 404
+  -> 命中: 按 SummaryTaskRead 序列化
+
+GET /tasks?status=completed&limit=5&offset=0
+  -> Query 校验 status/limit/offset
+  -> select(SummaryTask).where(...).order_by(id.desc)
+  -> select(count()).where(...)
+  -> 返回 {items,count,limit,offset}</code></pre>
     </section>
 
     <section>
-      <h2>8. 和真实 AI 服务的对应关系</h2>
-      <p>这个 demo 可以直接映射到真实 AI 服务：</p>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>问题</th><th>正确理解</th><th>错误理解</th></tr></thead>
+        <tbody>
+          <tr><td><code>count</code></td><td>匹配过滤条件的总数</td><td>当前页 <code>items.length</code></td></tr>
+          <tr><td><code>offset</code></td><td>跳过前 N 条匹配记录</td><td>页码编号</td></tr>
+          <tr><td><code>404</code></td><td>id 合法但资源不存在</td><td>请求参数类型错误</td></tr>
+          <tr><td><code>422</code></td><td>参数违反校验规则</td><td>数据库没查到数据</td></tr>
+          <tr><td><code>failed</code></td><td>任务执行失败，有错误信息</td><td>HTTP 请求一定失败</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
       <ul>
-        <li><code>SummaryRequest.text</code>：用户输入或 prompt。</li>
-        <li><code>SummaryTask</code>：推理任务记录。</li>
-        <li><code>process_summary_task</code>：真实模型调用函数。</li>
-        <li><code>result</code>：模型输出。</li>
-        <li><code>status</code>：前端轮询展示进度。</li>
+        <li><strong>前端报 page.map is not a function</strong>：把 envelope 当数组。解决：读取 <code>page.items</code>。</li>
+        <li><strong><code>?status=done</code> 返回 422</strong>：状态不在 Literal 范围。解决：使用 <code>queued/running/completed/failed</code>。</li>
+        <li><strong><code>GET /tasks/0</code> 返回 422</strong>：<code>Path(ge=1)</code> 拦截非正 id。解决：只查询正整数主键。</li>
+        <li><strong>分页下一页按钮错误</strong>：把 <code>count</code> 当当前页长度。解决：下一页条件应是 <code>offset + items.length &lt; count</code>。</li>
+        <li><strong>敏感输入泄漏</strong>：响应模型返回了 <code>text</code>。解决：只返回 <code>SummaryTaskRead</code>。</li>
       </ul>
-      <p>等项目变复杂后，后台函数可以迁移到 Celery、任务队列或独立 worker，但接口契约可以保持类似。</p>
     </section>
 
-    <section class="practice">
-      <h2>9. 课堂练习</h2>
-      <p>请你完成：</p>
-      <ol>
-        <li>提交一个摘要任务，记录返回的 <code>id</code>。</li>
-        <li>用 <code>GET /tasks/{id}</code> 查询它。</li>
-        <li>用 <code>GET /tasks/999999</code> 观察 <code>404</code>。</li>
-      </ol>
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学项目</th><th>生产项目</th></tr></thead>
+        <tbody>
+          <tr><td>状态字段</td><td>字符串字段</td><td>枚举、状态迁移表或审计日志</td></tr>
+          <tr><td>权限</td><td>统一 API Key</td><td>用户级权限，任务归属校验</td></tr>
+          <tr><td>分页</td><td>offset/limit</td><td>大数据量常用游标分页</td></tr>
+          <tr><td>错误信息</td><td>直接存稳定错误码+消息</td><td>内部错误与用户可见错误分层</td></tr>
+          <tr><td>查询性能</td><td>SQLite + 基础索引</td><td>复合索引、归档、冷热数据拆分</td></tr>
+        </tbody>
+      </table>
     </section>
 
-    <section class="checkpoint">
-      <h2>10. 小测：先回忆再展开</h2>
-      <details>
-        <summary>1. 为什么状态查询接口不直接返回原始 <code>text</code>？</summary>
-        <p class="answer">因为输入可能包含隐私信息，数据库保存不代表 API 必须暴露。</p>
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open>
+        <summary>1. 为什么任务列表要返回 envelope？</summary>
+        <p class="answer">因为分页列表不仅需要当前页数据，还需要总数、limit 和 offset，前端才能判断页码与按钮状态。</p>
       </details>
       <details>
-        <summary>2. <code>queued</code> 和 <code>running</code> 有什么区别？</summary>
-        <p class="answer"><code>queued</code> 表示任务已创建等待处理，<code>running</code> 表示后台函数正在处理。</p>
+        <summary>2. 为什么状态查询接口不返回原始 text？</summary>
+        <p class="answer">原始输入可能包含隐私或大文本，API 输出应遵循最小暴露原则，只返回必要元数据和结果。</p>
       </details>
       <details>
-        <summary>3. 为什么查询不存在的任务返回 <code>404</code>？</summary>
-        <p class="answer">因为 task_id 参数合法，但数据库里没有对应任务资源。</p>
+        <summary>3. 查询不存在任务为什么是 404 而不是 422？</summary>
+        <p class="answer">因为 task_id 的格式和范围合法，只是对应资源不存在；422 用于参数校验失败。</p>
       </details>
     </section>
 
     <section>
-      <h2>11. 本节总结</h2>
-      <p>异步任务需要状态 API。提交接口负责创建任务，后台函数负责处理任务，查询接口负责展示状态和结果。这个模式是 AI 服务、文件处理、视频生成、批处理任务的常见基础。</p>
-      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/background-tasks/">FastAPI Background Tasks</a>、<a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/202">MDN 202 Accepted</a>。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open>
+        <summary>题 1：异步任务状态表应该包含哪些核心字段？</summary>
+        <p class="answer">至少包含任务 id、输入引用或输入摘要、状态、结果、错误、创建/更新时间、用户归属。教学项目当前包含 id、text、text_length、source_file_id、status、result、error。</p>
+      </details>
+      <details>
+        <summary>题 2：为什么列表接口从裸数组演进为 envelope 是兼容性问题？</summary>
+        <p class="answer">JSON 顶层类型从 array 变为 object，会破坏旧客户端的解析逻辑，所以要通过版本、迁移说明或契约测试保护这种变更。</p>
+      </details>
+      <details>
+        <summary>题 3：轮询任务状态有什么缺点，如何优化？</summary>
+        <p class="answer">轮询会产生额外请求和延迟。可用指数退避、长轮询、Server-Sent Events、WebSocket 或回调通知优化。</p>
+      </details>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">
@@ -168,7 +188,7 @@ X-API-Key: dev-secret-key</code></pre>
       <span class="nav-links">
         <a href="../index.html">回到课程目录</a>
         <a href="./0013-background-tasks.html">上一课：BackgroundTasks</a>
-        <a href="./0015-uploadfile-text-files.html">下一课：文件上传 UploadFile</a>
+        <a href="./0015-uploadfile-text-files.html">下一课：UploadFile 文本文件</a>
         <a href="../reference/0014-task-status-api-cheatsheet.html">查看本课速查</a>
       </span>
     </nav>

@@ -35,6 +35,65 @@ def parse_html(path: Path) -> LinkAndTextParser:
     return parser
 
 
+def test_rebuilt_foundation_lessons_use_exam_review_structure() -> None:
+    lesson_paths = [
+        Path("lessons/0001-first-fastapi-api.html"),
+        Path("lessons/0002-request-body-pydantic.html"),
+        Path("lessons/0003-path-and-query-parameters.html"),
+        Path("lessons/0004-response-models-and-errors.html"),
+        Path("lessons/0005-project-structure-apirouter.html"),
+        Path("lessons/0006-dependencies-depends.html"),
+        Path("lessons/0007-sqlite-sqlmodel-basics.html"),
+        Path("lessons/0008-database-session-crud.html"),
+        Path("lessons/0009-update-delete-crud.html"),
+        Path("lessons/0010-api-testing-testclient.html"),
+        Path("lessons/0011-settings-env-vars.html"),
+        Path("lessons/0012-api-key-auth.html"),
+        Path("lessons/0013-background-tasks.html"),
+        Path("lessons/0014-task-status-api.html"),
+        Path("lessons/0015-uploadfile-text-files.html"),
+        Path("lessons/0016-file-summary-tasks.html"),
+        Path("lessons/0017-cors-browser-frontend.html"),
+        Path("lessons/0018-static-frontend-fetch.html"),
+        Path("lessons/0019-service-layer-thin-routers.html"),
+        Path("lessons/0020-ai-client-dependency.html"),
+        Path("lessons/0021-ai-client-errors.html"),
+        Path("lessons/0022-task-failure-status.html"),
+        Path("lessons/0023-task-list-pagination.html"),
+        Path("lessons/0024-task-status-filter.html"),
+        Path("lessons/0025-list-response-envelope.html"),
+        Path("lessons/0026-count-query.html"),
+        Path("lessons/0027-frontend-task-history.html"),
+        Path("lessons/0028-frontend-pagination-status-filter.html"),
+        Path("lessons/0029-openapi-api-contract.html"),
+        Path("lessons/0030-schema-evolution-compatibility.html"),
+        Path("lessons/0031-real-ai-provider-boundary.html"),
+        Path("lessons/0032-fastapi-async-basics.html"),
+        Path("lessons/0033-async-http-provider-adapter.html"),
+        Path("lessons/0034-lifespan-http-client.html"),
+        Path("lessons/0035-app-state-dependency-bridge.html"),
+        Path("lessons/0036-provider-health-endpoint.html"),
+    ]
+    required_sections = [
+        "① 本节核心知识框架",
+        "② 核心概念底层原理",
+        "③ 全套代码逐行精读解析",
+        "④ 核心机制运行全流程拆解",
+        "⑤ 重难点、易混淆点对比辨析",
+        "⑥ 开发常见报错+坑点+解决方案",
+        "⑦ 生产环境 vs 教学环境 核心差异",
+        "⑧ 课后记忆习题+标准答案",
+        "⑨ 面试高频真题+解析",
+    ]
+
+    for lesson_path in lesson_paths:
+        parser = parse_html(lesson_path)
+
+        for section in required_sections:
+            assert section in parser.text
+        assert "Final Review + CSDN Deep Dive" in parser.text
+
+
 def test_provider_metrics_documentation_index_lists_operational_contract() -> None:
     docs_index = Path("reference/provider-metrics-index.html")
 

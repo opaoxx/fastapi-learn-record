@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lesson 0027 - Frontend Task History</title>
+  <title>Lesson 0027 - Frontend Task History Final Review</title>
   <link rel="stylesheet" href="../assets/course.css">
 </head>
 <body>
@@ -19,124 +19,51 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0027</p>
-      <h1>前端任务历史：把 API 响应信封变成界面状态</h1>
-      <p class="lead">上一节我们让 <code>GET /tasks</code> 返回 <code>items</code>、<code>count</code>、<code>limit</code>、<code>offset</code>。本节不急着堆新接口，而是研究一个关键问题：浏览器拿到这个 API 契约以后，怎样把它变成用户能看懂的任务历史界面？</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>前端任务历史：把后端响应信封投影为浏览器 UI 状态</h1>
+      <p class="lead">本节不是“写一点 JavaScript 展示列表”，而是把 <code>GET /tasks</code> 的 API 契约转成用户可理解的任务历史界面。核心思想：UI 状态是 API 契约的投影，前端必须按 <code>items/count/limit/offset</code> 的语义渲染，而不是凭感觉解析 JSON。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>前端任务历史链路
+├─ 静态页面：first_api/frontend/index.html
+├─ 鉴权输入：getApiKey() -> X-API-Key
+├─ 请求入口：fetch("/tasks?limit=5&offset=0")
+├─ 错误边界：parseJsonResponse(response)
+│  ├─ response.json()
+│  └─ response.ok 判断 HTTP 成败
+├─ API 契约：SummaryTaskListResponse
+│  ├─ page.items：任务数组
+│  ├─ page.count：总数
+│  ├─ page.limit：页大小
+│  └─ page.offset：偏移量
+├─ DOM 渲染：renderTaskHistory(page)
+└─ 安全习惯：createElement + textContent，不拼 innerHTML</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>API 契约是后端承诺的 JSON 形状，UI 状态是浏览器为了渲染页面保存和计算的状态。<code>GET /tasks</code> 返回 envelope 后，前端不能再把响应当数组；它必须把 <code>page.items</code> 映射为任务行，把 <code>page.count</code> 映射为总数提示，把 <code>page.limit/page.offset</code> 映射为分页位置。</p>
+      <p><code>fetch()</code> 的成功只代表网络层拿到了 HTTP 响应，不代表业务成功。401、422、500 等响应通常不会自动进入 <code>catch</code>，所以必须检查 <code>response.ok</code>。这和后端 <code>HTTPException</code> 的结构化错误契约是一对：后端给错误体，前端要把非 2xx 响应转成 UI 可显示错误。</p>
+      <p>DOM 渲染使用 <code>createElement()</code> 和 <code>textContent</code>，不是为了复古，而是为了明确数据到节点的映射，并避免把任务结果当 HTML 执行。真实框架 React/Vue 会封装这些操作，但底层仍是“状态变化 -> 重新渲染视图”。</p>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>&lt;div id="history-meta" class="history-meta"&gt;尚未加载&lt;/div&gt;
+&lt;div id="task-list" class="task-list" aria-live="polite"&gt;&lt;/div&gt;</code></pre>
       <ul>
-        <li>理解“UI 状态是 API 契约的投影”这句话是什么意思。</li>
-        <li>理解浏览器 <code>fetch</code> 调用后端时，请求、响应、JSON 解析、错误处理的完整链路。</li>
-        <li>看懂为什么前端要读取 <code>page.items</code>，而不是直接把整个 JSON 当成数组。</li>
-        <li>学会用 DOM API 动态渲染任务历史，而不是只把 JSON 打印在 <code>&lt;pre&gt;</code> 里。</li>
-        <li>把第 25、26 课的分页响应信封落到真实页面中，为下一课分页按钮和状态筛选打基础。</li>
+        <li><code>history-meta</code> 承载页级信息，例如状态、limit、offset、本页条数；不适合塞进每个任务行。</li>
+        <li><code>task-list</code> 是任务行容器，每次刷新应清空后重建。</li>
+        <li><code>aria-live="polite"</code> 让辅助技术感知列表更新，但不会强行打断用户当前操作。</li>
       </ul>
-    </section>
 
-    <section>
-      <h2>1. 背景：为什么这不是“写一点前端代码”</h2>
-      <p>到目前为止，我们的后端已经有了一个很像真实 AI 服务的工作流：</p>
-      <ol>
-        <li>用户上传一个文本文件。</li>
-        <li>后端创建一个摘要任务，并返回任务 ID。</li>
-        <li>后台任务运行，任务状态可能从 <code>queued</code> 到 <code>running</code>，再到 <code>completed</code> 或 <code>failed</code>。</li>
-        <li>用户需要回来看历史任务、失败原因和摘要结果。</li>
-      </ol>
-      <p>如果页面只能显示“刚才那一次请求的 JSON”，它其实还不是一个工作台。真实用户会问：我刚才提交过哪些任务？哪个完成了？哪个失败了？历史记录在哪里？</p>
-      <p>所以本节的核心不是“学习几个 JavaScript 函数”，而是学习一个工程思想：<strong>后端 API 给出稳定的数据契约，前端把这个契约投影成界面状态。</strong></p>
-    </section>
-
-    <section class="callout">
-      <h2>2. 核心概念：UI 状态是 API 契约的投影</h2>
-      <p><strong>API 契约</strong> 是后端承诺给调用方的结构。例如 <code>GET /tasks?limit=5&amp;offset=0</code> 返回：</p>
-      <pre><code>{
-  "items": [
-    {
-      "id": 12,
-      "status": "completed",
-      "text_length": 86,
-      "source_file_id": 3,
-      "result": "FastAPI lets us build...",
-      "error": null
-    }
-  ],
-  "count": 18,
-  "limit": 5,
-  "offset": 0
-}</code></pre>
-      <p><strong>UI 状态</strong> 是浏览器为了渲染页面需要保存或计算的信息。例如：</p>
-      <ul>
-        <li><code>items</code> 决定页面上有几行任务卡片。</li>
-        <li><code>count</code> 决定“共多少条”的提示。</li>
-        <li><code>limit</code> 和 <code>offset</code> 决定当前展示哪一页。</li>
-        <li>每个任务的 <code>status</code> 决定状态标签写什么。</li>
-        <li><code>result</code> 和 <code>error</code> 决定显示摘要结果还是失败原因。</li>
-      </ul>
-      <p>“投影”这个词可以理解为：后端返回的是数据对象，前端不改变事实，只选择一种适合人阅读的形态把它呈现出来。</p>
-    </section>
-
-    <section>
-      <h2>3. 运行机制：一次任务历史刷新发生了什么</h2>
-      <p>当页面加载或点击“刷新任务历史”时，浏览器和 FastAPI 之间会发生这条链路：</p>
-      <ol>
-        <li>前端从输入框读取 <code>X-API-Key</code>。</li>
-        <li>前端调用 <code>fetch("/tasks?limit=5&amp;offset=0", {headers: {"X-API-Key": apiKey}})</code>。</li>
-        <li>FastAPI 匹配 <code>GET /tasks</code> 路由。</li>
-        <li><code>Depends(require_api_key)</code> 校验请求头。</li>
-        <li><code>Query</code> 解析并校验 <code>limit</code> 和 <code>offset</code>。</li>
-        <li>service 层查询数据库，得到当前页 <code>items</code> 和总数 <code>count</code>。</li>
-        <li>FastAPI 按 <code>SummaryTaskListResponse</code> 序列化响应。</li>
-        <li>浏览器拿到 <code>Response</code> 对象，检查 <code>response.ok</code>。</li>
-        <li>前端调用 <code>response.json()</code> 把响应体解析成 JavaScript 对象。</li>
-        <li><code>renderTaskHistory(page)</code> 把对象渲染成 DOM 节点。</li>
-      </ol>
-      <p>这一条链路串起来以后，你就能看出“前端”和“后端”不是两个孤立知识点。它们之间靠 HTTP、JSON 和契约连接。</p>
-    </section>
-
-    <section>
-      <h2>4. 官方资料中的关键点</h2>
-      <p>MDN 把 Fetch API 描述为浏览器获取资源的接口，它围绕 <code>Request</code> 和 <code>Response</code> 这些对象工作；<code>fetch()</code> 返回的是一个 Promise，成功后得到 <code>Response</code>。这意味着“请求完成”和“JSON 解析完成”是两个步骤。</p>
-      <p><code>Response.ok</code> 表示状态码是否在 200 到 299 范围内，适合用来判断 HTTP 层是否成功。<code>Response.json()</code> 会读取响应体并把 JSON 文本解析成 JavaScript 对象。注意，它返回的不是“JSON 字符串”，而是解析后的对象。</p>
-      <p>FastAPI 这边，<code>response_model</code> 会用于响应数据的文档、校验、转换和过滤。上一节的 <code>SummaryTaskListResponse</code> 不是装饰用的类型，它决定了前端应该期待怎样的 JSON 形状。</p>
-    </section>
-
-    <section>
-      <h2>5. 代码精读一：HTML 结构为什么这样放</h2>
-      <p>我们在原来的上传工作台下面增加了一个任务历史区域：</p>
-      <pre><code>&lt;section class="panel history" aria-labelledby="task-history-title"&gt;
-  &lt;div class="history-head"&gt;
-    &lt;div&gt;
-      &lt;h2 id="task-history-title"&gt;任务历史&lt;/h2&gt;
-      &lt;p class="muted"&gt;
-        读取 GET /tasks?limit=5&amp;amp;offset=0，把响应信封渲染成界面。
-      &lt;/p&gt;
-    &lt;/div&gt;
-    &lt;div id="history-meta" class="history-meta"&gt;尚未加载&lt;/div&gt;
-  &lt;/div&gt;
-  &lt;div id="task-list" class="task-list" aria-live="polite"&gt;&lt;/div&gt;
-&lt;/section&gt;</code></pre>
-      <p>这里有三个设计点：</p>
-      <ul>
-        <li><code>history-meta</code> 放元信息：显示几条、总共几条、当前 <code>limit</code> 和 <code>offset</code>。</li>
-        <li><code>task-list</code> 放真实列表：每个任务会被渲染成一个 <code>article</code>。</li>
-        <li><code>aria-live="polite"</code> 是可访问性提示：列表更新时，辅助技术可以以较温和的方式感知变化。</li>
-      </ul>
-      <p>这就是把“响应信封”拆成两层 UI：外层元信息和内层数据项。</p>
-    </section>
-
-    <section>
-      <h2>6. 代码精读二：统一读取 API Key</h2>
       <pre><code>function getApiKey() {
   return document.querySelector("#api-key").value.trim();
 }</code></pre>
-      <p>这段看起来很小，但它体现了一个工程习惯：重复的读取逻辑不要散落在每个事件处理函数里。上传、创建任务、查询详情、刷新历史都需要同一个请求头，所以我们用一个函数集中表达。</p>
-      <p>如果以后 API Key 输入框的 ID 变了，只需要改这一处。</p>
-    </section>
+      <p>把 API Key 读取集中到一个函数，避免上传、查询详情、刷新历史各自重复 DOM 查询。若输入框 ID 改变，只改这里。</p>
 
-    <section>
-      <h2>7. 代码精读三：fetch 的错误边界</h2>
       <pre><code>async function parseJsonResponse(response) {
   const body = await response.json().catch(() =&gt; ({}));
   if (!response.ok) {
@@ -144,18 +71,13 @@
   }
   return body;
 }</code></pre>
-      <p>初学者很容易误以为 <code>fetch</code> 遇到 401、404、422、500 都会自动抛异常。它不会。只要网络层成功拿到 HTTP 响应，Promise 通常会正常 resolve。你必须自己检查 <code>response.ok</code>。</p>
-      <p>这里的逻辑是：</p>
-      <ol>
-        <li>先尽量把响应体解析成对象。</li>
-        <li>如果状态码不是 2xx，把状态码、状态文本和错误响应体拼成错误消息。</li>
-        <li>如果状态码成功，就返回解析后的对象。</li>
-      </ol>
-      <p>这就是前端侧的“错误边界”：后端可以返回结构化错误，前端要把它转成用户和开发者都能看懂的提示。</p>
-    </section>
+      <ul>
+        <li><code>await response.json()</code> 把 JSON 文本解析成 JS 对象；它不是返回字符串。</li>
+        <li><code>.catch(() =&gt; ({}))</code> 防止错误响应不是 JSON 时二次崩溃。</li>
+        <li><code>response.ok</code> 只在 200-299 为真；401/422 不会自动抛异常。</li>
+        <li><code>throw new Error(...)</code> 把 HTTP 失败转换成 JS 异常，交给调用处展示。</li>
+      </ul>
 
-    <section>
-      <h2>8. 代码精读四：请求任务历史</h2>
       <pre><code>async function loadTaskHistory() {
   const apiKey = getApiKey();
   if (!apiKey) {
@@ -163,180 +85,124 @@
     taskList.replaceChildren();
     return;
   }
-
-  refreshHistoryButton.disabled = true;
-  historyMeta.textContent = "加载中...";
-
-  try {
-    const response = await fetch("/tasks?limit=5&amp;offset=0", {
-      headers: {"X-API-Key": apiKey},
-    });
-    const page = await parseJsonResponse(response);
-    renderTaskHistory(page);
-  } catch (error) {
-    historyMeta.textContent = "加载失败";
-    taskList.replaceChildren();
-    const message = document.createElement("p");
-    message.className = "task-error";
-    message.textContent = error.message;
-    taskList.append(message);
-  } finally {
-    refreshHistoryButton.disabled = false;
-  }
+  ...
 }</code></pre>
-      <p>这段代码可以拆成四个阶段：</p>
-      <ul>
-        <li>输入检查：没有 API Key 就不发请求。</li>
-        <li>加载状态：按钮禁用，提示“加载中”。</li>
-        <li>成功路径：请求后端，解析响应，交给渲染函数。</li>
-        <li>失败路径：清空旧列表，显示错误消息，最后恢复按钮。</li>
-      </ul>
-      <p>这比“直接 fetch 然后 console.log”多了很多代码，但这些代码都不是啰嗦。它们对应真实应用里必须面对的用户体验：等待、失败、重试、状态恢复。</p>
-    </section>
+      <p>没有 API Key 时前端直接阻止请求，避免发送必然 401 的调用。<code>replaceChildren()</code> 清空旧列表，否则错误状态下会残留旧任务。</p>
 
-    <section>
-      <h2>9. 代码精读五：把 page.items 渲染成 DOM</h2>
+      <pre><code>const response = await fetch("/tasks?limit=5&amp;offset=0", {
+  headers: {"X-API-Key": apiKey},
+});
+const page = await parseJsonResponse(response);
+renderTaskHistory(page);</code></pre>
+      <p>请求头名必须与后端 <code>APIKeyHeader(name="X-API-Key")</code> 对齐。<code>page</code> 是 envelope 对象，真正数组在 <code>page.items</code>。</p>
+
       <pre><code>function renderTaskHistory(page) {
   taskList.replaceChildren();
   historyMeta.textContent =
     `显示 ${page.items.length} 条，共 ${page.count} 条；limit=${page.limit}，offset=${page.offset}`;
-
-  if (page.items.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "muted";
-    empty.textContent = "还没有任务。上传一个 .txt 文件后再刷新。";
-    taskList.append(empty);
-    return;
-  }
-
   for (const task of page.items) {
     const row = document.createElement("article");
-    row.className = "task-row";
     ...
     taskList.append(row);
   }
 }</code></pre>
-      <p>这里最重要的是第一行：<code>taskList.replaceChildren()</code>。每次刷新历史都先清空旧 DOM，再渲染新 DOM。否则重复点击刷新会把相同任务一遍遍追加到页面里。</p>
-      <p>第二个关键点是 <code>page.items</code>。因为第 25 课我们把响应从裸数组升级成了响应信封，所以现在不能写：</p>
-      <pre><code>for (const task of page) {
-  ...
-}</code></pre>
-      <p>正确写法必须是：</p>
-      <pre><code>for (const task of page.items) {
-  ...
-}</code></pre>
-      <p>这就是 API 契约变更对调用方的影响。后端 JSON 形状变了，前端读取路径也必须变。</p>
-    </section>
-
-    <section>
-      <h2>10. 为什么不用 innerHTML 拼字符串</h2>
-      <p>本节使用 <code>document.createElement()</code>、<code>textContent</code> 和 <code>append()</code> 创建 DOM，而不是把一整段 HTML 字符串塞进 <code>innerHTML</code>。</p>
-      <p>原因有两个：</p>
       <ul>
-        <li><code>textContent</code> 会把内容当普通文本，不会把任务结果里的字符当 HTML 执行。</li>
-        <li>逐个创建节点更适合初学者理解“数据对象如何变成页面结构”。</li>
+        <li><code>replaceChildren()</code> 保证刷新是替换视图，不是追加重复节点。</li>
+        <li><code>page.items.length</code> 是当前页条数，<code>page.count</code> 是总数，二者不能混用。</li>
+        <li><code>for (const task of page.items)</code> 体现响应信封契约；写 <code>for (const task of page)</code> 会报错。</li>
+        <li><code>document.createElement</code> 创建结构，<code>textContent</code> 写文本，避免 XSS 风险。</li>
       </ul>
-      <p>等你熟悉 Vue、React 或其他前端框架后，这类 DOM 操作会被框架封装掉。但底层思想仍然一样：数据变化，界面重新渲染。</p>
     </section>
 
     <section>
-      <h2>11. 和后端代码的对应关系</h2>
-      <p>前端这行请求：</p>
-      <pre><code>fetch("/tasks?limit=5&amp;offset=0", {
-  headers: {"X-API-Key": apiKey},
-})</code></pre>
-      <p>对应后端路由：</p>
-      <pre><code>@router.get("", response_model=SummaryTaskListResponse)
-def list_summary_tasks(
-    session: Annotated[Session, Depends(get_session)],
-    task_status: Annotated[TaskStatus | None, Query(alias="status")] = None,
-    offset: Annotated[int, Query(ge=0)] = 0,
-    limit: Annotated[int, Query(ge=1, le=100)] = 20,
-) -&gt; SummaryTaskListResponse:
-    return list_summary_task_records(
-        session=session,
-        task_status=task_status,
-        offset=offset,
-        limit=limit,
-    )</code></pre>
-      <p>这两个片段是一对。前端发送的 <code>limit=5</code> 和 <code>offset=0</code> 会进入后端的同名参数；请求头 <code>X-API-Key</code> 会被路由级依赖校验；返回值会按 <code>SummaryTaskListResponse</code> 变成 JSON。</p>
-      <p>能把这两段对应起来，你就不再只是“会写接口”或“会调接口”，而是在理解端到端的数据流。</p>
-    </section>
-
-    <section class="practice">
-      <h2>12. 课堂实验</h2>
-      <p>运行服务：</p>
-      <pre><code>fastapi dev first_api/main.py</code></pre>
-      <p>打开：</p>
-      <pre><code>http://127.0.0.1:8000/app/</code></pre>
-      <p>做三个观察：</p>
-      <ol>
-        <li>刚打开页面时，看“任务历史”是否显示当前数据库中的最近 5 条任务。</li>
-        <li>上传一个 UTF-8 的 <code>.txt</code> 文件并生成摘要，看任务历史是否自动刷新。</li>
-        <li>把 API Key 输入框清空，再点“刷新任务历史”，观察页面如何处理缺少鉴权信息。</li>
-      </ol>
-      <p>如果你想直接看 API 原始响应，可以访问 Swagger UI 的 <code>GET /tasks</code>，或用 PyCharm HTTP Client 请求：</p>
-      <pre><code>GET http://127.0.0.1:8000/tasks?limit=5&amp;offset=0
-X-API-Key: dev-secret-key</code></pre>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>浏览器加载 /app/
+  -> StaticFiles 返回 index.html
+  -> JS 执行 loadTaskHistory()
+  -> getApiKey() 读取 X-API-Key
+  -> fetch GET /tasks?limit=5&offset=0
+  -> FastAPI 鉴权、校验 query、查询数据库
+  -> 返回 SummaryTaskListResponse JSON
+  -> parseJsonResponse 检查 response.ok
+  -> renderTaskHistory(page)
+       -> page.items 渲染任务行
+       -> page.count/limit/offset 渲染元信息
+       -> task.error 或 task.result 决定展示失败或结果</code></pre>
     </section>
 
     <section>
-      <h2>13. 常见错误与诊断</h2>
-      <div class="two-col">
-        <div class="callout">
-          <h3>错误一：把响应当数组</h3>
-          <p>现象：控制台提示 <code>page is not iterable</code> 或页面没有任务。</p>
-          <p>原因：现在响应是对象，任务列表在 <code>page.items</code> 里。</p>
-        </div>
-        <div class="callout">
-          <h3>错误二：忘记 X-API-Key</h3>
-          <p>现象：返回 401。</p>
-          <p>原因：<code>/tasks</code> 路由被 API Key 保护，前端必须带请求头。</p>
-        </div>
-        <div class="callout">
-          <h3>错误三：只看 JSON 不看状态码</h3>
-          <p>现象：错误响应也被当成功数据渲染。</p>
-          <p>原因：没有检查 <code>response.ok</code>。</p>
-        </div>
-        <div class="callout">
-          <h3>错误四：刷新时不清空旧 DOM</h3>
-          <p>现象：每点一次刷新，列表重复一遍。</p>
-          <p>原因：缺少 <code>replaceChildren()</code> 或等价清理逻辑。</p>
-        </div>
-      </div>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>概念</th><th>正确理解</th><th>易错点</th></tr></thead>
+        <tbody>
+          <tr><td><code>fetch</code></td><td>HTTP 客户端 Promise</td><td>以为 401/422 自动 catch</td></tr>
+          <tr><td><code>response.json()</code></td><td>解析 JSON 为对象</td><td>以为返回 JSON 字符串</td></tr>
+          <tr><td><code>page</code></td><td>响应信封对象</td><td>当作数组遍历</td></tr>
+          <tr><td><code>items</code></td><td>当前页任务数组</td><td>当成全部任务</td></tr>
+          <tr><td><code>textContent</code></td><td>安全写文本</td><td>用 innerHTML 拼接外部内容</td></tr>
+        </tbody>
+      </table>
     </section>
 
-    <section class="checkpoint">
-      <h2>14. 小测：先回忆，再展开</h2>
-      <details>
-        <summary>1. 为什么前端现在要读取 <code>page.items</code>，而不是直接遍历 <code>page</code>？</summary>
-        <p class="answer">因为 <code>GET /tasks</code> 返回的是响应信封对象，真正的任务数组在 <code>items</code> 字段里。</p>
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <ul>
+        <li><strong><code>page is not iterable</code></strong>：响应顶层是对象。解决：遍历 <code>page.items</code>。</li>
+        <li><strong>401 Unauthorized</strong>：缺少 <code>X-API-Key</code>。解决：从输入框读取并设置请求头。</li>
+        <li><strong>错误响应被当成功渲染</strong>：未检查 <code>response.ok</code>。解决：统一封装 <code>parseJsonResponse</code>。</li>
+        <li><strong>列表越刷越多重复项</strong>：刷新前没清空 DOM。解决：调用 <code>replaceChildren()</code>。</li>
+        <li><strong>任务结果含 HTML 被执行</strong>：使用 <code>innerHTML</code>。解决：外部数据写入 <code>textContent</code>。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>前端技术</td><td>原生 DOM API</td><td>React/Vue/Svelte + 状态管理</td></tr>
+          <tr><td>鉴权</td><td>输入框 API Key</td><td>登录态、短期 token、权限系统</td></tr>
+          <tr><td>错误展示</td><td>直接显示错误文本</td><td>错误码映射、用户友好提示、日志上报</td></tr>
+          <tr><td>刷新策略</td><td>页面加载和手动刷新</td><td>轮询退避、SSE、WebSocket、后台同步</td></tr>
+          <tr><td>渲染安全</td><td><code>textContent</code></td><td>框架转义、CSP、输入输出安全策略</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open>
+        <summary>1. 为什么 UI 状态是 API 契约的投影？</summary>
+        <p class="answer">因为界面显示的任务行、总数、错误、分页位置都来自后端响应字段，前端只是把这些字段转换成人能读的页面结构。</p>
       </details>
       <details>
-        <summary>2. <code>response.json()</code> 返回 JSON 字符串吗？</summary>
-        <p class="answer">不是。它会把响应体中的 JSON 文本解析成 JavaScript 对象，并通过 Promise 返回。</p>
+        <summary>2. 为什么 <code>fetch</code> 后要检查 <code>response.ok</code>？</summary>
+        <p class="answer">HTTP 错误状态通常不会让 fetch 自动抛异常；必须手动判断非 2xx 响应。</p>
       </details>
       <details>
-        <summary>3. 为什么 <code>fetch</code> 后还要检查 <code>response.ok</code>？</summary>
-        <p class="answer">因为 HTTP 401、404、422 等错误响应通常不会让 <code>fetch</code> 自动抛异常，前端需要自己判断状态码是否成功。</p>
+        <summary>3. 为什么要读 <code>page.items</code>？</summary>
+        <p class="answer"><code>GET /tasks</code> 返回 envelope，顶层是对象，任务数组位于 <code>items</code> 字段。</p>
       </details>
       <details>
-        <summary>4. <code>count</code> 在任务历史界面里有什么作用？</summary>
-        <p class="answer">它告诉前端符合当前条件的任务总数，让界面能显示“共多少条”，并为后续分页按钮提供依据。</p>
-      </details>
-      <details>
-        <summary>5. 为什么用 <code>textContent</code> 渲染任务结果更适合本节？</summary>
-        <p class="answer">因为它把内容当普通文本处理，避免把任务结果误当 HTML，同时更容易看清数据到 DOM 的映射过程。</p>
+        <summary>4. 为什么不用 <code>innerHTML</code> 渲染任务结果？</summary>
+        <p class="answer">任务结果来自数据源，使用 innerHTML 可能把文本当 HTML 执行；textContent 更安全。</p>
       </details>
     </section>
 
     <section>
-      <h2>15. 本节总结</h2>
-      <p>本节把前两节的分页响应信封真正接到了浏览器页面中。你现在看到的不只是一个新列表，而是一条完整链路：FastAPI 定义响应模型，service 查询数据库，浏览器用 <code>fetch</code> 请求 JSON，前端把 <code>items</code> 和分页元信息渲染成任务历史。</p>
-      <p>这节课的关键心法是：<strong>API 不是后端自己玩的数据结构，它是前后端共同遵守的契约。</strong> 一旦契约稳定，前端 UI、自动化测试、文档和未来的 AI 服务调用方都可以围绕它构建。</p>
-      <p>下一课建议学习：前端分页与状态筛选。我们会把 <code>limit</code>、<code>offset</code> 和 <code>status</code> 变成真正可点击的界面控件。</p>
-      <p>推荐主资源：<a href="https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API">MDN Fetch API</a>、<a href="https://developer.mozilla.org/en-US/docs/Web/API/Response/json">MDN Response.json()</a>、<a href="https://developer.mozilla.org/en-US/docs/Web/API/Document/createElement">MDN document.createElement()</a>、<a href="https://fastapi.tiangolo.com/tutorial/response-model/">FastAPI Response Model</a>、<a href="https://fastapi.tiangolo.com/tutorial/static-files/">FastAPI Static Files</a>。</p>
-      <p class="small">如果你读完后仍然觉得某个步骤模糊，可以直接问我：比如“fetch 为什么 401 不抛异常？”或“响应信封和 Pydantic 模型到底怎么对应？”</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open>
+        <summary>题 1：前端如何可靠处理 API 错误？</summary>
+        <p class="answer">统一封装响应解析：先尝试解析 JSON，再检查 status/ok；非 2xx 转成错误对象，UI 根据错误码和 message 展示，并记录必要上下文。</p>
+      </details>
+      <details>
+        <summary>题 2：后端列表 envelope 改动会影响前端哪里？</summary>
+        <p class="answer">影响数据读取路径、循环渲染、分页按钮、总数提示和测试。前端要从裸数组遍历改为 <code>page.items</code>，并使用 <code>count/limit/offset</code>。</p>
+      </details>
+      <details>
+        <summary>题 3：原生 DOM 和前端框架的本质差异是什么？</summary>
+        <p class="answer">原生 DOM 手动创建和更新节点；框架声明式描述状态到 UI 的映射并自动协调 DOM。底层仍是数据状态驱动视图。</p>
+      </details>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

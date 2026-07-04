@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lesson 0019 - Service Layer and Thin Routers</title>
+  <title>Lesson 0019 - Service Layer Final Review</title>
   <link rel="stylesheet" href="../assets/course.css">
 </head>
 <body>
@@ -19,75 +19,39 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0019</p>
-      <h1>服务层：让 router 变薄，让业务逻辑有地方住</h1>
-      <p class="lead">项目刚开始时，把逻辑写在路由函数里很自然。但当上传、任务、摘要、数据库和前端都出现后，我们需要给业务逻辑单独安排一层。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>服务层与瘦路由：FastAPI 项目从脚本式接口走向可维护分层</h1>
+      <p class="lead">本节将任务创建、文件摘要任务创建、任务读取等业务动作从 HTTP 路由中剥离到 <code>services/summary_tasks.py</code>。核心目标不是“多建一个目录”，而是让 API 层只表达协议，让 service 层承载业务不变量，让数据库模型只描述持久化结构。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解 router、service、database model 各自负责什么。</li>
-        <li>看懂为什么把任务创建逻辑抽到 <code>services/summary_tasks.py</code>。</li>
-        <li>理解“瘦路由”为什么更适合求职项目和 AI 服务项目。</li>
-        <li>能判断一段代码应该留在 router，还是搬到 service。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>服务层分层模型
+├─ Router 层：HTTP 协议适配
+│  ├─ 读取 path/query/body/header/dependency
+│  ├─ 设置 status_code、response_model、OpenAPI 元数据
+│  └─ 把 HTTPException 映射给客户端
+├─ Service 层：业务用例编排
+│  ├─ create_summary_task：创建 queued 任务记录
+│  ├─ create_summary_task_from_file：复用任务创建逻辑
+│  ├─ read_summary_task：按 id 读取任务
+│  └─ run_summary_task：执行摘要并落库状态
+├─ Schema/Model 层：数据形状
+│  ├─ SummaryTask：数据库表模型
+│  ├─ SummaryTaskRead：对外响应模型
+│  └─ SummaryTaskListResponse：列表 envelope
+└─ 判断口诀：router 管协议，service 管业务，model 管结构</code></pre>
     </section>
 
     <section>
-      <h2>1. 为什么现在需要服务层</h2>
-      <p>前面的项目已经有不少能力：</p>
-      <ul>
-        <li>API Key 鉴权。</li>
-        <li>数据库 Session。</li>
-        <li>上传文件。</li>
-        <li>创建后台摘要任务。</li>
-        <li>静态前端调用 API。</li>
-      </ul>
-      <p>如果所有逻辑都继续塞在 router 里，路由函数会越来越长。长路由函数最明显的问题不是“丑”，而是难复用、难测试、难替换模型。</p>
+      <h2>② 核心概念底层原理</h2>
+      <p>FastAPI 不强制使用 service 层，但真实项目必须区分“协议逻辑”和“业务逻辑”。HTTP 路由函数天然依赖请求体、路径参数、状态码、鉴权依赖和响应模型；业务函数天然关心任务如何创建、如何关联文件、如何切换状态、如何写入数据库。二者混在一起会导致路由越来越胖，测试必须通过 HTTP 才能验证业务规则，复用也会被协议细节卡住。</p>
+      <p>服务层的本质是 application service：它不是数据库仓储，也不是领域实体，而是一个面向用例的编排层。比如“从上传文件创建摘要任务”不是 SQLModel 的职责，也不是 HTTP 的职责；它是业务动作，适合放入 <code>create_summary_task_from_file()</code>。</p>
+      <p>与相似概念区分：<code>APIRouter</code> 负责路由注册和 HTTP 适配；<code>Depends</code> 负责依赖解析；<code>SQLModel</code> 负责模型和查询；service 负责把这些能力组合成稳定用例。service 不是“工具函数垃圾桶”，只放有业务语义、可复用、值得测试的动作。</p>
     </section>
 
     <section>
-      <h2>2. 三层职责</h2>
-      <div class="two-col">
-        <div class="callout">
-          <strong>Router 层</strong>
-          <p>接 HTTP 请求，读路径参数、请求体、依赖项，返回响应或 HTTPException。</p>
-        </div>
-        <div class="callout">
-          <strong>Service 层</strong>
-          <p>表达业务动作，例如创建摘要任务、运行摘要任务、查询任务记录。</p>
-        </div>
-      </div>
-      <div class="callout">
-        <strong>Model / Database 层</strong>
-        <p>定义数据长什么样，以及如何通过 Session 保存和读取数据。</p>
-      </div>
-      <p>一句话记忆：router 管 HTTP，service 管业务，model 管数据形状。</p>
-    </section>
-
-    <section>
-      <h2>3. 本节新增目录</h2>
-      <pre><code>first_api/
-  services/
-    __init__.py
-    summary_tasks.py
-    ai_clients.py</code></pre>
-      <p><code>services/summary_tasks.py</code> 放任务相关业务动作；<code>services/ai_clients.py</code> 放模型客户端，下一课会重点讲。</p>
-    </section>
-
-    <section>
-      <h2>4. 抽出任务创建逻辑</h2>
-      <p>原来 router 里直接写：</p>
-      <pre><code>task = SummaryTask(
-    text=payload.text,
-    text_length=len(payload.text),
-    status="queued",
-)
-session.add(task)
-session.commit()
-session.refresh(task)</code></pre>
-      <p>现在改成服务函数：</p>
+      <h2>③ 全套代码逐行精读解析</h2>
       <pre><code>def create_summary_task(
     session: Session,
     text: str,
@@ -103,75 +67,131 @@ session.refresh(task)</code></pre>
     session.commit()
     session.refresh(task)
     return task</code></pre>
-      <p>这段代码现在可以被“直接文本摘要任务”和“文件摘要任务”一起复用。</p>
-    </section>
+      <ul>
+        <li><code>session: Session</code>：由外部传入数据库会话，service 不自己创建连接，便于测试和事务控制；如果在函数内部随意创建 Session，会让调用方难以控制生命周期。</li>
+        <li><code>text: str</code>：业务输入是纯文本，不依赖 <code>SummaryRequest</code>。这样同一函数可被文本接口、文件接口、测试代码复用。</li>
+        <li><code>source_file_id: int | None = None</code>：允许任务不关联文件；如果强制传文件 ID，直接文本摘要场景会被破坏。</li>
+        <li><code>SummaryTask(...)</code>：构造数据库表对象，此时还没有主键；主键由数据库在 commit/flush 后生成。</li>
+        <li><code>text_length=len(text)</code>：把文本长度固化为查询友好的字段；不保存则每次响应都要重新计算，且历史输入变更时含义不稳定。</li>
+        <li><code>status="queued"</code>：任务初始状态必须是排队中；如果直接写 <code>running</code>，前端会误判后台已经开始处理。</li>
+        <li><code>session.add(task)</code>：把对象加入当前 Session 的持久化上下文；漏掉后 commit 不会插入记录。</li>
+        <li><code>session.commit()</code>：提交事务并让插入落库；漏掉后另一个请求查询不到任务。</li>
+        <li><code>session.refresh(task)</code>：从数据库回填生成后的 <code>id</code> 等字段；漏掉可能返回 <code>id=None</code> 或陈旧对象。</li>
+        <li><code>return task</code>：返回持久化后的任务，router 可直接交给 FastAPI 按 <code>SummaryTaskRead</code> 序列化。</li>
+      </ul>
 
-    <section>
-      <h2>5. router 变薄之后</h2>
-      <pre><code>@router.post("/summaries", response_model=SummaryTaskRead, status_code=202)
-def create_summary_task(
-    payload: SummaryRequest,
-    background_tasks: BackgroundTasks,
-    session: Annotated[Session, Depends(get_session)],
-) -&gt; SummaryTask:
-    task = create_summary_task_record(
-        session=session,
-        text=payload.text,
-    )
-    background_tasks.add_task(process_summary_task, task.id)
-    return task</code></pre>
-      <p>现在路由函数的结构很清楚：接收请求、调用服务、安排后台任务、返回响应。它不再关心任务对象怎么保存进数据库。</p>
-    </section>
-
-    <section>
-      <h2>6. 命名冲突的小坑</h2>
-      <p>服务函数叫 <code>create_summary_task</code>，路由函数也叫 <code>create_summary_task</code> 时，Python 名字会互相遮住。课程代码里用了别名：</p>
       <pre><code>from ..services.summary_tasks import (
+    create_summary_task_from_file,
     create_summary_task as create_summary_task_record,
 )</code></pre>
-      <p>这个别名让读者知道：一个是 HTTP 路由函数，一个是数据库任务记录的创建函数。</p>
-    </section>
+      <p><code>create_summary_task as create_summary_task_record</code> 解决命名遮蔽：router 里也有 <code>def create_summary_task(...)</code>。如果不改别名，函数名可能读起来像递归调用自己，维护者很难分辨“HTTP 处理函数”和“数据库记录创建函数”。</p>
 
-    <section>
-      <h2>7. 判断规则：什么放 service</h2>
+      <pre><code>@router.post("/summaries", response_model=SummaryTaskRead, status_code=status.HTTP_202_ACCEPTED)
+def create_summary_task(...):
+    task = create_summary_task_record(session=session, text=payload.text)
+    background_tasks.add_task(process_summary_task, task.id)
+    return task</code></pre>
       <ul>
-        <li>如果代码在描述“业务动作”，适合放 service。</li>
-        <li>如果代码只在处理 HTTP 参数、状态码、请求头，适合留在 router。</li>
-        <li>如果代码在定义字段、表、校验范围，适合放 schema/model。</li>
-        <li>如果代码要被多个 router 或 worker 复用，优先考虑 service。</li>
+        <li><code>@router.post</code>：声明 HTTP 入口，仍然留在 router 层。</li>
+        <li><code>response_model=SummaryTaskRead</code>：对外隐藏原始文本，只返回任务状态、长度、结果和错误字段；若直接返回表模型，可能泄露 <code>text</code>。</li>
+        <li><code>status.HTTP_202_ACCEPTED</code>：表示任务被接受但未完成；如果用 200，会混淆提交成功与处理成功。</li>
+        <li><code>create_summary_task_record(...)</code>：router 委托 service 创建任务，不直接写数据库插入细节。</li>
+        <li><code>background_tasks.add_task(...)</code>：注册响应后执行的后台工作；不在 service 中调用是因为它属于 FastAPI HTTP 生命周期能力。</li>
+        <li><code>return task</code>：返回 queued 任务回执，让客户端拿到 <code>id</code> 后继续查询。</li>
       </ul>
     </section>
 
-    <section class="practice">
-      <h2>8. 课堂练习</h2>
-      <p>打开 <code>first_api/routers/tasks.py</code> 和 <code>first_api/services/summary_tasks.py</code>，分别找出：</p>
-      <ol>
-        <li>哪一行负责读取 HTTP 路径参数？</li>
-        <li>哪一个函数负责创建数据库任务记录？</li>
-        <li>哪一个函数负责运行摘要任务？</li>
-      </ol>
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>POST /tasks/summaries
+  -> require_api_key 鉴权
+  -> Pydantic 校验 SummaryRequest.text
+  -> get_session 注入 SQLModel Session
+  -> router.create_summary_task()
+  -> service.create_summary_task_record()
+       -> 构造 SummaryTask(status="queued")
+       -> add/commit/refresh
+       -> 返回带 id 的任务记录
+  -> BackgroundTasks 注册 process_summary_task(task.id)
+  -> FastAPI 按 SummaryTaskRead 序列化响应
+  -> HTTP 202 返回客户端
+  -> 响应结束后后台任务继续执行</code></pre>
+      <p>调用链的分界点非常清楚：HTTP 输入解析、鉴权和响应状态在 router；任务记录创建的不变量在 service；表字段与响应字段在 schema/model。这样一来，任何一层变化都不必牵连全部代码。</p>
     </section>
 
-    <section class="checkpoint">
-      <h2>9. 小测：先回忆再展开</h2>
-      <details>
-        <summary>1. 为什么 router 不适合越来越胖？</summary>
-        <p class="answer">因为它会混合 HTTP、数据库和业务逻辑，导致复用、测试和替换都更困难。</p>
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>问题</th><th>正确边界</th><th>常见误解</th></tr></thead>
+        <tbody>
+          <tr><td>router vs service</td><td>router 适配 HTTP，service 表达业务用例</td><td>把所有代码都写在路由函数里</td></tr>
+          <tr><td>service vs CRUD helper</td><td>service 可以编排多个动作和业务状态</td><td>以为 service 只能是一层薄薄的数据库 wrapper</td></tr>
+          <tr><td>表模型 vs 响应模型</td><td><code>SummaryTask</code> 入库，<code>SummaryTaskRead</code> 对外</td><td>直接暴露表模型导致字段泄露</td></tr>
+          <tr><td>commit 位置</td><td>本课 service 内部提交，教学简单清晰</td><td>生产中所有 service 都必须自己 commit</td></tr>
+          <tr><td>命名别名</td><td>用 <code>create_summary_task_record</code> 表达语义</td><td>忽视 Python 名字遮蔽导致读错调用对象</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <ul>
+        <li><strong>任务返回 <code>id: null</code></strong>：通常是没有 <code>commit/refresh</code>。解决：插入后提交并刷新对象。</li>
+        <li><strong>路由函数递归调用自己</strong>：service 函数和 router 函数同名且未起别名。解决：导入时使用 <code>as create_summary_task_record</code>。</li>
+        <li><strong>测试必须启动 HTTP 才能验证业务</strong>：业务逻辑写死在 router。解决：把可复用规则移动到 service，测试直接传 Session 调用。</li>
+        <li><strong>返回体泄露原文 text</strong>：错误地把表模型作为响应模型。解决：使用 <code>SummaryTaskRead</code> 控制字段。</li>
+        <li><strong>数据库会话已关闭</strong>：在后台任务里复用请求 Session。解决：后台任务单独创建 Session，见后续 <code>task_worker.py</code>。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学实现</th><th>生产规范</th></tr></thead>
+        <tbody>
+          <tr><td>事务边界</td><td>service 内部 <code>commit</code></td><td>常由 Unit of Work 或请求级事务统一管理</td></tr>
+          <tr><td>任务调度</td><td>FastAPI <code>BackgroundTasks</code></td><td>Celery/RQ/Arq/队列服务，支持重试和分布式 worker</td></tr>
+          <tr><td>业务校验</td><td>依赖 Pydantic 长度约束和少量状态字符串</td><td>更严格的状态机、幂等键、并发锁、审计日志</td></tr>
+          <tr><td>模型暴露</td><td>手写 read model 隐藏原文</td><td>分层 DTO、权限裁剪、字段级脱敏</td></tr>
+          <tr><td>代码组织</td><td>函数式 service</td><td>可演进为 service class、repository、domain event，但不应过早复杂化</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open>
+        <summary>1. 为什么说 service 层不是 FastAPI 语法，而是工程设计？</summary>
+        <p class="answer">FastAPI 可以直接在 router 中完成所有逻辑，但当业务动作需要复用、测试、替换实现时，把用例抽到 service 能降低协议层和业务层耦合，这是工程可维护性设计。</p>
       </details>
       <details>
-        <summary>2. service 层主要表达什么？</summary>
-        <p class="answer">表达业务动作，例如创建任务、运行任务、查询任务记录。</p>
+        <summary>2. <code>session.refresh(task)</code> 解决什么问题？</summary>
+        <p class="answer">它从数据库重新加载对象状态，拿到自增主键等数据库生成字段，避免返回未刷新或陈旧对象。</p>
       </details>
       <details>
-        <summary>3. 为什么服务函数和路由函数重名会出问题？</summary>
-        <p class="answer">因为 Python 名字会被后定义的同名函数遮住，调用时可能递归调用自己或找错对象。</p>
+        <summary>3. 为什么任务创建接口返回 202 而不是 200？</summary>
+        <p class="answer">因为接口只保证任务已被接收和排队，不保证摘要已经生成；最终结果需要通过任务查询接口读取。</p>
+      </details>
+      <details>
+        <summary>4. 哪些逻辑应该留在 router？</summary>
+        <p class="answer">路径参数、查询参数、请求体、依赖注入、状态码、响应模型、HTTPException 等协议适配逻辑应留在 router。</p>
       </details>
     </section>
 
     <section>
-      <h2>10. 本节总结</h2>
-      <p>服务层不是 FastAPI 强制要求的语法，而是真实项目里常用的组织方式。它让 router 专心处理 HTTP，让业务逻辑更容易被测试、复用和替换。</p>
-      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/bigger-applications/">FastAPI Bigger Applications</a>、<a href="https://fastapi.tiangolo.com/tutorial/dependencies/">FastAPI Dependencies</a>。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open>
+        <summary>题 1：FastAPI 项目为什么要做瘦路由？</summary>
+        <p class="answer">瘦路由把 HTTP 适配和业务规则拆开，路由更短，service 可复用可单测，后续替换数据库、队列、AI 客户端时影响范围更小。面试回答要强调边界，不要只说“代码更好看”。</p>
+      </details>
+      <details>
+        <summary>题 2：service 层应该直接抛 HTTPException 吗？</summary>
+        <p class="answer">通常不建议。HTTPException 是协议层概念，service 更适合返回业务结果或抛业务异常，由 router 映射成 HTTP 状态码。本课程早期为了简洁，404 仍在 router 中处理。</p>
+      </details>
+      <details>
+        <summary>题 3：为什么不能把请求级数据库 Session 传给后台任务长期使用？</summary>
+        <p class="answer">请求结束后 Session 生命周期可能结束，连接也可能被释放。后台任务应在自己的执行上下文中重新创建 Session，确保事务和连接独立。</p>
+      </details>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

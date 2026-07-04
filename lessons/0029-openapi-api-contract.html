@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lesson 0029 - OpenAPI as API Contract</title>
+  <title>Lesson 0029 - OpenAPI API Contract Final Review</title>
   <link rel="stylesheet" href="../assets/course.css">
 </head>
 <body>
@@ -19,141 +19,47 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0029</p>
-      <h1>OpenAPI 作为 API 契约：自动文档背后的生成机制</h1>
-      <p class="lead">第 27、28 课让浏览器页面调用 <code>GET /tasks</code>。这一节换一个更工程化的角度：前端、后端、测试和未来 AI 调用方到底如何确认接口“应该长什么样”？答案不是口头约定，而是可读取、可测试的 OpenAPI 契约。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>OpenAPI 作为 API 契约：FastAPI 自动文档背后的生成机制</h1>
+      <p class="lead"><code>/docs</code> 不是漂亮页面本身，真正的契约是 <code>/openapi.json</code>。FastAPI 会从路由、类型注解、Pydantic/SQLModel 模型、参数约束和安全依赖生成机器可读 API schema，让前端、测试、SDK 和未来 AI 调用方对齐同一份事实。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解 <code>/docs</code> 和 <code>/openapi.json</code> 的关系。</li>
-        <li>知道 FastAPI 从哪些代码信息生成 OpenAPI：路由、类型注解、Pydantic/SQLModel 模型、参数声明、状态码、安全依赖。</li>
-        <li>能读懂 <code>GET /tasks</code> 在 OpenAPI 中的参数、响应模型和鉴权方案。</li>
-        <li>学会给接口补充 <code>summary</code>、<code>description</code>、<code>response_description</code> 和 tag 元信息。</li>
-        <li>用自动化测试守住关键契约，避免以后不小心改坏前端依赖的 JSON 形状。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>OpenAPI 契约生成
+├─ 代码来源
+│  ├─ FastAPI(title, summary, description, version)
+│  ├─ APIRouter(tags, prefix, dependencies)
+│  ├─ path operation：summary/description/response_description
+│  ├─ Query/Path：参数位置、默认值、边界
+│  ├─ response_model：成功响应 schema
+│  ├─ Pydantic/SQLModel：components.schemas
+│  └─ APIKeyHeader：securitySchemes
+├─ 输出
+│  ├─ /openapi.json：机器可读契约
+│  └─ /docs：Swagger UI 展示层
+└─ 保护方式：tests/test_openapi_contract.py</code></pre>
     </section>
 
     <section>
-      <h2>1. 背景：自动文档不是装饰，是协作协议</h2>
-      <p>很多初学者第一次打开 <code>http://127.0.0.1:8000/docs</code> 时，会把它理解成“FastAPI 送了一个漂亮页面”。这只说对了一半。</p>
-      <p>真正重要的是 <code>/openapi.json</code>。它是一份机器可读的 JSON 文档，描述 API 有哪些路径、每个路径支持什么方法、参数在哪里、请求体是什么模型、成功响应是什么结构、可能有哪些错误响应、是否需要安全方案。</p>
-      <p><code>/docs</code> 只是把这份 JSON 渲染成人能操作的 Swagger UI。换句话说：</p>
-      <pre><code>Python 代码
-  -> FastAPI 收集路由、模型、参数、安全依赖
-  -> 生成 /openapi.json
-  -> /docs 把 /openapi.json 渲染成交互式页面</code></pre>
-      <p>对真实项目来说，这份契约可以服务四类人：</p>
-      <ul>
-        <li>后端：确认自己暴露了什么接口。</li>
-        <li>前端：确认应该传什么参数、读取什么响应字段。</li>
-        <li>测试：把关键契约写成自动化断言。</li>
-        <li>未来的 AI 服务调用方：不用读后端源码，也能知道任务接口如何调用。</li>
-      </ul>
-    </section>
-
-    <section class="callout">
-      <h2>2. 核心概念：契约不是实现，契约是边界</h2>
-      <p>实现是服务内部怎么做事，比如 SQL 怎么查、后台任务怎么运行、AI 客户端怎么生成摘要。契约是外部调用者能依赖的边界，比如：</p>
-      <pre><code>GET /tasks?status=completed&amp;limit=5&amp;offset=0</code></pre>
-      <p>这个接口的契约至少包含：</p>
-      <ul>
-        <li><code>status</code> 是可选查询参数，只能是 <code>queued/running/completed/failed</code>。</li>
-        <li><code>limit</code> 是查询参数，最小 1，最大 100，默认 20。</li>
-        <li><code>offset</code> 是查询参数，最小 0，默认 0。</li>
-        <li>成功响应是 <code>SummaryTaskListResponse</code>，里面有 <code>items/count/limit/offset</code>。</li>
-        <li>接口需要 <code>X-API-Key</code> 请求头。</li>
-      </ul>
-      <p>前端第 28 课的分页按钮完全依赖这些事实。如果后端突然把 <code>count</code> 改名为 <code>total</code>，前端分页就会坏。这就是为什么 API 契约必须被认真对待。</p>
+      <h2>② 核心概念底层原理</h2>
+      <p>OpenAPI 是 HTTP API 的结构化描述格式。它描述路径、方法、参数、请求体、响应体、状态码、安全方案和 schema。FastAPI 的价值在于把 Python 类型系统和 Pydantic 模型转成 OpenAPI 文档，避免手写文档与代码长期漂移。</p>
+      <p><code>/openapi.json</code> 是机器可读源，<code>/docs</code> 是基于它渲染出来的人机交互页面。前端、自动化测试、客户端生成器应该以 OpenAPI JSON 为可验证契约，而不是只靠口头说明。</p>
+      <p>契约与实现要区分：实现是 service 怎么查数据库、worker 怎么跑任务；契约是调用方能依赖的边界，例如 <code>GET /tasks</code> 需要 <code>X-API-Key</code>、支持 <code>status/limit/offset</code>、返回 <code>SummaryTaskListResponse</code>。</p>
     </section>
 
     <section>
-      <h2>3. FastAPI 如何生成 OpenAPI</h2>
-      <p>FastAPI 的 OpenAPI 不是手写出来的。它来自你已经写在代码里的结构化信息：</p>
-      <table>
-        <thead>
-          <tr>
-            <th>代码来源</th>
-            <th>OpenAPI 中体现为什么</th>
-            <th>本项目例子</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>路径操作装饰器</td>
-            <td>路径、HTTP 方法、状态码、summary、description</td>
-            <td><code>@router.get("", response_model=SummaryTaskListResponse)</code></td>
-          </tr>
-          <tr>
-            <td>函数参数和 <code>Query</code></td>
-            <td>查询参数、默认值、最小值、最大值、说明</td>
-            <td><code>limit: Annotated[int, Query(ge=1, le=100)] = 20</code></td>
-          </tr>
-          <tr>
-            <td><code>Path</code></td>
-            <td>路径参数、约束和说明</td>
-            <td><code>task_id: Annotated[int, Path(ge=1)]</code></td>
-          </tr>
-          <tr>
-            <td>Pydantic/SQLModel 模型</td>
-            <td>请求体和响应体 JSON Schema</td>
-            <td><code>SummaryTaskListResponse</code></td>
-          </tr>
-          <tr>
-            <td><code>response_model</code></td>
-            <td>成功响应的 schema</td>
-            <td><code>response_model=SummaryTaskRead</code></td>
-          </tr>
-          <tr>
-            <td><code>APIKeyHeader</code> 依赖</td>
-            <td>安全方案和接口 security 要求</td>
-            <td><code>X-API-Key</code></td>
-          </tr>
-        </tbody>
-      </table>
-      <p>官方文档也强调了这些来源：应用级 <code>title/summary/description/version</code> 会进入 OpenAPI 和自动文档；路径操作可以配置 <code>summary</code>、响应描述等元信息；<code>Query</code> 的校验会同时参与运行时校验和文档生成；<code>response_model</code> 会用于文档、校验、序列化和过滤。</p>
-    </section>
-
-    <section>
-      <h2>4. 运行机制：一次请求文档时发生了什么</h2>
-      <ol>
-        <li>浏览器访问 <code>/openapi.json</code>。</li>
-        <li>FastAPI 遍历应用里注册过的 path operation。</li>
-        <li>它读取每个 operation 的路径、HTTP 方法、tag、summary、description、状态码。</li>
-        <li>它读取函数签名，把 <code>Query</code>、<code>Path</code>、请求体模型转换为参数 schema。</li>
-        <li>它读取 <code>response_model</code>，生成响应 JSON Schema 引用。</li>
-        <li>它读取安全依赖，例如 <code>APIKeyHeader</code>，生成 <code>components.securitySchemes</code>。</li>
-        <li>返回一份完整 JSON。Swagger UI 再用这份 JSON 渲染 <code>/docs</code> 页面。</li>
-      </ol>
-      <p>这也是 FastAPI 教学里特别值得重视的地方：你写类型注解和模型，不只是为了编辑器提示，也是为了让接口契约能被机器读取。</p>
-    </section>
-
-    <section>
-      <h2>5. 本节项目改动概览</h2>
-      <p>为了让文档更像真实项目，这节课做了四个小改动：</p>
-      <ul>
-        <li>在 <code>main.py</code> 里增加应用 summary 和 OpenAPI tag 描述。</li>
-        <li>在 <code>security.py</code> 里给 <code>APIKeyHeader</code> 命名为 <code>ApiKeyAuth</code>，并补充说明。</li>
-        <li>在 <code>routers/tasks.py</code> 里给任务接口补充 summary、description、response_description 和参数说明。</li>
-        <li>新增 <code>tests/test_openapi_contract.py</code>，验证 <code>/openapi.json</code> 里关键契约没有被改坏。</li>
-      </ul>
-    </section>
-
-    <section>
-      <h2>6. 代码精读一：应用级元信息</h2>
+      <h2>③ 全套代码逐行精读解析</h2>
       <pre><code>openapi_tags = [
-    {
-        "name": "system",
-        "description": "Health checks and public runtime configuration.",
-    },
-    {
-        "name": "tasks",
-        "description": "Protected background summary tasks with status, filtering, and pagination.",
-    },
-]
+    {"name": "system", "description": "Health checks and public runtime configuration."},
+    {"name": "tasks", "description": "Protected background summary tasks with status, filtering, and pagination."},
+]</code></pre>
+      <ul>
+        <li><code>openapi_tags</code> 给接口分组补描述；如果只有 tag 名字，读者知道分组但不知道边界。</li>
+        <li><code>tasks</code> 描述中明确 protected、background、status、filtering、pagination，直接对应课程项目能力。</li>
+      </ul>
 
-app = FastAPI(
+      <pre><code>app = FastAPI(
     title=settings.app_name,
     summary="A learning API that grows from backend basics into AI-service endpoints.",
     description="A tiny learning API for backend basics and future AI service endpoints.",
@@ -161,212 +67,130 @@ app = FastAPI(
     openapi_tags=openapi_tags,
     lifespan=lifespan,
 )</code></pre>
-      <p><code>title</code>、<code>summary</code>、<code>description</code> 和 <code>version</code> 是 API 级别的信息，会出现在 <code>/openapi.json</code> 的 <code>info</code> 区域，也会显示在 <code>/docs</code> 顶部。</p>
-      <p><code>openapi_tags</code> 则是给接口分组写说明。以前只有 <code>tags=["tasks"]</code>，文档知道“这个接口属于 tasks 组”，但不知道这个组是干什么的。现在 tag 有了描述，读者更容易理解系统边界。</p>
-    </section>
+      <ul>
+        <li><code>title</code> 进入 OpenAPI <code>info.title</code>，也是 Swagger UI 顶部标题。</li>
+        <li><code>summary/description</code> 给 API 总体定位；不写会让文档像零散接口集合。</li>
+        <li><code>version</code> 是契约版本信号，不等同代码包版本，但能帮助调用方识别 API 发布状态。</li>
+        <li><code>lifespan</code> 与 OpenAPI 无直接关系，但体现应用启动/关闭资源管理仍在同一 app 对象上。</li>
+      </ul>
 
-    <section>
-      <h2>7. 代码精读二：安全方案也属于契约</h2>
       <pre><code>api_key_header = APIKeyHeader(
     name="X-API-Key",
     scheme_name="ApiKeyAuth",
     description="Local learning API key required by protected write, file, and task endpoints.",
     auto_error=False,
 )</code></pre>
-      <p><code>name="X-API-Key"</code> 表示客户端必须把 key 放在请求头里。<code>scheme_name="ApiKeyAuth"</code> 是 OpenAPI 里的安全方案名称。这个名字会进入：</p>
-      <pre><code>"securitySchemes": {
-  "ApiKeyAuth": {
-    "type": "apiKey",
-    "in": "header",
-    "name": "X-API-Key"
-  }
-}</code></pre>
-      <p>这很重要。前端、测试工具、甚至未来的客户端生成器都能从契约里知道：调用受保护接口时，不是把 key 放进 query，也不是放进 body，而是放到 <code>X-API-Key</code> 请求头。</p>
-      <p><code>auto_error=False</code> 仍然保留。它让我们可以在自己的 <code>require_api_key</code> 函数里统一返回项目想要的错误消息。</p>
-    </section>
+      <ul>
+        <li><code>name="X-API-Key"</code> 声明密钥在 header，不在 query/body。</li>
+        <li><code>scheme_name="ApiKeyAuth"</code> 是 OpenAPI 安全方案名称，测试会保护它。</li>
+        <li><code>description</code> 让文档解释该 key 保护哪些接口。</li>
+        <li><code>auto_error=False</code> 允许项目自定义 401 错误；若设为 True，FastAPI 会自动抛默认错误。</li>
+      </ul>
 
-    <section>
-      <h2>8. 代码精读三：任务列表接口的契约说明</h2>
       <pre><code>@router.get(
     "",
     response_model=SummaryTaskListResponse,
     summary="List summary tasks",
-    description=(
-        "Returns a newest-first page of summary tasks. Clients can filter by task status "
-        "and use limit/offset pagination."
-    ),
+    description="Returns a newest-first page of summary tasks...",
     response_description="A paginated task-list response envelope.",
-)
-def list_summary_tasks(
-    session: Annotated[Session, Depends(get_session)],
-    task_status: Annotated[
-        TaskStatus | None,
-        Query(alias="status", description="Optional status filter for the task list."),
-    ] = None,
-    offset: Annotated[int, Query(ge=0, description="Zero-based number of matching tasks to skip.")] = 0,
-    limit: Annotated[int, Query(ge=1, le=100, description="Maximum number of tasks to return.")] = 20,
-) -&gt; SummaryTaskListResponse:</code></pre>
-      <p>这里最值得慢慢看的是四层信息：</p>
+)</code></pre>
       <ul>
-        <li><code>response_model=SummaryTaskListResponse</code>：告诉调用者成功响应不是裸数组，而是分页响应信封。</li>
-        <li><code>summary</code>：一句话说明接口用途，适合文档列表快速扫描。</li>
-        <li><code>description</code>：解释接口行为，比如“newest-first”“status filter”“limit/offset pagination”。</li>
-        <li><code>Query(...)</code>：同时提供运行时校验和文档信息。</li>
+        <li><code>response_model</code> 生成 200 响应 schema 引用。</li>
+        <li><code>summary</code> 适合文档列表扫描。</li>
+        <li><code>description</code> 说明排序、筛选、分页行为。</li>
+        <li><code>response_description</code> 专门描述成功响应含义，和接口整体描述不同。</li>
       </ul>
-      <p>注意 <code>response_description</code> 不是接口整体描述，而是 200 响应的描述。FastAPI 官方文档也区分了 <code>description</code> 和 <code>response_description</code> 的用途。</p>
+
+      <pre><code>limit: Annotated[int, Query(ge=1, le=100, description="Maximum number of tasks to return.")] = 20</code></pre>
+      <p><code>Query</code> 同时参与运行时校验和 OpenAPI 参数 schema。只写 <code>int</code> 只能表达类型，不能表达最小值、最大值和说明。</p>
     </section>
 
     <section>
-      <h2>9. 代码精读四：响应模型如何变成 JSON Schema</h2>
-      <pre><code>class SummaryTaskListResponse(BaseModel):
-    items: list[SummaryTaskRead]
-    count: int
-    limit: int
-    offset: int</code></pre>
-      <p>这段模型会进入 OpenAPI 的 <code>components.schemas</code>。任务列表接口的 200 响应不会把所有字段重复写一遍，而是引用这个组件：</p>
-      <pre><code>"responses": {
-  "200": {
-    "description": "A paginated task-list response envelope.",
-    "content": {
-      "application/json": {
-        "schema": {
-          "$ref": "#/components/schemas/SummaryTaskListResponse"
-        }
-      }
-    }
-  }
-}</code></pre>
-      <p>这就是 <code>response_model</code> 的工程价值。它不只是“返回时转一下 JSON”，它还是文档、测试和客户端理解响应结构的公共来源。</p>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>浏览器访问 /openapi.json
+  -> FastAPI 遍历已注册 routes
+  -> 收集 path/method/tags/summary/description
+  -> 读取函数签名中的 Query/Path/Body
+  -> 将 Pydantic/SQLModel 模型转 JSON Schema
+  -> 收集 APIKeyHeader 为 securitySchemes
+  -> 生成 OpenAPI JSON
+  -> /docs 读取该 JSON 并渲染 Swagger UI</code></pre>
+      <p>因此，写好类型注解、响应模型和参数约束，不只是让 Python 代码更清楚，也是让机器可读契约更完整。</p>
     </section>
 
     <section>
-      <h2>10. 课堂实验一：直接查看 OpenAPI JSON</h2>
-      <p>启动应用：</p>
-      <pre><code>fastapi dev first_api/main.py</code></pre>
-      <p>打开：</p>
-      <pre><code>http://127.0.0.1:8000/openapi.json</code></pre>
-      <p>在浏览器里搜索 <code>"/tasks"</code>，你应该能看到类似结构：</p>
-      <pre><code>"summary": "List summary tasks"
-"description": "Returns a newest-first page..."
-"security": [
-  {
-    "ApiKeyAuth": []
-  }
-]</code></pre>
-      <p>再搜索 <code>"SummaryTaskListResponse"</code>，观察 <code>items/count/limit/offset</code> 是否都在 schema 里。</p>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>概念</th><th>正确理解</th><th>常见误解</th></tr></thead>
+        <tbody>
+          <tr><td><code>/openapi.json</code></td><td>机器可读契约</td><td>只是 Swagger 的内部文件</td></tr>
+          <tr><td><code>/docs</code></td><td>契约展示层</td><td>契约本身</td></tr>
+          <tr><td><code>response_model</code></td><td>响应 schema 来源</td><td>只影响类型提示</td></tr>
+          <tr><td><code>Query</code></td><td>校验 + 文档</td><td>只是默认值包装器</td></tr>
+          <tr><td>安全方案</td><td>API 调用契约一部分</td><td>只属于后端鉴权实现</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>11. 课堂实验二：从 /docs 看同一份契约</h2>
-      <p>打开：</p>
-      <pre><code>http://127.0.0.1:8000/docs</code></pre>
-      <p>找到 <code>tasks</code> 分组里的 <code>GET /tasks</code>，观察：</p>
-      <ol>
-        <li>接口标题是否是 <code>List summary tasks</code>。</li>
-        <li><code>status</code> 是否显示为可选查询参数。</li>
-        <li><code>limit</code> 是否显示最小值 1、最大值 100。</li>
-        <li>右上角或锁形按钮是否能看到 API key 安全方案。</li>
-        <li>200 响应是否引用 <code>SummaryTaskListResponse</code>。</li>
-      </ol>
-      <p>这一步的重点是建立直觉：<code>/docs</code> 页面上的多数内容都不是手工写出来的，而是从你的代码结构推导出来的。</p>
-    </section>
-
-    <section>
-      <h2>12. 代码精读五：用测试守住契约</h2>
-      <pre><code>def test_openapi_documents_task_list_contract() -&gt; None:
-    with TestClient(app) as client:
-        response = client.get("/openapi.json")
-
-    schema = response.json()
-    operation = schema["paths"]["/tasks"]["get"]
-
-    assert operation["summary"] == "List summary tasks"
-    assert operation["responses"]["200"]["content"]["application/json"]["schema"] == {
-        "$ref": "#/components/schemas/SummaryTaskListResponse"
-    }
-    assert operation["security"] == [{"ApiKeyAuth": []}]</code></pre>
-      <p>这个测试不是测试“文案好不好看”，而是在测试最关键的接口边界：</p>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
       <ul>
-        <li>任务列表接口还存在。</li>
-        <li>它仍然返回 <code>SummaryTaskListResponse</code>。</li>
-        <li>它仍然需要 API key。</li>
-        <li><code>limit</code> 和 <code>offset</code> 的边界还在。</li>
-        <li><code>status</code> 的枚举值还没有乱改。</li>
+        <li><strong>文档看不到响应结构</strong>：缺少 <code>response_model</code>。解决：为成功响应声明 Pydantic/SQLModel 模型。</li>
+        <li><strong>OpenAPI 参数没有最大值</strong>：只写了 <code>int</code>。解决：使用 <code>Query(ge=..., le=...)</code>。</li>
+        <li><strong>前端不知道要传 API Key</strong>：安全依赖未进入 OpenAPI 或命名混乱。解决：使用 <code>APIKeyHeader</code> 并设置 <code>scheme_name</code>。</li>
+        <li><strong>代码改了文档没变</strong>：实际没有改到类型/模型/装饰器。解决：检查 <code>/openapi.json</code>，并补 OpenAPI 契约测试。</li>
+        <li><strong>文案漂亮但契约不受保护</strong>：没有测试。解决：断言关键路径、参数、schema 和 security。</li>
       </ul>
-      <p>以后如果有人把 <code>response_model</code> 改成 <code>list[SummaryTaskRead]</code>，这个测试就会失败。这种失败很有价值，因为它在提醒你：这不是简单重构，而是 API 契约变化。</p>
     </section>
 
     <section>
-      <h2>13. 常见错误与诊断</h2>
-      <div class="two-col">
-        <div class="callout">
-          <h3>错误一：把 /docs 当成唯一文档</h3>
-          <p><code>/docs</code> 是展示层；真正的机器可读契约是 <code>/openapi.json</code>。</p>
-        </div>
-        <div class="callout">
-          <h3>错误二：忘记 response_model</h3>
-          <p>没有响应模型时，文档很难稳定表达响应结构，前端也更容易依赖“碰巧返回”的字段。</p>
-        </div>
-        <div class="callout">
-          <h3>错误三：只写类型，不写 Query 约束</h3>
-          <p><code>int</code> 只能说明类型，不能说明 <code>limit</code> 的最小值和最大值。</p>
-        </div>
-        <div class="callout">
-          <h3>错误四：文档写得很漂亮，但测试不守契约</h3>
-          <p>关键契约要进测试。否则文档和代码会慢慢漂移。</p>
-        </div>
-      </div>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>文档发布</td><td>本地 <code>/docs</code></td><td>内部门户、版本化文档、权限控制</td></tr>
+          <tr><td>契约测试</td><td>pytest 断言关键字段</td><td>契约 diff、CI 阻断、SDK 生成测试</td></tr>
+          <tr><td>安全方案</td><td>单个 API Key header</td><td>OAuth2/JWT/mTLS/多租户权限</td></tr>
+          <tr><td>Schema 管理</td><td>自动生成即可</td><td>变更审查、兼容性检查、弃用策略</td></tr>
+          <tr><td>调用方</td><td>课程前端和测试</td><td>Web、移动端、第三方、AI agent、SDK 用户</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>14. 面试视角：如何回答“FastAPI 自动文档怎么来的？”</h2>
-      <p>可以这样答：</p>
-      <blockquote>
-        <p>FastAPI 会根据 path operation、函数签名、类型注解、Pydantic 模型、参数声明和安全依赖生成 OpenAPI schema。<code>/openapi.json</code> 是机器可读的 API 契约，<code>/docs</code> 是基于它渲染出来的交互式文档。<code>response_model</code> 会影响响应的文档、校验、序列化和字段过滤，<code>Query</code>、<code>Path</code> 这类声明既做运行时校验，也会进入 OpenAPI 参数说明。</p>
-      </blockquote>
-      <p>如果能再补一句项目经验，就更像真实工程师：</p>
-      <blockquote>
-        <p>我会给关键接口写 OpenAPI 契约测试，比如确认分页接口仍然返回响应信封、查询参数约束没有丢、安全方案仍然要求 <code>X-API-Key</code>。</p>
-      </blockquote>
-    </section>
-
-    <section class="practice">
-      <h2>15. 本节练习</h2>
-      <ol>
-        <li>打开 <code>/openapi.json</code>，找到 <code>components.securitySchemes.ApiKeyAuth</code>。</li>
-        <li>打开 <code>/openapi.json</code>，找到 <code>paths./tasks.get.parameters</code>。</li>
-        <li>把 <code>limit</code> 的最大值从 100 临时改成 50，运行测试，观察失败或通过情况，再改回来。</li>
-        <li>在 <code>/docs</code> 里点击 <code>GET /tasks</code>，对照本节表格指出每块信息来自哪段 Python 代码。</li>
-      </ol>
-      <p>第三步是故意练“契约变更意识”。如果最大值改成 50，测试应该提醒你：调用方可依赖的边界变了。</p>
-    </section>
-
-    <section class="checkpoint">
-      <h2>16. 小测：先回忆，再展开</h2>
-      <details>
-        <summary>1. <code>/docs</code> 和 <code>/openapi.json</code> 谁更接近真正的 API 契约？</summary>
-        <p class="answer"><code>/openapi.json</code>。<code>/docs</code> 是把它渲染成交互式页面。</p>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open>
+        <summary>1. <code>/docs</code> 和 <code>/openapi.json</code> 谁是机器可读契约？</summary>
+        <p class="answer"><code>/openapi.json</code>。<code>/docs</code> 是 Swagger UI 对该 JSON 的可视化渲染。</p>
       </details>
       <details>
-        <summary>2. <code>response_model</code> 对 OpenAPI 有什么作用？</summary>
-        <p class="answer">它告诉 FastAPI 成功响应的 schema，并参与文档、校验、序列化和字段过滤。</p>
+        <summary>2. FastAPI 从哪些代码生成 OpenAPI？</summary>
+        <p class="answer">从 app 元信息、路由装饰器、函数签名、Query/Path/Body、Pydantic/SQLModel 模型、response_model 和安全依赖生成。</p>
       </details>
       <details>
-        <summary>3. 为什么 <code>Query(ge=1, le=100)</code> 比只写 <code>int</code> 更适合契约？</summary>
-        <p class="answer">因为它表达了参数边界，既能运行时校验，也能进入 OpenAPI 文档。</p>
+        <summary>3. 为什么安全方案也属于 API 契约？</summary>
+        <p class="answer">调用方必须知道密钥放在哪里、方案叫什么、哪些接口需要鉴权，否则无法正确调用受保护接口。</p>
       </details>
       <details>
-        <summary>4. <code>APIKeyHeader</code> 在 OpenAPI 里会变成什么？</summary>
-        <p class="answer">会变成 <code>components.securitySchemes</code> 里的 apiKey 安全方案，并标出 header 名称。</p>
+        <summary>4. OpenAPI 契约测试应该保护什么？</summary>
+        <p class="answer">保护关键路径、HTTP 方法、参数边界、响应 schema、安全要求和重要错误响应，而不是所有文案逐字锁死。</p>
       </details>
     </section>
 
     <section>
-      <h2>17. 本节总结</h2>
-      <p>你现在应该把 FastAPI 自动文档理解成“由代码生成的 API 契约”，而不只是一个调接口页面。类型注解、Pydantic/SQLModel 模型、<code>Query</code>、<code>Path</code>、<code>response_model</code>、<code>APIKeyHeader</code> 都会参与契约生成。</p>
-      <p>下一课建议学习：Schema 演进和向后兼容。我们会研究为什么把响应从裸数组改成信封是一种契约变更，以及如何用版本、测试和迁移意识保护前端调用方。</p>
-      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/metadata/">FastAPI Metadata and Docs URLs</a>、<a href="https://fastapi.tiangolo.com/tutorial/path-operation-configuration/">FastAPI Path Operation Configuration</a>、<a href="https://fastapi.tiangolo.com/tutorial/response-model/">FastAPI Response Model</a>、<a href="https://fastapi.tiangolo.com/tutorial/query-params-str-validations/">FastAPI Query Validations</a>、<a href="https://fastapi.tiangolo.com/reference/security/">FastAPI Security Tools</a>。</p>
-      <p class="small">如果这一节最绕的地方是“JSON Schema、OpenAPI、Pydantic 模型三者关系”，可以直接问我，我们可以专门画一张关系图慢慢拆。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open>
+        <summary>题 1：FastAPI 自动文档是怎么生成的？</summary>
+        <p class="answer">FastAPI 根据 path operation、类型注解、Pydantic 模型、参数声明和安全依赖生成 OpenAPI schema；<code>/openapi.json</code> 是契约，<code>/docs</code> 是基于它的 Swagger UI。</p>
+      </details>
+      <details>
+        <summary>题 2：为什么要测试 OpenAPI？</summary>
+        <p class="answer">因为前端和外部调用方依赖的不只是运行时返回，还包括文档和 SDK 看到的 schema。OpenAPI 测试能发现 response_model、参数约束、安全方案被误改。</p>
+      </details>
+      <details>
+        <summary>题 3：<code>response_model</code> 有哪些作用？</summary>
+        <p class="answer">它用于响应文档、序列化、字段过滤和 schema 生成，让接口输出从“碰巧返回某个 dict”变成稳定契约。</p>
+      </details>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

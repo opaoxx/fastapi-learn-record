@@ -737,3 +737,281 @@ Continue with Lesson 0063: Provider Metrics Scenario Fixtures. Suggested scope:
 ### Blockers
 
 - No project blocker found.
+
+## 2026-07-04 Run: Foundation Lesson Refactor Batch 0001-0006
+
+### Completed
+
+- Paused forward course production after Lesson 0062 per user request.
+- Audited the early foundation lessons against the new quality target: "university CS final-review notes + top CSDN technical article" style.
+- Rebuilt Lessons 0001-0006 as complete standalone HTML review pages with the required nine-section structure:
+  - core knowledge framework;
+  - underlying principles;
+  - line-by-line code reading;
+  - runtime/data-flow breakdown;
+  - confusing-point comparisons;
+  - common errors and fixes;
+  - production vs teaching differences;
+  - review exercises with answers;
+  - interview questions with analysis.
+- Updated the content to match the current project state, including the modular router layout, SQLModel-backed item endpoints, dependency-injected sessions, API-key-protected writes, and provider-ready prediction boundary.
+- Added a documentation contract test to ensure the rebuilt 0001-0006 lesson pages keep the required review structure.
+- Updated `NOTES.md` with the new refactor direction and completed first batch.
+
+### Files touched
+
+- `lessons/0001-first-fastapi-api.html`
+- `lessons/0002-request-body-pydantic.html`
+- `lessons/0003-path-and-query-parameters.html`
+- `lessons/0004-response-models-and-errors.html`
+- `lessons/0005-project-structure-apirouter.html`
+- `lessons/0006-dependencies-depends.html`
+- `tests/test_course_docs_contract.py`
+- `NOTES.md`
+- `COURSE_PROGRESS.md`
+
+### Token budget and split decision
+
+Estimated scope before writing: six early lessons, each rewritten as a dense standalone HTML review page. Each page needed principle explanation, source-code binding, runtime flow, production contrast, exercises, and interview material.
+
+Reason for split: the user requested processing six lessons per review batch. Rebuilding more than six lessons in this run would risk reducing the depth of code-reading and production-boundary sections. This batch therefore stops at Lessons 0001-0006 and leaves Lessons 0007-0012 for the next review batch.
+
+### Verification
+
+- Ran `.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q`
+- Result: 5 passed.
+- Ran `.\.venv\Scripts\python.exe -m pytest -q`
+- Result: 82 passed, 1 existing Starlette/FastAPI TestClient deprecation warning.
+- Ran `git diff --check`
+- Result: no whitespace errors; Git reported normal Windows LF-to-CRLF working-copy warnings.
+
+### Next task
+
+Continue the refactor with Lessons 0007-0012:
+
+- 0007 SQLite and SQLModel basics.
+- 0008 Database Session and CRUD.
+- 0009 Update/Delete CRUD.
+- 0010 API Testing with TestClient.
+- 0011 Settings and environment variables.
+- 0012 API Key authentication.
+
+Keep the same nine-section high-density review structure and align every lesson with the current codebase rather than obsolete early demo code.
+
+### Blockers
+
+- No project blocker found.
+
+## 2026-07-04 Run: Foundation Lesson Refactor Batch 0007-0012
+
+### Completed
+
+- Continued the user-requested review/refactor of the first 62 lessons; did not resume forward production of Lesson 0063.
+- Rebuilt Lessons 0007-0012 as complete standalone HTML review pages in the required "university CS final-review notes + top CSDN technical article" style.
+- Covered the required nine-section structure in each lesson:
+  - core knowledge framework;
+  - underlying principles;
+  - line-by-line code reading;
+  - runtime/data-flow breakdown;
+  - confusing-point comparisons;
+  - common errors and fixes;
+  - production vs teaching differences;
+  - review exercises with answers;
+  - interview questions with analysis.
+- Updated the content to match the current project state:
+  - SQLite and SQLModel persistence;
+  - request-level Session lifecycle and CRUD transaction flow;
+  - PATCH partial-update semantics and DELETE 204 behavior;
+  - TestClient, in-memory SQLite, StaticPool, and dependency override isolation;
+  - Settings, `.env`, environment-variable prefixing, and public config leakage boundaries;
+  - API Key authentication through `APIKeyHeader`, `require_api_key`, and protected write routes.
+- Expanded `tests/test_course_docs_contract.py` so the rebuilt structure is now protected for Lessons 0001-0012.
+- Updated `NOTES.md` with the completed second refactor batch.
+
+### Files touched
+
+- `lessons/0007-sqlite-sqlmodel-basics.html`
+- `lessons/0008-database-session-crud.html`
+- `lessons/0009-update-delete-crud.html`
+- `lessons/0010-api-testing-testclient.html`
+- `lessons/0011-settings-env-vars.html`
+- `lessons/0012-api-key-auth.html`
+- `tests/test_course_docs_contract.py`
+- `NOTES.md`
+- `COURSE_PROGRESS.md`
+
+### Token budget and split decision
+
+Estimated scope before writing: six database/testing/config/security lessons, each needing dense principle explanation, source-code binding, lifecycle flow, production boundary, exercises, and interview material.
+
+Reason for split: the user requested six lessons per review batch. Lessons 0007-0012 form a coherent backend-foundation block around persistence, tests, configuration, and authentication. Extending into Lesson 0013 would start the background-task track and risk weakening the required depth.
+
+### Verification
+
+- Ran `.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q`
+- Result: 5 passed.
+- Ran `git diff --check`
+- Result: no whitespace errors; Git reported normal Windows LF-to-CRLF working-copy warnings.
+- Ran `.\.venv\Scripts\python.exe -m pytest -q`
+- Result: 82 passed, 1 existing Starlette/FastAPI TestClient deprecation warning.
+
+### Next task
+
+Continue the refactor with Lessons 0013-0018:
+
+- 0013 BackgroundTasks.
+- 0014 Task status API.
+- 0015 UploadFile text files.
+- 0016 File summary tasks.
+- 0017 CORS and browser frontend.
+- 0018 Static frontend fetch.
+
+Keep the same nine-section high-density review structure and align every lesson with the current codebase rather than obsolete early demo code.
+
+### Blockers
+
+- No project blocker found.
+
+## 2026-07-04 Run: Foundation Lesson Refactor Batch 0013-0018
+
+### Completed
+
+- Continued the user-requested review/refactor of the first 62 lessons; did not resume forward production of Lesson 0063.
+- Rebuilt Lessons 0013-0018 as complete standalone HTML review pages in the required "university CS final-review notes + top CSDN technical article" style.
+- Covered the required nine-section structure in each lesson:
+  - core knowledge framework;
+  - underlying principles;
+  - line-by-line code reading;
+  - runtime/data-flow breakdown;
+  - confusing-point comparisons;
+  - common errors and fixes;
+  - production vs teaching differences;
+  - review exercises with answers;
+  - interview questions with analysis.
+- Updated the content to match the current codebase:
+  - `BackgroundTasks` with `202 Accepted`, persisted queued tasks, response-after scheduling, and independent worker `Session` usage;
+  - task status APIs with `SummaryTaskListResponse` envelope, `items/count/limit/offset`, status filtering, and `404`/`422` distinction;
+  - `UploadFile` text uploads through `multipart/form-data`, size/UTF-8 validation, `413` vs `422`, and minimal response exposure;
+  - file-backed summary tasks using `source_file_id` to connect uploaded input resources with processing task resources;
+  - CORS browser mechanics, preflight `OPTIONS`, origin whitelisting, and the distinction between CORS and authentication;
+  - static frontend `fetch`, `FormData`, `parseJsonResponse`, `URLSearchParams`, and task-history pagination state.
+- Expanded `tests/test_course_docs_contract.py` so the rebuilt structure is now protected for Lessons 0001-0018.
+- Updated `NOTES.md` with the completed third refactor batch.
+
+### Files touched
+
+- `lessons/0013-background-tasks.html`
+- `lessons/0014-task-status-api.html`
+- `lessons/0015-uploadfile-text-files.html`
+- `lessons/0016-file-summary-tasks.html`
+- `lessons/0017-cors-browser-frontend.html`
+- `lessons/0018-static-frontend-fetch.html`
+- `tests/test_course_docs_contract.py`
+- `NOTES.md`
+- `COURSE_PROGRESS.md`
+
+### Token budget and split decision
+
+Estimated scope before writing: six asynchronous-workflow and browser-integration lessons, each requiring dense principle explanation, current-source binding, runtime flow, production boundary, exercises, and interview material.
+
+Reason for split: the user requested six lessons per review batch. Lessons 0013-0018 form a coherent async/file/browser integration block. Extending into Lesson 0019 would start the service-layer refactor track and risk weakening the required depth for the browser/frontend material.
+
+### Verification
+
+- Ran `.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q`
+- Result: 5 passed.
+- Ran `.\.venv\Scripts\python.exe -m pytest -q`
+- Result: 82 passed, 1 existing Starlette/FastAPI TestClient deprecation warning.
+- Ran `git diff --check`
+- Result: no whitespace errors; Git reported normal Windows LF-to-CRLF working-copy warnings.
+
+### Next task
+
+Continue the refactor with Lessons 0019-0024:
+
+- 0019 Service layer and thin routers.
+- 0020 AI client boundary.
+- 0021 AI client error handling.
+- 0022 through 0024: continue from the latest lesson files and current codebase state.
+
+Keep the same nine-section high-density review structure and align every lesson with the current codebase rather than obsolete early demo code.
+
+### Blockers
+
+- No project blocker found.
+# 2026-07-04 Run: Refactor Batch 6 Lessons 0031-0036
+
+## Completed
+
+- Rebuilt Lessons 0031-0036 into the required "Final Review + CSDN Deep Dive" structure.
+- Covered real AI provider boundaries, async/await fundamentals, async HTTP provider adapter error mapping, FastAPI lifespan HTTP client management, app.state-to-Depends dependency bridging, and provider health endpoint design.
+- Kept the lessons tied to current project code: `AIClient`, `AIClientConfig`, `async_wait`, `check_provider_health()`, `httpx.AsyncClient`, FastAPI lifespan, `get_provider_http_client()`, and `GET /provider/health`.
+- Updated `tests/test_course_docs_contract.py` so the documentation contract now protects Lessons 0001-0036.
+- Updated `NOTES.md` to record the sixth refactor batch.
+
+## Files touched
+
+- `lessons/0031-real-ai-provider-boundary.html`
+- `lessons/0032-fastapi-async-basics.html`
+- `lessons/0033-async-http-provider-adapter.html`
+- `lessons/0034-lifespan-http-client.html`
+- `lessons/0035-app-state-dependency-bridge.html`
+- `lessons/0036-provider-health-endpoint.html`
+- `tests/test_course_docs_contract.py`
+- `NOTES.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Continue the same refactor standard with Lessons 0037-0042 after user review.
+
+# 2026-07-04 Run: Refactor Batch 5 Lessons 0025-0030
+
+## Completed
+
+- Rebuilt Lessons 0025-0030 into the required "Final Review + CSDN Deep Dive" structure.
+- Covered list response envelopes, count queries, frontend task-history rendering, frontend pagination and status filtering, OpenAPI as a machine-readable contract, and schema evolution/backward compatibility.
+- Kept the lessons tied to current project code: `SummaryTaskListResponse`, `func.count()`, `historyState`, `URLSearchParams`, OpenAPI contract tests, and response-envelope compatibility tests.
+- Updated `tests/test_course_docs_contract.py` so the documentation contract now protects Lessons 0001-0030.
+- Updated `NOTES.md` to record the fifth refactor batch.
+
+## Files touched
+
+- `lessons/0025-list-response-envelope.html`
+- `lessons/0026-count-query.html`
+- `lessons/0027-frontend-task-history.html`
+- `lessons/0028-frontend-pagination-status-filter.html`
+- `lessons/0029-openapi-api-contract.html`
+- `lessons/0030-schema-evolution-compatibility.html`
+- `tests/test_course_docs_contract.py`
+- `NOTES.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Continue the same refactor standard with Lessons 0031-0036 after user review.
+
+# 2026-07-04 Run: Refactor Batch 4 Lessons 0019-0024
+
+## Completed
+
+- Rebuilt Lessons 0019-0024 into the required "Final Review + CSDN Deep Dive" structure.
+- Covered the mandatory nine sections for each lesson: knowledge framework, underlying principles, line-by-line code reading, runtime flow, confusing-point comparisons, common errors, production-vs-teaching differences, memory exercises, and interview questions.
+- Updated `tests/test_course_docs_contract.py` so the documentation contract now protects Lessons 0001-0024.
+- Updated `NOTES.md` to record the fourth refactor batch.
+
+## Files touched
+
+- `lessons/0019-service-layer-thin-routers.html`
+- `lessons/0020-ai-client-dependency.html`
+- `lessons/0021-ai-client-errors.html`
+- `lessons/0022-task-failure-status.html`
+- `lessons/0023-task-list-pagination.html`
+- `lessons/0024-task-status-filter.html`
+- `tests/test_course_docs_contract.py`
+- `NOTES.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Continue the same refactor standard with Lessons 0025-0030 after user review.
