@@ -19,285 +19,139 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0040</p>
-      <h1>Prediction Observability：给 AI 调用留下可排查的证据</h1>
-      <p class="lead">第 39 课让 <code>/predict</code> 可以在 demo 和 provider 后端之间切换。本节解决下一个真实工程问题：当预测接口变慢、失败或返回异常结果时，我们怎样知道它走了哪个后端、用了多久、失败码是什么？答案不是随手 <code>print()</code>，而是有意识地设计响应头和日志。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0040 Prediction Observability：给 AI 调用留下可排查证据</h1>
+      <p class="lead">能调用 provider 只是第一步；能解释“走了哪个 backend、耗时多少、失败码是什么”才接近真实工程。本节通过 <code>X-Prediction-*</code> 响应头与结构化日志建立低侵入可观测性，不改变 <code>PredictionResponse</code> 的 JSON 契约。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解可观测性和普通调试输出的区别。</li>
-        <li>学会用 <code>time.perf_counter()</code> 测量预测调用耗时。</li>
-        <li>学会用 FastAPI <code>Response</code> 设置响应头，同时保持 <code>response_model</code> 生效。</li>
-        <li>学会用 Python <code>logging</code> 记录成功和失败的结构化上下文。</li>
-        <li>学会用 pytest <code>caplog</code> 和响应头断言可观测性行为。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Prediction Observability
+├─ 耗时测量：time.perf_counter()
+├─ 调用方证据：X-Prediction-Backend / Source / Elapsed-Ms / Error-Code
+├─ 服务端证据：logger.info("prediction_completed")
+├─ 失败证据：logger.warning("prediction_failed")
+├─ 契约策略：body 不变，headers 增强
+└─ 测试手段：response.headers + pytest caplog</code></pre>
+      <p>核心结论：可观测性不是随手打印，而是设计可被测试、可被聚合、可被排查的信号。响应头解决单次调用定位，日志解决服务端聚合分析。</p>
     </section>
 
     <section>
-      <h2>1. 背景：能调用 provider 还不够，还要能排查</h2>
-      <p>一个 AI 服务上线后，常见问题不是“完全不能运行”，而是更模糊的现象：</p>
-      <ul>
-        <li>同一个 <code>/predict</code> 有时很快，有时很慢。</li>
-        <li>本地 demo 正常，provider 环境偶发 503。</li>
-        <li>前端只看到失败，不知道是 demo 失败、provider 失败还是响应体校验失败。</li>
-        <li>测试失败时，只知道状态码不对，不知道接口走了哪条后端分支。</li>
-      </ul>
-      <p>这就是可观测性要解决的问题：让系统在运行时留下足够证据，帮助我们回答“发生了什么、在哪里发生、花了多久、为什么失败”。</p>
-      <p>本节采用低侵入策略：不修改 <code>PredictionResponse</code> 的 JSON body，只增加响应头和服务端日志。这样公共 JSON 契约保持稳定，但排查信息更丰富。</p>
-    </section>
-
-    <section class="callout">
-      <h2>2. 核心概念：响应头给调用方，日志给服务端</h2>
-      <p>本节新增两类观察信号：</p>
-      <div class="two-col">
-        <div>
-          <h3>响应头</h3>
-          <p>跟着 HTTP 响应返回。适合让调用方或测试快速看到本次请求走了哪个 backend、source 是什么、耗时多少毫秒、错误码是什么。</p>
-        </div>
-        <div>
-          <h3>服务端日志</h3>
-          <p>留在服务端。适合线上排查、聚合检索、报警和审计。日志可以记录更多上下文，但不要写入敏感请求内容。</p>
-        </div>
-      </div>
-      <p>二者的关系不是互相替代，而是分工协作：</p>
-      <pre><code>client sees response headers
-server keeps logs
-tests assert both when needed</code></pre>
+      <h2>② 核心概念底层原理</h2>
+      <p><strong>可观测性</strong> 回答四个问题：发生了什么、发生在哪里、花了多久、为什么失败。AI provider 调用具有外部依赖、网络等待、供应商限流、schema 漂移等不确定性，因此必须把 backend、source、elapsed、error_code 作为一等诊断信号。</p>
+      <table>
+        <thead><tr><th>信号位置</th><th>适合内容</th><th>不适合内容</th></tr></thead>
+        <tbody>
+          <tr><td>响应 body</td><td>业务结果或稳定错误对象</td><td>频繁变化的调试字段</td></tr>
+          <tr><td>响应 header</td><td>单次请求元信息、耗时、后端来源</td><td>敏感输入文本、密钥</td></tr>
+          <tr><td>服务端日志</td><td>结构化上下文、错误码、耗时、来源</td><td>完整用户隐私文本</td></tr>
+          <tr><td>metrics</td><td>可聚合计数和分布</td><td>高基数字段、原始 prompt</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>3. 为什么不把这些字段加进 JSON body</h2>
-      <p>我们当然可以把 <code>backend</code>、<code>elapsed_ms</code> 加到 <code>PredictionResponse</code> 里。但这会改变公共 JSON 契约。前面刚学过 schema evolution：响应体字段变化虽然未必一定破坏兼容性，但它会让 API 语义变复杂。</p>
-      <p>本节先把观察信息放进 header：</p>
-      <pre><code>X-Prediction-Backend: demo
-X-Prediction-Source: demo-ai-client
-X-Prediction-Elapsed-Ms: 1.23</code></pre>
-      <p>失败时还会多一个：</p>
-      <pre><code>X-Prediction-Error-Code: ai_provider_http_error</code></pre>
-      <p>这样响应体仍然是稳定的 <code>PredictionResponse</code> 或 <code>ErrorResponse</code>，调试信息则放在更轻量的位置。</p>
-    </section>
-
-    <section>
-      <h2>4. 本节项目改动概览</h2>
-      <ul>
-        <li>在 <code>routers/predictions.py</code> 中加入模块级 logger。</li>
-        <li>用 <code>perf_counter()</code> 测量 <code>/predict</code> 和 <code>/provider/predict</code> 的耗时。</li>
-        <li>成功时设置 <code>X-Prediction-Backend</code>、<code>X-Prediction-Source</code>、<code>X-Prediction-Elapsed-Ms</code>。</li>
-        <li>失败时通过 <code>HTTPException(headers=...)</code> 设置 backend、elapsed、error-code。</li>
-        <li>成功和失败都写日志：<code>prediction_completed</code> 或 <code>prediction_failed</code>。</li>
-        <li>测试断言响应头，并用 <code>caplog</code> 捕获成功日志。</li>
-      </ul>
-    </section>
-
-    <section>
-      <h2>5. 代码精读一：logger 与 perf_counter</h2>
+      <h2>③ 全套代码逐行精读解析</h2>
       <pre><code>import logging
-from time import perf_counter
-
 logger = logging.getLogger(__name__)</code></pre>
-      <p><code>logging.getLogger(__name__)</code> 会创建一个以当前模块名命名的 logger，例如 <code>first_api.routers.predictions</code>。这样日志来源清楚，测试也能只捕获这个模块的日志。</p>
-      <p><code>perf_counter()</code> 适合测量短时间间隔。我们在请求处理开始时记录一次，成功或失败时再记录一次，两者相减得到耗时毫秒。</p>
-      <pre><code>started_at = perf_counter()
-elapsed_ms = (perf_counter() - started_at) * 1000</code></pre>
-    </section>
-
-    <section>
-      <h2>6. 代码精读二：统一构造可观测响应头</h2>
+      <p>模块级 logger 会生成 <code>first_api.routers.predictions</code> 这类层级名称，便于测试用 <code>caplog</code> 精确捕获，也便于生产日志按模块过滤。</p>
       <pre><code>def build_prediction_headers(
     backend: str,
     elapsed_ms: float,
     source: str | None = None,
     error_code: str | None = None,
-) -&gt; dict[str, str]:
-    headers = {
-        "X-Prediction-Backend": backend,
-        "X-Prediction-Elapsed-Ms": f"{elapsed_ms:.2f}",
-    }
-    if source is not None:
-        headers["X-Prediction-Source"] = source
-    if error_code is not None:
-        headers["X-Prediction-Error-Code"] = error_code
-    return headers</code></pre>
-      <p>这个函数把 header 名称集中起来，避免成功路径、失败路径、<code>/predict</code> 和 <code>/provider/predict</code> 各写一遍字符串。小项目里看起来只是少几行代码；真实项目里，这能减少拼写不一致和字段含义漂移。</p>
-      <p>注意 header 值必须是字符串，所以耗时被格式化为 <code>"1.23"</code> 这种文本。</p>
-    </section>
-
-    <section>
-      <h2>7. 代码精读三：成功时设置 Response headers</h2>
-      <pre><code>def set_prediction_headers(
-    response: Response,
-    backend: str,
-    elapsed_ms: float,
-    source: str | None = None,
-) -&gt; None:
-    for name, value in build_prediction_headers(
-        backend=backend,
-        elapsed_ms=elapsed_ms,
-        source=source,
-    ).items():
+) -&gt; dict[str, str]:</code></pre>
+      <p>把 header 构造集中化。若每个端点手写 <code>X-Prediction-Elapsed-Ms</code>，字段命名、格式化精度和失败路径很容易不一致。</p>
+      <pre><code>headers = {
+    "X-Prediction-Backend": backend,
+    "X-Prediction-Elapsed-Ms": f"{elapsed_ms:.2f}",
+}</code></pre>
+      <p>HTTP header 值必须是字符串，所以耗时格式化为两位小数文本。<code>backend</code> 表示 demo 或 provider，是定位分支的第一信号。</p>
+      <pre><code>if source is not None:
+    headers["X-Prediction-Source"] = source
+if error_code is not None:
+    headers["X-Prediction-Error-Code"] = error_code</code></pre>
+      <p>成功路径通常有 source，失败路径通常有 error_code。使用可选字段避免把空字符串误当成真实信号。</p>
+      <pre><code>def set_prediction_headers(response: Response, ...) -&gt; None:
+    for name, value in build_prediction_headers(...).items():
         response.headers[name] = value</code></pre>
-      <p>FastAPI 支持在 path operation function 中声明 <code>response: Response</code> 参数，然后设置响应头。即使函数返回 Pydantic 模型，<code>response_model</code> 仍会照常过滤和序列化响应体；设置的 header 会进入最终 HTTP 响应。</p>
-      <p>这就是本节的低侵入点：body 不变，header 增加。</p>
-    </section>
-
-    <section>
-      <h2>8. 代码精读四：/predict 成功路径</h2>
-      <pre><code>started_at = perf_counter()
-backend = settings.ai_prediction_backend
-
-try:
-    if backend == "provider":
-        prediction = await request_provider_prediction(...)
-    else:
-        prediction = ai_client.predict_sentiment(...)
-except AIClientError:
-    ...
-
-elapsed_ms = (perf_counter() - started_at) * 1000
-set_prediction_headers(
-    response=response,
-    backend=backend,
-    elapsed_ms=elapsed_ms,
-    source=prediction.source,
-)
-logger.info(
+      <p>FastAPI 允许在返回 Pydantic 模型的同时修改 <code>Response</code> headers。body 由 <code>response_model</code> 控制，headers 由该函数补充。</p>
+      <pre><code>logger.info(
     "prediction_completed",
     extra={
-        "prediction_backend": backend,
-        "prediction_source": prediction.source,
-        "prediction_elapsed_ms": round(elapsed_ms, 2),
+        "prediction_backend": result.backend,
+        "prediction_source": result.prediction.source,
+        "prediction_elapsed_ms": round(result.elapsed_ms, 2),
     },
 )</code></pre>
-      <p>成功路径做了两件事：</p>
+      <p><code>extra</code> 将字段挂到日志记录对象上。接入 JSON 日志时，这些字段可以直接被检索、聚合和告警。注意没有记录完整输入文本，避免隐私泄漏。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>成功请求
+  → run_prediction() 计算 elapsed_ms
+  → router set_prediction_headers(...)
+  → logger.info("prediction_completed", extra=...)
+  → 返回 PredictionResponse body + X-Prediction-* headers
+
+失败请求
+  → run_prediction() 抛 PredictionServiceError
+  → router log_prediction_failed(...)
+  → HTTPException(503, detail=..., headers=...)
+  → 返回 ErrorResponse shape + X-Prediction-Error-Code</code></pre>
+      <p>成功和失败都要留证据。只记录成功会导致线上 503 只能看到状态码；只记录失败会失去基线耗时，无法判断“慢”是否异常。</p>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>正确理解</th><th>本项目做法</th></tr></thead>
+        <tbody>
+          <tr><td>print vs logging</td><td>print 无级别、难过滤；logging 可结构化</td><td>使用 <code>logger.info/warning</code></td></tr>
+          <tr><td>body vs header</td><td>body 是业务契约；header 适合元信息</td><td>调试字段放 <code>X-Prediction-*</code></td></tr>
+          <tr><td>elapsed_ms 来源</td><td>应由 service 包装整个调用用例耗时</td><td><code>PredictionServiceResult.elapsed_ms</code></td></tr>
+          <tr><td>日志内容</td><td>记录可排查元数据，不记录敏感原文</td><td>记录 backend/source/error_code/elapsed</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
       <ul>
-        <li>给调用方返回 headers，方便立刻看到本次预测走了哪个后端。</li>
-        <li>写一条 <code>prediction_completed</code> 日志，方便服务端聚合和排查。</li>
-      </ul>
-      <p><code>extra={...}</code> 会把额外字段挂到日志记录上。后面接 JSON 日志系统时，这些字段就可以变成可检索的结构化字段。</p>
-    </section>
-
-    <section>
-      <h2>9. 代码精读五：失败路径也要有证据</h2>
-      <pre><code>except AIClientError as exc:
-    elapsed_ms = (perf_counter() - started_at) * 1000
-    logger.warning(
-        "prediction_failed",
-        extra={
-            "prediction_backend": backend,
-            "prediction_elapsed_ms": round(elapsed_ms, 2),
-            "prediction_error_code": exc.error_code,
-        },
-    )
-    raise HTTPException(
-        status_code=503,
-        detail={
-            "error_code": exc.error_code,
-            "message": exc.message,
-        },
-        headers=build_prediction_headers(
-            backend=backend,
-            elapsed_ms=elapsed_ms,
-            error_code=exc.error_code,
-        ),
-    ) from exc</code></pre>
-      <p>失败时尤其需要可观测性。否则线上只看到 503，很难知道是 demo client 失败、provider HTTP 失败、provider 响应体非法，还是超时。</p>
-      <p>这里有三个层次：</p>
-      <ul>
-        <li>HTTP 状态码：客户端知道请求失败，状态是 503。</li>
-        <li>JSON detail：客户端知道稳定错误码和错误消息。</li>
-        <li>headers/logs：客户端和服务端都能看到 backend、耗时、error code。</li>
+        <li><strong>headers 设置后丢失</strong>：直接返回自定义 <code>JSONResponse</code> 覆盖了 Response。解决：当前模式返回 Pydantic 模型，使用注入的 <code>Response</code> 设置 header。</li>
+        <li><strong>caplog 捕获不到日志</strong>：logger 名称或级别不对。解决：<code>caplog.set_level(logging.INFO, logger="first_api.routers.predictions")</code>。</li>
+        <li><strong>失败路径没有 header</strong>：只在成功函数里设置 header。解决：<code>HTTPException(headers=build_prediction_headers(...))</code>。</li>
+        <li><strong>日志泄漏输入文本</strong>：把完整 prompt/text 写进日志。解决：只记录长度、来源、错误码、耗时等低敏元信息。</li>
       </ul>
     </section>
 
     <section>
-      <h2>10. 测试精读：断言 header 和日志</h2>
-      <pre><code>def test_predict_uses_overridable_ai_client_dependency(caplog) -&gt; None:
-    caplog.set_level(logging.INFO, logger=PREDICTIONS_LOGGER)
-    ...
-    assert response.headers["x-prediction-backend"] == "demo"
-    assert response.headers["x-prediction-source"] == "fixed-test-client"
-    assert float(response.headers["x-prediction-elapsed-ms"]) &gt;= 0
-
-    log_record = next(
-        record for record in caplog.records
-        if record.message == "prediction_completed"
-    )
-    assert log_record.prediction_backend == "demo"
-    assert log_record.prediction_source == "fixed-test-client"</code></pre>
-      <p><code>caplog</code> 是 pytest 提供的日志捕获工具。它让我们不只测试 HTTP 响应，还能测试服务端是否真的写出了我们需要的日志上下文。</p>
-      <p>注意响应头在测试客户端中通常用小写读取，例如 <code>x-prediction-backend</code>。HTTP header 名称本身大小写不敏感。</p>
-    </section>
-
-    <section class="practice">
-      <h2>11. 课堂实验</h2>
-      <p>先运行预测测试：</p>
-      <pre><code>.\.venv\Scripts\python.exe -m pytest tests/test_ai_client_dependency.py -q</code></pre>
-      <p>预期看到：</p>
-      <pre><code>7 passed</code></pre>
-      <p>启动服务后，用 PyCharm HTTP Client、curl 或浏览器工具调用 <code>POST /predict</code>，观察响应头：</p>
-      <pre><code>X-Prediction-Backend: demo
-X-Prediction-Source: demo-ai-client
-X-Prediction-Elapsed-Ms: 0.42</code></pre>
-      <p>如果把 <code>FIRST_API_AI_PREDICTION_BACKEND</code> 改成 <code>provider</code> 并配置兼容 provider，再观察 backend 和 source 的变化。</p>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>日志格式</td><td>pytest caplog 断言 LogRecord 字段</td><td>JSON 日志、trace id、集中检索</td></tr>
+          <tr><td>响应头</td><td>帮助读者观察分支</td><td>配合 request id、rate-limit、供应商 request id</td></tr>
+          <tr><td>隐私</td><td>强调不记录完整文本</td><td>脱敏、采样、合规审计、保留周期</td></tr>
+          <tr><td>度量</td><td>只做 header/log 信号</td><td>metrics、tracing、SLO、告警策略</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>12. 常见错误与诊断</h2>
-      <div class="two-col">
-        <div class="callout">
-          <h3>错误一：用 print 当日志</h3>
-          <p><code>print()</code> 难分级、难过滤、难聚合。服务端代码应优先使用 <code>logging</code>。</p>
-        </div>
-        <div class="callout">
-          <h3>错误二：只记录成功，不记录失败</h3>
-          <p>失败路径更需要上下文。至少记录 backend、elapsed_ms 和 error_code。</p>
-        </div>
-        <div class="callout">
-          <h3>错误三：把敏感文本写进日志</h3>
-          <p>预测文本可能包含隐私数据。本节只记录元信息，不记录完整输入文本。</p>
-        </div>
-        <div class="callout">
-          <h3>错误四：为了调试改响应 body</h3>
-          <p>调试信息优先放 header 或日志，避免轻易改变公共 JSON 契约。</p>
-        </div>
-      </div>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details><summary>1. 为什么不把 <code>elapsed_ms</code> 加进 <code>PredictionResponse</code>？</summary><p class="answer">那会改变公共 JSON 契约。把它放入 header 可以提供调试信息，同时保持业务响应体稳定。</p></details>
+      <details><summary>2. <code>logging.getLogger(__name__)</code> 的好处是什么？</summary><p class="answer">日志来源与模块路径绑定，便于过滤、测试和生产检索。</p></details>
+      <details><summary>3. 失败路径为什么也要设置 headers？</summary><p class="answer">失败时更需要知道 backend、耗时和 error_code，否则只能看到 503，难以定位原因。</p></details>
+      <details><summary>4. 为什么不要记录完整预测文本？</summary><p class="answer">用户输入可能包含隐私或敏感数据，日志应优先记录低敏元信息。</p></details>
     </section>
 
     <section>
-      <h2>13. 面试视角：怎样解释预测可观测性</h2>
-      <blockquote>
-        <p>我会在预测接口中记录 backend、source、elapsed_ms 和 error_code 这类元信息。成功时通过响应头和 info 日志暴露 backend/source/耗时，失败时通过 HTTPException headers 和 warning 日志暴露 backend/耗时/错误码。这样不改变 JSON 响应契约，也能让调用方和服务端排查路径都有证据。</p>
-      </blockquote>
-    </section>
-
-    <section class="checkpoint">
-      <h2>14. 小测：先回忆，再展开</h2>
-      <details>
-        <summary>1. 为什么本节不把 <code>elapsed_ms</code> 加进 <code>PredictionResponse</code>？</summary>
-        <p class="answer">因为那会改变公共 JSON 契约；放进 header 可以提供调试信息，同时保持响应体稳定。</p>
-      </details>
-      <details>
-        <summary>2. <code>perf_counter()</code> 在这里解决什么问题？</summary>
-        <p class="answer">它用于测量一次预测调用从开始到成功或失败所花的耗时，适合短时间间隔测量。</p>
-      </details>
-      <details>
-        <summary>3. 为什么失败路径也要设置 header 和写日志？</summary>
-        <p class="answer">因为失败时更需要知道 backend、耗时和错误码，否则线上只能看到 503，很难定位原因。</p>
-      </details>
-      <details>
-        <summary>4. 为什么不要把完整预测文本写入日志？</summary>
-        <p class="answer">因为用户输入可能包含隐私或敏感信息；日志应优先记录可排查的元信息。</p>
-      </details>
-    </section>
-
-    <section>
-      <h2>15. 本节总结</h2>
-      <p>本节给预测接口加入了低侵入可观测性：响应体保持稳定，响应头提供 backend/source/elapsed/error-code，服务端日志记录成功和失败上下文。现在 <code>/predict</code> 不只是能调用 demo 或 provider，也能留下可排查证据。</p>
-      <p>下一课建议学习：把预测路由里的后端选择逻辑进一步抽到 service 层，减少 endpoint 中的分支，让 router 更薄，service 更深。</p>
-      <p>推荐主资源：<a href="https://docs.python.org/3/library/logging.html">Python logging</a>、<a href="https://docs.python.org/3/library/time.html">Python time</a>、<a href="https://fastapi.tiangolo.com/advanced/response-headers/">FastAPI Response Headers</a>、<a href="https://docs.pytest.org/en/stable/how-to/logging.html">pytest Logging</a>。</p>
-      <p class="small">如果你想继续追问，可以问我：“哪些信息适合放响应头，哪些信息只应该放日志？”这会直接影响真实服务的安全性和可维护性。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <p><strong>题 1：如何为 AI 调用设计可观测性？</strong> 答：记录 backend、source、elapsed、error_code；成功与失败都要覆盖；调用方可见信息放 header，服务端聚合信息放结构化日志，敏感输入不进日志。</p>
+      <p><strong>题 2：为什么不建议用 print 调试服务端接口？</strong> 答：print 缺少级别、上下文、结构化字段和过滤能力，生产环境难以检索和关联。</p>
+      <p><strong>题 3：如何测试日志行为？</strong> 答：使用 pytest <code>caplog</code> 设置目标 logger 和级别，执行请求后断言日志 message 与 extra 字段。</p>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

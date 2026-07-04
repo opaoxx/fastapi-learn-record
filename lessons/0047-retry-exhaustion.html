@@ -19,79 +19,40 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0047</p>
-      <h1>Retry Exhaustion：当所有重试机会都用完</h1>
-      <p class="lead">上一课记录了“准备重试”的中间事件。本节继续补上最后一块：当 provider 连续失败，所有 attempt 都耗尽时，系统应该记录一个清晰的最终失败事件，告诉我们 retry 不是没发生，而是已经试完了。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0047 Retry Exhaustion：当所有重试预算都被用完</h1>
+      <p class="lead">重试不是无限循环。对于本来可重试的错误，如果最后一次 attempt 仍然失败，adapter 必须记录 <code>provider_prediction_retry_exhausted</code>，再向上抛出稳定 <code>AIClientError</code>。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解 retry budget 和 retry exhaustion 的含义。</li>
-        <li>区分三种失败路径：准备重试、重试耗尽、快速失败。</li>
-        <li>掌握为什么最终失败日志应该使用 warning 级别。</li>
-        <li>理解为什么 400 和非法 provider 响应不应该被记为 retry exhausted。</li>
-        <li>学会用 <code>caplog</code> 验证最终失败日志的结构化字段。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Retry Exhaustion
+├─ retry budget：max_attempts
+├─ scheduled：还有下一次 attempt，准备等待后重试
+├─ exhausted：错误可重试，但 attempt 已达到 max_attempts
+├─ fail fast：错误不应重试，不属于 exhausted
+├─ 日志事件：provider_prediction_retry_exhausted
+├─ 日志级别：warning
+└─ 上抛错误：AIClientError(ai_provider_timeout/http_error/request_error)</code></pre>
+      <p>核心结论：exhausted 表达的是“可重试错误已用完预算”，不是“任意失败”。把 400 或 invalid response 记为 exhausted 会误导排查。</p>
     </section>
 
     <section>
-      <h2>1. 背景：线上最怕“失败了，但不知道失败前发生过什么”</h2>
-      <p>在真实 AI 服务里，一次请求最终返回 503，不代表它只失败了一次。它可能已经经历了 3 次 attempt：第一次 provider 返回 503，第二次还是 503，第三次仍然失败，于是 adapter 放弃并把错误交给上层 service/router。</p>
-      <p>如果日志里只有中间的 <code>provider_prediction_retry_scheduled</code>，我们能知道前两次准备重试；但如果没有最终事件，排查人员还要推理“是不是第三次失败后没有机会再重试了”。这会让日志阅读变得费劲。</p>
-      <p>因此，本节新增一个最终事件：<code>provider_prediction_retry_exhausted</code>。它表达的不是“准备再试一次”，而是“已经没有下一次了”。</p>
-    </section>
-
-    <section class="callout">
-      <h2>2. 核心概念：Retry Budget 是有限资源</h2>
-      <p><strong>Retry budget</strong> 可以先理解为一次 provider 调用最多允许尝试的次数。项目里的 <code>max_attempts</code> 就是这个预算。</p>
-      <pre><code>max_attempts = 3
-
-attempt 1 failed -> can retry
-attempt 2 failed -> can retry
-attempt 3 failed -> budget exhausted</code></pre>
-      <p><strong>Retry exhaustion</strong> 指的是：错误本来属于可重试类型，但当前调用已经没有剩余 attempt，所以必须停止重试并向上抛出失败。</p>
-      <p>这和“不可重试错误”不同。HTTP 400 通常表示客户端请求有问题，继续重试不会自动变好，所以它应该快速失败，而不是被记录为 retry exhausted。</p>
+      <h2>② 核心概念底层原理</h2>
+      <p><strong>Retry budget</strong> 是一次 provider 调用允许消耗的最大尝试次数。<code>max_attempts=3</code> 表示第 1、2 次失败后还可重试，第 3 次失败后预算耗尽。</p>
+      <table>
+        <thead><tr><th>事件</th><th>语义</th><th>示例</th></tr></thead>
+        <tbody>
+          <tr><td><code>retry_scheduled</code></td><td>当前失败可重试，且还有下一次机会</td><td>attempt 1/3 返回 503</td></tr>
+          <tr><td><code>retry_exhausted</code></td><td>当前失败可重试，但没有下一次机会</td><td>attempt 3/3 返回 503</td></tr>
+          <tr><td><code>fail_fast</code></td><td>错误分类上不应重试</td><td>HTTP 400 或 invalid response</td></tr>
+        </tbody>
+      </table>
+      <p>日志级别使用 warning，因为 exhausted 代表一次 provider prediction 最终失败，需要关注；但它仍是业务可处理故障，不等同于进程崩溃。</p>
     </section>
 
     <section>
-      <h2>3. 三种失败事件不要混在一起</h2>
-      <p>从日志语义上看，provider adapter 至少有三种不同事件：</p>
-      <div class="two-col">
-        <div class="callout">
-          <h3>准备重试</h3>
-          <p><code>provider_prediction_retry_scheduled</code></p>
-          <p>当前 attempt 失败，但还有下一次机会，所以计算 delay、写日志、sleep、再试。</p>
-        </div>
-        <div class="callout">
-          <h3>重试耗尽</h3>
-          <p><code>provider_prediction_retry_exhausted</code></p>
-          <p>当前错误是可重试类型，但 attempt 已经到达 <code>max_attempts</code>，不能继续。</p>
-        </div>
-      </div>
-      <p>第三种是快速失败：例如 400 或非法响应体。它们不是“预算耗尽”，而是“不应该再试”。把这三种事件混在一起，日志看起来热闹，但诊断含义会变脏。</p>
-    </section>
-
-    <section>
-      <h2>4. 运行机制：从第三次 503 到最终失败日志</h2>
-      <p>以 <code>max_attempts=3</code>、provider 连续返回 503 为例：</p>
-      <ol>
-        <li>第 1 次请求返回 503。</li>
-        <li>503 属于可重试状态码，并且 <code>1 &lt; 3</code>，记录 <code>retry_scheduled</code>，等待后进入第 2 次。</li>
-        <li>第 2 次请求仍返回 503。</li>
-        <li>503 仍可重试，并且 <code>2 &lt; 3</code>，再次记录 <code>retry_scheduled</code>。</li>
-        <li>第 3 次请求仍返回 503。</li>
-        <li>503 可重试，但 <code>3 &lt; 3</code> 不成立，没有下一次机会。</li>
-        <li>记录 <code>provider_prediction_retry_exhausted</code>，然后抛出 <code>AIClientError</code>。</li>
-      </ol>
-      <pre><code>attempt 1 -> 503 -> scheduled retry
-attempt 2 -> 503 -> scheduled retry
-attempt 3 -> 503 -> exhausted -> raise AIClientError</code></pre>
-    </section>
-
-    <section>
-      <h2>5. 代码精读一：最终失败日志 helper</h2>
-      <p>本节新增了 <code>log_retry_exhausted()</code>，它专门负责写最终失败事件：</p>
+      <h2>③ 全套代码逐行精读解析</h2>
       <pre><code>def log_retry_exhausted(
     attempt: int,
     config: AIClientConfig,
@@ -99,130 +60,114 @@ attempt 3 -> 503 -> exhausted -> raise AIClientError</code></pre>
     error_code: str,
     retry_after: str | None = None,
     status_code: int | None = None,
-) -> None:
-    logger.warning(
-        "provider_prediction_retry_exhausted",
-        extra={
-            "attempt": attempt,
-            "max_attempts": config.max_attempts,
-            "retry_reason": retry_reason,
-            "status_code": status_code,
-            "retry_after": retry_after,
-            "error_code": error_code,
-        },
-    )</code></pre>
-      <p>这里使用 <code>warning</code> 而不是 <code>info</code>，因为它表示一次请求最终没有被 provider 成功处理。Python logging 文档说明，logger 的级别会影响哪些消息被处理；默认 root logger 是 WARNING 级别，因此 warning 是适合“需要注意但未必让进程崩溃”的事件。</p>
-    </section>
-
-    <section>
-      <h2>6. 代码精读二：HTTP 状态错误的分支</h2>
-      <p>HTTP 状态错误现在先判断状态码是否可重试：</p>
-      <pre><code>status_code = exc.response.status_code
-retryable_status = is_retryable_provider_status(status_code)
-
-if attempt &lt; config.max_attempts and retryable_status:
-    await wait_before_retry(...)
-    continue</code></pre>
-      <p>这段代码读法是：只有“可重试，并且还有剩余 attempt”时才进入等待。接下来是最终失败分支：</p>
-      <pre><code>if retryable_status:
-    log_retry_exhausted(
-        attempt=attempt,
-        config=config,
-        retry_reason="http_status",
-        error_code="ai_provider_http_error",
-        retry_after=exc.response.headers.get("Retry-After"),
-        status_code=status_code,
-    )
-
-raise AIClientError(...)</code></pre>
-      <p>关键边界在 <code>if retryable_status</code>。如果是 400，<code>retryable_status</code> 为 False，所以不会记录 retry exhausted。这保护了日志语义：只有“本来值得重试，但预算用完了”的错误才叫 exhausted。</p>
-    </section>
-
-    <section>
-      <h2>7. 代码精读三：timeout 和 request error</h2>
-      <p>HTTPX 官方异常层级里，<code>TimeoutException</code> 属于传输层等待超时，<code>RequestError</code> 表示发起请求过程中出现的问题。它们通常不是业务响应，而是 provider 调用链路不稳定。</p>
-      <p>所以它们的逻辑是：还有 attempt 就等一等再试；没有 attempt 就记录 exhausted，再抛出稳定的 <code>AIClientError</code>。</p>
+) -&gt; None:</code></pre>
+      <p>helper 参数包含诊断所需最小闭包：第几次、最多几次、为什么重试、HTTP 状态、Retry-After 和稳定错误码。</p>
+      <pre><code>logger.warning(
+    "provider_prediction_retry_exhausted",
+    extra={
+        "attempt": attempt,
+        "max_attempts": config.max_attempts,
+        "retry_reason": retry_reason,
+        "status_code": status_code,
+        "retry_after": retry_after,
+        "error_code": error_code,
+    },
+)</code></pre>
+      <p>事件名固定为 <code>provider_prediction_retry_exhausted</code>。<code>error_code</code> 将内部日志和上层 HTTP 503 detail/header 对齐。</p>
       <pre><code>except httpx.TimeoutException as exc:
     if attempt &lt; config.max_attempts:
         await wait_before_retry(...)
         continue
-
     log_retry_exhausted(
         attempt=attempt,
         config=config,
         retry_reason="timeout",
         error_code="ai_provider_timeout",
     )
-    raise AIClientError(...)</code></pre>
-      <p>这使得日志和错误响应各自承担职责：日志负责内部诊断，<code>AIClientError</code> 负责向上层 service/router 传递稳定错误码。</p>
-    </section>
-
-    <section class="practice">
-      <h2>8. 动手实验：验证耗尽日志</h2>
-      <p>运行 provider 适配器测试：</p>
-      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q</code></pre>
-      <p>新增断言围绕一个场景：provider 连续 3 次返回 503，最终抛出 <code>AIClientError</code>，同时记录一个 warning 级别的 exhausted 事件。</p>
-      <pre><code>caplog.set_level(logging.WARNING, logger="first_api.services.provider_http")
-
-exhausted_records = [
-    record
-    for record in caplog.records
-    if record.getMessage() == "provider_prediction_retry_exhausted"
-]</code></pre>
-      <p>测试不是只检查“有 warning”，而是检查诊断字段是否完整：</p>
-      <pre><code>assert exhausted_records[0].attempt == 3
-assert exhausted_records[0].max_attempts == 3
-assert exhausted_records[0].retry_reason == "http_status"
-assert exhausted_records[0].status_code == 503
-assert exhausted_records[0].error_code == "ai_provider_http_error"</code></pre>
+    raise AIClientError(..., error_code="ai_provider_timeout") from exc</code></pre>
+      <p>超时本来可重试；预算未耗尽就 scheduled，预算耗尽就 exhausted。日志与错误码保持同一语义。</p>
+      <pre><code>retryable_status = (
+    classify_provider_http_status(status_code) == "retryable_http_status"
+)
+if attempt &lt; config.max_attempts and retryable_status:
+    await wait_before_retry(...)
+    continue
+if retryable_status:
+    log_retry_exhausted(...)</code></pre>
+      <p>HTTP 分支必须先判断状态码是否可重试。只有 429/5xx 这类可重试状态在最后一次失败时才写 exhausted；400 不进入该日志。</p>
     </section>
 
     <section>
-      <h2>9. 常见错误</h2>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>max_attempts = 3，provider 连续返回 503
+
+attempt 1
+  → retryable_http_status
+  → 1 &lt; 3
+  → retry_scheduled
+
+attempt 2
+  → retryable_http_status
+  → 2 &lt; 3
+  → retry_scheduled
+
+attempt 3
+  → retryable_http_status
+  → 3 &lt; 3 为 false
+  → retry_exhausted
+  → raise AIClientError("ai_provider_http_error")</code></pre>
+      <p>exhausted 是 retry 的终止事件。它回答“系统有没有重试过、为什么最后失败”：有，且可重试错误已经用完所有 attempt。</p>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>正确理解</th><th>错误影响</th></tr></thead>
+        <tbody>
+          <tr><td>exhausted vs fail fast</td><td>前者预算用完，后者分类不重试</td><td>误判 provider 是否多次失败</td></tr>
+          <tr><td>warning vs error</td><td>warning 表示需关注但可处理</td><td>过高等级造成告警噪声</td></tr>
+          <tr><td>最后一次是否 scheduled</td><td>不 scheduled，直接 exhausted</td><td>日志误以为还有下一次</td></tr>
+          <tr><td>error_code 是否可省</td><td>不可省</td><td>无法关联 HTTP 错误响应</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
       <ul>
-        <li>把所有失败都叫 retry exhausted：400 和非法响应应该快速失败。</li>
-        <li>只记录中间 retry，不记录最终 exhausted：排查时要靠人脑补最后一步。</li>
-        <li>在 exhausted 后继续重试：可能造成 provider 压力更大，也让请求耗时失控。</li>
-        <li>把 warning 当成崩溃：warning 表示需要注意，不等于进程必须退出。</li>
-        <li>最终日志缺少 <code>error_code</code>：无法把内部日志和外部 503 响应对应起来。</li>
-        <li>在日志中写完整用户文本：AI 请求内容可能包含隐私，应避免直接记录。</li>
+        <li><strong>所有失败都打 exhausted</strong>：400/invalid response 被误归类。解决：只对 retryable failure 的最后一次失败打 exhausted。</li>
+        <li><strong>最后一次失败仍 sleep</strong>：没有下一次 attempt。解决：<code>attempt &lt; max_attempts</code> 才 scheduled。</li>
+        <li><strong>日志缺少 attempt</strong>：无法判断预算是否真正用完。解决：exhausted 事件必须带 attempt 与 max_attempts。</li>
+        <li><strong>只抛错误不记日志</strong>：上层只看到 503，无法知道是否重试耗尽。解决：抛出前写 warning 结构化日志。</li>
       </ul>
     </section>
 
     <section>
-      <h2>10. 面试视角：如何解释 retry exhaustion</h2>
-      <blockquote>
-        <p>我会把 max_attempts 当作一次外部调用的 retry budget。可重试错误在预算内会记录 scheduled retry 并等待；当最后一次 attempt 仍失败时，会记录 retry exhausted warning，然后抛出稳定的业务错误给上层。不可重试错误不会走 exhausted，因为它们不是预算用完，而是重试没有意义。</p>
-      </blockquote>
-      <p>这段回答能体现三个能力：知道重试不能无限做，知道日志事件需要表达状态机位置，知道公共 API 错误码和内部诊断日志要互相对应。</p>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>exhausted 处理</td><td>记录 warning 并返回 503</td><td>可能触发告警、熔断、降级、切换 provider</td></tr>
+          <tr><td>预算规模</td><td>小范围 max_attempts</td><td>结合总超时、队列、成本和 SLA 调整</td></tr>
+          <tr><td>日志字段</td><td>attempt/reason/status/error_code</td><td>追加 trace id、tenant、region、provider id</td></tr>
+          <tr><td>下游策略</td><td>稳定错误码</td><td>错误分类驱动重试、降级或人工告警</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>11. 记忆练习</h2>
-      <details>
-        <summary>1. Retry exhaustion 和普通失败有什么区别？</summary>
-        <p class="answer">Retry exhaustion 指错误本来可重试，但所有允许的 attempt 已经用完，所以必须停止并上抛失败。</p>
-      </details>
-      <details>
-        <summary>2. 为什么 400 不应该记录 retry exhausted？</summary>
-        <p class="answer">因为 400 通常表示请求本身有问题，属于快速失败，而不是可重试错误把预算用完。</p>
-      </details>
-      <details>
-        <summary>3. 为什么 exhausted 日志用 warning？</summary>
-        <p class="answer">因为它表示一次 provider 调用最终失败，需要被注意，但不一定代表应用进程崩溃。</p>
-      </details>
-      <details>
-        <summary>4. 为什么 exhausted 日志要带 error_code？</summary>
-        <p class="answer">因为它能把内部日志事件和上层返回的稳定错误码对应起来，方便跨层排查。</p>
-      </details>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details><summary>1. Retry exhaustion 的定义是什么？</summary><p class="answer">错误本来可重试，但本次调用允许的所有 attempt 已经用完，只能停止并上抛失败。</p></details>
+      <details><summary>2. 为什么 400 不应记为 exhausted？</summary><p class="answer">400 通常是请求或认证类确定性错误，分类上不该重试，不属于预算耗尽。</p></details>
+      <details><summary>3. exhausted 日志为什么要带 error_code？</summary><p class="answer">它让内部日志与上层稳定错误响应对应起来，便于跨层排查。</p></details>
+      <details><summary>4. exhausted 为什么用 warning？</summary><p class="answer">它表示一次 provider 调用最终失败，需要关注，但应用进程仍可继续运行。</p></details>
     </section>
 
     <section>
-      <h2>12. 本节总结</h2>
-      <p>本节把 provider retry 的可观测性从“中间准备重试”补全到“最终重试耗尽”。现在 adapter 会在可重试错误用完所有 attempt 后记录 <code>provider_prediction_retry_exhausted</code>，并保留 attempt、max_attempts、retry_reason、status_code、retry_after 和 error_code 等字段。</p>
-      <p>下一课建议学习：Fail-fast Observability。我们会继续区分“重试耗尽”和“不可重试快速失败”，让 400、非法 provider 响应等路径也有清楚但不误导的日志语义。</p>
-      <p>推荐主资源：<a href="https://docs.python.org/3/library/logging.html">Python logging</a>、<a href="https://docs.pytest.org/en/stable/how-to/logging.html">pytest logging/caplog</a>、<a href="https://www.python-httpx.org/exceptions/">HTTPX exceptions</a>。</p>
-      <p class="small">如果你想继续追问，可以问我：“为什么不能所有 provider 错误都重试？”这个问题会把我们带到错误分类和幂等性的核心。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <p><strong>题 1：如何区分 retry scheduled 与 retry exhausted？</strong> 答：scheduled 表示还有下一次 attempt，准备等待后重试；exhausted 表示可重试错误已经没有下一次 attempt。</p>
+      <p><strong>题 2：为什么 retry 不能无限进行？</strong> 答：无限 retry 会放大故障、增加成本、占用 worker，并破坏用户请求时延边界。</p>
+      <p><strong>题 3：线上看到 retry_exhausted 应如何排查？</strong> 答：看 retry_reason、status_code、attempt/max_attempts、retry_after、error_code，判断是 timeout、限流、5xx 还是网络错误导致预算耗尽。</p>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

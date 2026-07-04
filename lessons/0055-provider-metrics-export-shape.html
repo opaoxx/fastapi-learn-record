@@ -13,95 +13,68 @@
       <span class="nav-links">
         <a href="../index.html">课程目录</a>
         <a href="./0054-provider-metrics-test-isolation.html">上一课</a>
-        <a href="../reference/0055-provider-metrics-export-shape-cheatsheet.html">本课速查</a>
         <a href="./0056-provider-metrics-export-tests.html">下一课</a>
+        <a href="../reference/0055-provider-metrics-export-shape-cheatsheet.html">速查</a>
       </span>
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0055</p>
-      <h1>Provider Metrics Export Shape：从 JSON 快照到文本导出</h1>
-      <p class="lead">上一组课程已经完成 provider metrics 的记录、读取、失败 outcome 和测试隔离。本节开启新批次，先讨论一个现实问题：监控系统通常不会读取我们教学用的 JSON snapshot，而是读取更接近 Prometheus text format 的导出文本。我们会新增一个教学用文本渲染 helper 和 <code>GET /provider/metrics/prometheus</code> endpoint。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0055 Provider Metrics Export Shape：从 JSON 快照到 Prometheus 文本形态</h1>
+      <p class="lead">本节把 <code>ProviderMetricsCounter.snapshot()</code> 的 JSON 快照渲染为 Prometheus text 风格输出，并通过 <code>GET /provider/metrics/prometheus</code> 暴露为 <code>text/plain</code>。重点不是“拼字符串”，而是理解内部状态、调试快照、机器采集文本三层形态的边界。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解 metrics 的内部 snapshot 和外部 export shape 不是一回事。</li>
-        <li>读懂 Prometheus text 风格输出中的 HELP、TYPE、metric name、labels 和 value。</li>
-        <li>掌握为什么 label 输出要有稳定顺序和转义规则。</li>
-        <li>理解 FastAPI 如何用 <code>PlainTextResponse</code> 返回文本指标。</li>
-        <li>继续区分教学导出形状和生产级 metrics pipeline。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Metrics Export Shape
+├─ 内部事实：ProviderMetricsCounter 按 label set 累计 count
+├─ JSON 快照：GET /provider/metrics 返回 labels + count
+├─ 文本导出：GET /provider/metrics/prometheus 返回 text/plain
+├─ Prometheus text 组成
+│  ├─ # HELP：指标说明
+│  ├─ # TYPE：指标类型 counter
+│  └─ sample：metric_name{labels} count
+├─ 格式稳定性
+│  ├─ metric name 固定
+│  ├─ label 输出排序
+│  ├─ label value 转义
+│  └─ 末尾换行
+└─ 教学边界：text 风格输出不等于生产级 Prometheus pipeline</code></pre>
     </section>
 
     <section>
-      <h2>1. 背景：为什么 JSON snapshot 还不够</h2>
-      <p><code>GET /provider/metrics</code> 返回的是很好读的 JSON：</p>
-      <pre><code>[
-  {
-    "labels": {
-      "operation": "prediction",
-      "outcome": "success",
-      "failure_category": "none",
-      "error_code": "none",
-      "status_code": "none"
-    },
-    "count": 1
-  }
-]</code></pre>
-      <p>这个形状适合教学、调试和前端展示。但许多监控系统更习惯拉取文本格式，尤其是 Prometheus 生态。文本格式能把指标名、标签和值组织成一行一行的样本，采集器可以周期性 scrape。</p>
-      <p>本节不接入真实 Prometheus，也不解决多进程聚合。我们只做第一步：把已有 snapshot 渲染成一个 Prometheus text 风格的教学输出，让你看懂 export shape。</p>
-    </section>
+      <h2>② 核心概念底层原理</h2>
+      <p>同一份指标事实可以有多种表现形态。Counter 内部保存的是 <code>ProviderMetricLabels → count</code>；JSON 快照适合教学、调试和 API 查看；Prometheus text 风格输出适合展示“采集器会读取什么样的文本”。</p>
+      <pre><code>JSON snapshot:
+[
+  {"labels": {"outcome": "success", ...}, "count": 1}
+]
 
-    <section class="callout">
-      <h2>2. 核心概念：同一份指标可以有多个表现形状</h2>
-      <p>metrics 的核心事实是“某个 label set 的 count 是多少”。这个事实可以用 JSON 表达，也可以用文本表达：</p>
-      <pre><code>provider_prediction_total{error_code="none",failure_category="none",operation="prediction",outcome="success",status_code="none"} 1</code></pre>
-      <p>这里有三个层次：</p>
-      <ul>
-        <li><strong>内部状态</strong>：<code>ProviderMetricsCounter</code> 里的计数。</li>
-        <li><strong>教学 snapshot</strong>：<code>labels + count</code> 的 JSON 列表。</li>
-        <li><strong>导出形状</strong>：面向外部采集器或人类检查的文本。</li>
-      </ul>
-      <p>把这三层分开，后续才容易从教学实现迁移到真正的监控后端。</p>
+Text export:
+provider_prediction_total{outcome="success",...} 1</code></pre>
+      <p>Prometheus text 不是随便的日志文本。它是机器读取的导出格式：指标名、标签、数值、换行、转义规则都属于契约。只要有监控系统、测试快照、文档示例依赖它，格式漂移就可能破坏下游。</p>
     </section>
 
     <section>
-      <h2>3. 文本格式的组成</h2>
-      <p>本节新增的文本输出由三部分组成：</p>
-      <pre><code># HELP provider_prediction_total Provider prediction outcomes recorded by the teaching metrics counter.
-# TYPE provider_prediction_total counter
-provider_prediction_total{error_code="none",failure_category="none",operation="prediction",outcome="success",status_code="none"} 1</code></pre>
-      <ul>
-        <li><code># HELP</code> 描述指标含义。</li>
-        <li><code># TYPE</code> 描述指标类型，本例是 counter。</li>
-        <li>样本行由 metric name、labels 和数值组成。</li>
-      </ul>
-      <p>metric name 使用 <code>provider_prediction_total</code>，因为 counter 通常表达累计总数，<code>_total</code> 后缀能提醒读者它只增不减。</p>
-    </section>
-
-    <section>
-      <h2>4. 代码精读一：指标名称和帮助文本</h2>
-      <p><code>first_api/services/provider_http.py</code> 里新增了两个常量：</p>
+      <h2>③ 全套代码逐行精读解析</h2>
       <pre><code>PROVIDER_PREDICTION_METRIC_NAME = "provider_prediction_total"
 PROVIDER_PREDICTION_METRIC_HELP = (
     "Provider prediction outcomes recorded by the teaching metrics counter."
 )</code></pre>
-      <p>把名称和帮助文本抽成常量，是为了避免测试、endpoint 和课程讲义各写一份字符串。指标名一旦对外暴露，就会成为监控查询、告警和文档的一部分，随便改名就是契约变更。</p>
-    </section>
+      <p><code>provider_prediction_total</code> 是对外指标名。<code>provider</code> 指 provider adapter 路径，<code>prediction</code> 指预测操作，<code>total</code> 表示累计型 counter。HELP 文本提供人类可读说明。</p>
 
-    <section>
-      <h2>5. 代码精读二：label value 为什么要转义</h2>
-      <p>文本格式里的 label value 放在双引号中。如果值里也有双引号、反斜杠或换行，就必须转义：</p>
       <pre><code>def escape_prometheus_label_value(value: object) -> str:
     return str(value).replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')</code></pre>
-      <p>当前 provider metric labels 都是低基数字符串，通常不会包含这些特殊字符。但 helper 仍然做转义，是为了让导出函数具备基本的格式安全意识。测试里也故意放了 <code>provider_"quoted"_error</code>，证明双引号会被转成 <code>\"</code>。</p>
-    </section>
+      <table>
+        <thead><tr><th>代码片段</th><th>作用</th><th>不处理的后果</th></tr></thead>
+        <tbody>
+          <tr><td><code>str(value)</code></td><td>统一把 label value 转成字符串</td><td>非字符串值拼接时出错或输出不一致</td></tr>
+          <tr><td><code>replace("\\", "\\\\")</code></td><td>转义反斜杠</td><td>后续转义序列可能被误读</td></tr>
+          <tr><td><code>replace("\n", "\\n")</code></td><td>把真实换行变成可见字符</td><td>一条样本被拆成多行，破坏格式</td></tr>
+          <tr><td><code>replace('"', '\\"')</code></td><td>转义双引号</td><td>label value 提前闭合，后续文本失效</td></tr>
+        </tbody>
+      </table>
 
-    <section>
-      <h2>6. 代码精读三：从 snapshot 渲染文本</h2>
-      <p>核心渲染函数是：</p>
       <pre><code>def render_provider_metrics_prometheus_text(
     samples: list[dict[str, object]],
 ) -> str:
@@ -111,6 +84,8 @@ PROVIDER_PREDICTION_METRIC_HELP = (
     ]
     for sample in samples:
         labels = sample["labels"]
+        if not isinstance(labels, dict):
+            raise ValueError("Metric sample labels must be a dictionary.")
         label_text = ",".join(
             f'{name}="{escape_prometheus_label_value(value)}"'
             for name, value in sorted(labels.items())
@@ -119,16 +94,18 @@ PROVIDER_PREDICTION_METRIC_HELP = (
             f"{PROVIDER_PREDICTION_METRIC_NAME}{{{label_text}}} {sample['count']}"
         )
     return "\n".join(lines) + "\n"</code></pre>
-      <p>这里有两个细节很重要：</p>
-      <ul>
-        <li><code>sorted(labels.items())</code> 让 label 输出顺序稳定，测试和人工阅读都更可靠。</li>
-        <li>函数最后补一个换行，文本导出更像常见的行式格式。</li>
-      </ul>
-    </section>
+      <table>
+        <thead><tr><th>行</th><th>精读</th></tr></thead>
+        <tbody>
+          <tr><td><code>lines = [...]</code></td><td>无论是否有样本，都先输出 HELP 和 TYPE，保证指标说明存在。</td></tr>
+          <tr><td><code>for sample in samples</code></td><td>每个 snapshot sample 渲染成一条文本样本行。</td></tr>
+          <tr><td><code>isinstance(labels, dict)</code></td><td>防御错误输入；文本渲染函数要求 labels 是字典。</td></tr>
+          <tr><td><code>sorted(labels.items())</code></td><td>稳定 label 顺序，便于测试、diff 和人工阅读。</td></tr>
+          <tr><td><code>escape_prometheus_label_value</code></td><td>所有 label value 在进入文本前统一转义。</td></tr>
+          <tr><td><code>+ "\n"</code></td><td>以换行结束，符合行式文本输出习惯。</td></tr>
+        </tbody>
+      </table>
 
-    <section>
-      <h2>7. 代码精读四：FastAPI 文本 endpoint</h2>
-      <p>router 新增了一个只读文本 endpoint：</p>
       <pre><code>@router.get(
     "/provider/metrics/prometheus",
     response_class=PlainTextResponse,
@@ -136,87 +113,91 @@ PROVIDER_PREDICTION_METRIC_HELP = (
 )
 async def get_provider_metrics_prometheus() -> str:
     return get_provider_metrics_prometheus_text()</code></pre>
-      <p><code>response_class=PlainTextResponse</code> 告诉 FastAPI 这里返回的是文本，不是 JSON。客户端会收到 <code>text/plain</code> 类型的响应。这个 endpoint 和 JSON endpoint 读取同一个 counter snapshot，只是导出形状不同。</p>
+      <p><code>PlainTextResponse</code> 明确返回文本，不走 JSON response model。router 不拼接文本，只调用 service 层的导出函数，继续保持 HTTP 层与指标语义分离。</p>
     </section>
 
     <section>
-      <h2>8. 代码精读五：endpoint 测试保护导出契约</h2>
-      <p>测试先制造一次 provider success，然后请求文本 endpoint：</p>
-      <pre><code>metrics_response = client.get("/provider/metrics/prometheus")
-
-assert metrics_response.headers["content-type"].startswith("text/plain")
-assert metrics_response.text == (
-    "# HELP provider_prediction_total ...\n"
-    "# TYPE provider_prediction_total counter\n"
-    'provider_prediction_total{error_code="none",...} 1\n'
-)</code></pre>
-      <p>这个测试保护了三件事：路径存在、content type 是文本、输出内容稳定。对于 export shape 来说，字符串就是契约，不能只检查 status code。</p>
-    </section>
-
-    <section class="practice">
-      <h2>9. 动手实验：读取文本指标</h2>
-      <p>先运行相关测试：</p>
-      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py tests\test_ai_client_dependency.py -q</code></pre>
-      <p>如果手动启动项目，可以先调用 <code>POST /provider/predict</code>，再访问：</p>
-      <pre><code>http://127.0.0.1:8000/provider/metrics/prometheus</code></pre>
-      <p>你应该看到类似下面的文本：</p>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>provider event
+  → record_provider_metric(labels)
+  → ProviderMetricsCounter.increment()
+  → get_provider_metrics_snapshot()
+  → render_provider_metrics_prometheus_text(samples)
+       ├─ 写 HELP
+       ├─ 写 TYPE
+       ├─ labels 排序
+       ├─ label value 转义
+       └─ 生成 sample 行
+  → GET /provider/metrics/prometheus
+  → text/plain 响应</code></pre>
+      <p>成功样本最终文本形态：</p>
       <pre><code># HELP provider_prediction_total Provider prediction outcomes recorded by the teaching metrics counter.
 # TYPE provider_prediction_total counter
 provider_prediction_total{error_code="none",failure_category="none",operation="prediction",outcome="success",status_code="none"} 1</code></pre>
-      <p>这和 JSON snapshot 表达的是同一份计数，只是更接近监控系统常见的 scrape 输出。</p>
+      <p>这与 JSON endpoint 表达同一份计数，只是面向不同读者：JSON 给人和程序调试，text export 给采集器和监控生态。</p>
     </section>
 
     <section>
-      <h2>10. 常见错误</h2>
-      <ul>
-        <li>把文本 endpoint 当成生产监控方案：它仍然读取进程内教学 counter，不解决多实例聚合。</li>
-        <li>输出 label 顺序不稳定：测试容易抖动，人工 diff 也难读。</li>
-        <li>忘记转义 label value：一旦出现引号或换行，文本格式会被破坏。</li>
-        <li>把 JSON response model 用在文本 endpoint 上：文本 endpoint 应该使用文本响应类。</li>
-        <li>随便改 metric name：监控查询和告警规则会被破坏。</li>
-      </ul>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>对象</th><th>用途</th><th>典型消费者</th><th>风险</th></tr></thead>
+        <tbody>
+          <tr><td>内部 Counter</td><td>聚合 label set</td><td>服务内部函数</td><td>不应直接暴露</td></tr>
+          <tr><td>JSON snapshot</td><td>结构化调试</td><td>测试、人、前端调试工具</td><td>不是标准监控采集格式</td></tr>
+          <tr><td>Prometheus text 风格</td><td>行式指标导出</td><td>采集器、人类排查</td><td>格式细节容易被低估</td></tr>
+          <tr><td>生产 metrics pipeline</td><td>采集、存储、查询、告警</td><td>监控平台</td><td>不能用单进程教学实现替代</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>11. 面试视角：如何解释 export shape</h2>
-      <blockquote>
-        <p>我会把 metrics 的内部存储、调试 snapshot 和外部导出形状分开。内部 counter 负责累计，JSON snapshot 适合教学和调试，Prometheus text 风格输出适合展示采集器会读取的行式指标。即使当前是教学实现，也要保持稳定 metric name、稳定 label 顺序和基本转义规则，因为这些都是监控契约的一部分。</p>
-      </blockquote>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>后果</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>label 顺序不稳定</td><td>测试快照抖动，diff 难读</td><td>使用 <code>sorted(labels.items())</code></td></tr>
+          <tr><td>忘记转义双引号/换行</td><td>文本格式被破坏</td><td>统一经过 <code>escape_prometheus_label_value()</code></td></tr>
+          <tr><td>空 snapshot 返回空字符串</td><td>丢失指标说明</td><td>仍输出 HELP 和 TYPE</td></tr>
+          <tr><td>文本 endpoint 返回 JSON content-type</td><td>采集器或客户端误解析</td><td>使用 <code>response_class=PlainTextResponse</code></td></tr>
+          <tr><td>把 text export 当生产完成</td><td>忽略多实例、采集、存储、告警</td><td>在文档和 OpenAPI 中标明教学边界</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>12. 记忆练习</h2>
-      <details>
-        <summary>1. JSON snapshot 和 text export 的核心区别是什么？</summary>
-        <p class="answer">JSON snapshot 更适合教学和程序调试；text export 更接近监控采集器读取的行式指标格式。</p>
-      </details>
-      <details>
-        <summary>2. 为什么 counter 指标名使用 <code>_total</code> 后缀？</summary>
-        <p class="answer">它提醒读者这是累计计数，语义上只增不减，符合 counter 心智模型。</p>
-      </details>
-      <details>
-        <summary>3. 为什么 label 要排序输出？</summary>
-        <p class="answer">排序让输出稳定，测试、diff 和人工检查都更可靠。</p>
-      </details>
-      <details>
-        <summary>4. 为什么本节仍然不是生产级 metrics pipeline？</summary>
-        <p class="answer">因为数据仍然来自单进程内存 counter，没有解决多进程、多实例、抓取部署、权限、告警和长期存储。</p>
-      </details>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学实现</th><th>生产实现</th></tr></thead>
+        <tbody>
+          <tr><td>导出格式</td><td>手写 Prometheus text 风格</td><td>成熟 client library 或 OpenTelemetry exporter</td></tr>
+          <tr><td>数据范围</td><td>当前进程内 Counter</td><td>跨进程、跨实例、跨区域采集与聚合</td></tr>
+          <tr><td>格式校验</td><td>单元测试字符串</td><td>采集器校验、lint、监控规则回归</td></tr>
+          <tr><td>安全</td><td>课程未加访问控制</td><td>内网、鉴权、网络策略、敏感标签治理</td></tr>
+          <tr><td>可靠性</td><td>重启丢失</td><td>时间序列数据库持久化</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>13. 本节总结</h2>
-      <p>本节把 provider metrics 从 JSON snapshot 推进到文本导出形状。你现在可以看到同一份 provider prediction count 如何被渲染成 <code># HELP</code>、<code># TYPE</code> 和样本行。关键心智模型是：metrics 事实和 export shape 要分开设计，导出格式本身也是契约。</p>
-      <p>下一课建议学习：Provider Metrics Export Tests。可以继续深化文本导出的边界测试，例如空 snapshot、多个失败 outcome、label 转义和 endpoint 响应头。</p>
-      <p>推荐主资源：<a href="https://prometheus.io/docs/instrumenting/exposition_formats/">Prometheus exposition formats</a>、<a href="https://prometheus.io/docs/practices/naming/">Prometheus metric naming</a>、<a href="https://fastapi.tiangolo.com/advanced/custom-response/">FastAPI custom responses</a>。</p>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details><summary>1. JSON snapshot 和 text export 的本质区别是什么？</summary><p class="answer">JSON snapshot 是结构化调试形态；text export 是面向采集器或监控生态的行式导出形态。它们表达同一份指标事实，但消费者和格式约束不同。</p></details>
+      <details><summary>2. 为什么空 snapshot 也要输出 HELP 和 TYPE？</summary><p class="answer">因为没有样本不代表没有指标定义。HELP 和 TYPE 说明指标名称、含义和类型，使空状态仍然是合法、可解释的导出。</p></details>
+      <details><summary>3. label value 为什么必须转义？</summary><p class="answer">双引号、反斜杠、换行会破坏 label 字符串边界或样本行结构。转义后才能保持文本格式可解析。</p></details>
+      <details><summary>4. 为什么 <code>PlainTextResponse</code> 必不可少？</summary><p class="answer">它让 FastAPI 返回 <code>text/plain</code>，避免把 Prometheus text 风格内容当 JSON 序列化或让客户端误判响应类型。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：如何从内部 metrics snapshot 导出 Prometheus text？</summary><p class="answer">先输出 HELP 和 TYPE，再遍历 snapshot 样本；每条样本按稳定顺序渲染 labels，转义 label value，最后拼成 <code>metric_name{labels} count</code> 行，并以 text/plain 暴露。</p></details>
+      <details><summary>面试题 2：为什么导出格式也要测试？</summary><p class="answer">导出文本是机器消费契约。metric name、label 顺序、转义、换行、Content-Type 变化都可能破坏采集或下游测试，因此必须有格式级回归测试。</p></details>
+      <details><summary>面试题 3：手写 text export 的教学意义是什么？</summary><p class="answer">它让初学者看清 metrics 从内部 label/count 到外部采集文本的转换过程。生产中通常应使用成熟库，但理解格式能帮助排查导出和采集问题。</p></details>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">
       <span class="nav-title">继续学习</span>
       <span class="nav-links">
-        <a href="../index.html">回到课程目录</a>
+        <a href="../index.html">课程目录</a>
         <a href="./0054-provider-metrics-test-isolation.html">上一课：Provider Metrics Test Isolation</a>
-        <a href="../reference/0055-provider-metrics-export-shape-cheatsheet.html">查看本课速查</a>
         <a href="./0056-provider-metrics-export-tests.html">下一课：Provider Metrics Export Tests</a>
       </span>
     </nav>

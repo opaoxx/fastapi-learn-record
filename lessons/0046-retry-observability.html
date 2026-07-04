@@ -19,116 +19,54 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0046</p>
-      <h1>Retry Observability：让 provider 重试过程可被看见</h1>
-      <p class="lead">上一课我们已经会计算更稳妥的重试等待时间。本节继续向生产级 AI 服务靠近：当 provider 超时、限流或临时 5xx 时，我们不仅要重试，还要把“为什么重试、这是第几次、等多久、等待来自哪里”记录成结构化日志。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0046 Retry Observability：让 provider 重试过程可解释</h1>
+      <p class="lead">重试策略不能只“悄悄执行”。当线上接口变慢或 provider 限流时，我们需要知道第几次失败、失败原因、等待多久、等待来源是 Retry-After 还是本地 backoff。本节把 retry 中间事件写成结构化日志，并用 <code>caplog</code> 测试。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解 observability 和普通 print 调试的区别。</li>
-        <li>理解为什么 retry 行为必须记录 attempt、reason、delay 等上下文。</li>
-        <li>掌握 Python logging 的 <code>extra</code> 如何把结构化字段放进 <code>LogRecord</code>。</li>
-        <li>学会用 pytest 的 <code>caplog</code> 捕获日志并断言日志字段。</li>
-        <li>知道为什么本节只改内部日志，不改外部 JSON 响应契约。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Retry Observability
+├─ 事件名：provider_prediction_retry_scheduled
+├─ 等待计划：RetryDelayPlan(delay_seconds, source)
+├─ 关键字段：attempt / max_attempts / retry_reason
+├─ HTTP 字段：status_code / retry_after
+├─ 等待字段：delay_seconds / delay_source
+├─ 写入位置：sleep 之前
+└─ 测试方式：pytest caplog.records 断言 LogRecord 字段</code></pre>
+      <p>核心结论：可观测性不是多打印，而是用稳定事件名和稳定字段表达系统内部发生的关键决策。</p>
     </section>
 
     <section>
-      <h2>1. 背景：会重试还不够，还要知道重试发生了什么</h2>
-      <p>在真实后端和 AI 服务项目里，外部 provider 的失败通常不是一个简单的“报错”。它可能是短暂网络抖动、连接超时、限流、模型服务滚动发布、区域性故障，也可能是客户端请求写错导致的 400。前几节课已经让我们能区分可重试错误和不可重试错误，并能用 backoff、Retry-After、jitter 控制等待时间。</p>
-      <p>但是，如果线上用户说“预测接口偶尔很慢”，只知道最终返回 200 或 503 还不够。我们需要回答更细的问题：这次请求是不是经历了重试？第几次失败后重试？失败原因是 timeout 还是 HTTP 429？等待时间来自 provider 的 Retry-After，还是来自客户端本地 backoff？最终 sleep 了多久？</p>
-      <p>这就是本节要补上的知识：<strong>重试策略负责让系统更稳，重试可观测性负责让系统可解释。</strong></p>
-    </section>
-
-    <section class="callout">
-      <h2>2. 核心概念：Observability 不是“多打几行日志”</h2>
-      <p><strong>Observability</strong> 可以先理解为：系统运行之后，我们能不能从外部留下的信号推断内部发生了什么。常见信号包括 logs、metrics、traces。本课程现在还不引入完整监控平台，先从最基础也最常用的 logs 做起。</p>
-      <p>初学者容易把日志理解成 <code>print("retrying")</code>。这在本地调试时有一点用，但生产排查时很弱，因为它缺少结构：无法稳定筛选“只看 provider_http 模块”、无法统计“429 重试次数”、无法聚合“Retry-After 命中比例”。</p>
-      <p>更好的方式是：日志消息保持稳定，关键上下文放在结构化字段里。</p>
-      <pre><code>message: provider_prediction_retry_scheduled
-fields:
-  attempt: 1
-  max_attempts: 2
-  retry_reason: http_status
-  status_code: 429
-  retry_after: 2
-  delay_seconds: 2.0
-  delay_source: retry_after</code></pre>
-      <p>Python 官方 logging 文档说明，<code>extra</code> 参数可以把自定义字典写入 <code>LogRecord</code> 的属性中；pytest 官方文档说明，<code>caplog.records</code> 可以读取测试期间捕获到的 <code>LogRecord</code>。这正好让我们既能写结构化日志，也能测试这些字段。</p>
+      <h2>② 核心概念底层原理</h2>
+      <p>retry 过程有两类事实：一类是“最终成功/失败”，另一类是“中间发生过什么”。如果只记录最终 503，就无法解释请求为什么慢；如果记录 retry scheduled，就能知道慢来自限流、超时还是本地等待。</p>
+      <table>
+        <thead><tr><th>字段</th><th>含义</th><th>排查价值</th></tr></thead>
+        <tbody>
+          <tr><td><code>attempt</code></td><td>第几次尝试失败后准备重试</td><td>判断失败发生在早期还是接近耗尽</td></tr>
+          <tr><td><code>retry_reason</code></td><td>timeout、http_status、request_error</td><td>区分网络、限流、上游错误</td></tr>
+          <tr><td><code>delay_source</code></td><td>retry_after 或 local_backoff</td><td>判断等待来自 provider 还是客户端策略</td></tr>
+          <tr><td><code>delay_seconds</code></td><td>最终等待秒数</td><td>定位接口变慢原因</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>3. 为什么不把这些信息直接塞进响应体</h2>
-      <p>你可能会问：既然这些信息有用，为什么不在 <code>POST /predict</code> 的 JSON 响应里返回 <code>attempts</code>、<code>retry_delay</code> 呢？原因是它们属于<strong>内部诊断事实</strong>，不一定属于公共 API 契约。</p>
-      <p>公共响应体是给调用者稳定依赖的，例如 <code>label</code>、<code>score</code>、<code>source</code>。如果把内部 retry 细节暴露出去，以后改重试策略、换 provider、换队列或换 SDK 时，前端和外部调用方可能都被迫跟着改。</p>
-      <p>所以本节采用更稳的边界：外部 JSON 契约不变，内部日志增强。这样既方便排查，又不会扩大 API 表面。</p>
-    </section>
-
-    <section>
-      <h2>4. 运行机制：一次 provider 重试日志如何产生</h2>
-      <p>现在 provider 预测调用的关键路径可以拆成 7 步：</p>
-      <ol>
-        <li><code>request_provider_prediction()</code> 发起 provider HTTP POST。</li>
-        <li>HTTPX 遇到 timeout、request error，或者 <code>response.raise_for_status()</code> 抛出 <code>HTTPStatusError</code>。</li>
-        <li>adapter 判断当前 <code>attempt</code> 是否还小于 <code>max_attempts</code>。</li>
-        <li>如果是 HTTP 状态错误，还要判断状态码是否属于可重试集合，例如 429、500、502、503、504。</li>
-        <li><code>build_retry_delay_plan()</code> 计算等待计划：优先使用有效 <code>Retry-After</code>，否则使用本地 backoff 加 jitter。</li>
-        <li><code>wait_before_retry()</code> 在 sleep 前写入结构化日志。</li>
-        <li>等待结束后进入下一轮 attempt。</li>
-      </ol>
-      <pre><code>provider POST
-  -> failed
-  -> retryable?
-  -> build retry delay plan
-  -> log provider_prediction_retry_scheduled
-  -> await sleep(delay)
-  -> next attempt</code></pre>
-    </section>
-
-    <section>
-      <h2>5. 代码精读一：把等待结果建模为 RetryDelayPlan</h2>
-      <p>之前 <code>calculate_retry_delay()</code> 只返回一个数字。数字能告诉我们“等多久”，但不能告诉我们“这个等待来自哪里”。本节新增了一个小的 dataclass：</p>
+      <h2>③ 全套代码逐行精读解析</h2>
       <pre><code>RetryDelaySource = Literal["retry_after", "local_backoff"]
 
 @dataclass(frozen=True)
 class RetryDelayPlan:
     delay_seconds: float
     source: RetryDelaySource</code></pre>
-      <p>这段代码有两个关键点：</p>
-      <ul>
-        <li><code>delay_seconds</code> 是最终等待秒数。</li>
-        <li><code>source</code> 是等待来源，只允许 <code>retry_after</code> 或 <code>local_backoff</code> 两种值。</li>
-      </ul>
-      <p>这比直接返回 tuple 更清楚。初学者读到 <code>RetryDelayPlan(delay_seconds=2.0, source="retry_after")</code> 时，不需要猜第一个值、第二个值分别是什么意思。</p>
-    </section>
-
-    <section>
-      <h2>6. 代码精读二：保留旧函数，新增更丰富的内部函数</h2>
-      <p>为了不破坏已有测试和已有调用，我们保留 <code>calculate_retry_delay()</code> 的返回值仍然是 float。它内部委托给新的 <code>build_retry_delay_plan()</code>：</p>
-      <pre><code>def calculate_retry_delay(... ) -> float:
-    return build_retry_delay_plan(...).delay_seconds</code></pre>
-      <p>这种设计非常适合课程项目：外层旧接口保持简单，内部新接口承载更多语义。以后如果别的模块只关心“等多久”，继续调用 <code>calculate_retry_delay()</code>；如果日志或监控需要知道“为什么等这么久”，就使用 <code>build_retry_delay_plan()</code>。</p>
-      <pre><code>def build_retry_delay_plan(... ) -> RetryDelayPlan:
-    provider_delay = parse_retry_after_delay(retry_after, now=now)
-    if provider_delay is not None:
-        return RetryDelayPlan(
-            delay_seconds=min(provider_delay, max_delay),
-            source="retry_after",
-        )
-
-    exponential_delay = base_delay * (2 ** (attempt - 1))
-    jitter_delay = calculate_retry_jitter(config, random_fraction=random_fraction)
-    return RetryDelayPlan(
-        delay_seconds=min(exponential_delay + jitter_delay, max_delay),
-        source="local_backoff",
-    )</code></pre>
-    </section>
-
-    <section>
-      <h2>7. 代码精读三：在 sleep 前记录结构化日志</h2>
-      <p>日志写在 <code>wait_before_retry()</code> 里，因为这是“等待即将发生”的统一位置。无论失败原因是 timeout、request error，还是 HTTP 429/503，只要真的准备重试，都会走到这里。</p>
+      <p>单纯返回 float 只能表示“等多久”；<code>RetryDelayPlan</code> 同时表达“等多久”和“为什么是这个等待来源”。<code>Literal</code> 让来源值稳定可枚举。</p>
+      <pre><code>delay_plan = build_retry_delay_plan(
+    attempt,
+    config,
+    retry_after=retry_after,
+    random_fraction=random_fraction,
+)</code></pre>
+      <p>等待计划统一由一个函数构造，避免日志、sleep、测试各自计算一遍导致不一致。</p>
       <pre><code>logger.info(
     "provider_prediction_retry_scheduled",
     extra={
@@ -141,95 +79,80 @@ class RetryDelayPlan:
         "delay_source": delay_plan.source,
     },
 )</code></pre>
-      <p>这里的 message 是稳定事件名：<code>provider_prediction_retry_scheduled</code>。字段才是变化的上下文。这样以后无论日志系统是终端、文件、云日志平台，还是测试里的 <code>caplog</code>，都能围绕同一个事件名做筛选。</p>
-      <p>注意：日志发生在 <code>await sleep()</code> 之前。这样如果程序在等待期间被取消，或者服务进程被重启，至少日志里已经留下“本来准备等多久”的事实。</p>
-    </section>
-
-    <section>
-      <h2>8. 代码精读四：不同失败路径传入不同 retry_reason</h2>
-      <p>provider adapter 现在会把失败原因压缩成几个稳定字符串：</p>
-      <pre><code>retry_reason="timeout"
-retry_reason="http_status"
-retry_reason="request_error"</code></pre>
-      <p>HTTP 状态错误还会额外传入 <code>status_code</code> 和 <code>Retry-After</code>：</p>
-      <pre><code>await wait_before_retry(
-    attempt,
-    config,
-    sleep,
-    retry_reason="http_status",
-    retry_after=exc.response.headers.get("Retry-After"),
-    status_code=status_code,
-    random_fraction=random_fraction,
-)</code></pre>
-      <p>这就是结构化日志的价值：不是把异常对象整段打印出去，而是把排查最需要的字段挑出来，保持字段名稳定、含义稳定。</p>
-    </section>
-
-    <section class="practice">
-      <h2>9. 动手实验：运行新增测试</h2>
-      <p>在项目根目录运行：</p>
-      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q</code></pre>
-      <p>你应该看到 provider HTTP 测试通过。重点观察新增测试，它用 <code>MockTransport</code> 模拟第一次返回 429，并携带 <code>Retry-After: 2</code>。adapter 会先记录重试日志，再调用 fake sleep，最后第二次请求成功。</p>
+      <p>事件名固定，字段结构固定。日志系统可以按 message 聚合，也可以按 extra 字段过滤。此处不记录用户输入文本，避免隐私进入日志。</p>
+      <pre><code>if delay_plan.delay_seconds &gt; 0:
+    await sleep(delay_plan.delay_seconds)</code></pre>
+      <p>日志写在 sleep 之前。即使等待期间任务被取消，日志也已经记录“系统准备等待多久再重试”的事实。</p>
       <pre><code>retry_records = [
     record
     for record in caplog.records
     if record.getMessage() == "provider_prediction_retry_scheduled"
 ]</code></pre>
-      <p>这里不是只检查日志文本，而是检查 <code>LogRecord</code> 上的字段：</p>
-      <pre><code>assert retry_records[0].attempt == 1
-assert retry_records[0].retry_reason == "http_status"
-assert retry_records[0].status_code == 429
-assert retry_records[0].retry_after == "2"
-assert retry_records[0].delay_seconds == 2.0
-assert retry_records[0].delay_source == "retry_after"</code></pre>
+      <p><code>caplog</code> 捕获的是 <code>LogRecord</code>，不是裸字符串。测试可以直接断言 <code>record.delay_source</code>、<code>record.status_code</code> 等结构化字段。</p>
     </section>
 
     <section>
-      <h2>10. 常见错误</h2>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>provider 返回 429 + Retry-After: 2
+  → HTTPStatusError
+  → wait_before_retry(retry_reason="http_status", status_code=429, retry_after="2")
+  → build_retry_delay_plan()
+      → RetryDelayPlan(delay_seconds=2.0, source="retry_after")
+  → logger.info("provider_prediction_retry_scheduled", extra=...)
+  → fake/real sleep(2.0)
+  → 下一次 attempt</code></pre>
+      <p>这条链路把 provider 信号、客户端决策、日志字段和实际等待统一起来。测试若断言 <code>sleep_calls == [2.0]</code> 且日志 <code>delay_source == "retry_after"</code>，就能证明机制完整闭环。</p>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>正确理解</th><th>隐患</th></tr></thead>
+        <tbody>
+          <tr><td>日志文本 vs 结构化字段</td><td>message 稳定，细节放 extra</td><td>拼接文本难检索和聚合</td></tr>
+          <tr><td>scheduled vs exhausted</td><td>scheduled 是准备再试，exhausted 是没机会再试</td><td>混淆会误导排查</td></tr>
+          <tr><td>delay_source</td><td>说明等待来自哪里</td><td>没有来源就无法判断限流还是本地策略</td></tr>
+          <tr><td>日志写入时机</td><td>sleep 前写</td><td>任务取消时丢失重试计划证据</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
       <ul>
-        <li>只写 <code>print()</code>：本地能看见，测试和生产日志系统很难稳定捕获。</li>
-        <li>日志消息拼接太多变量：人能读，但机器筛选和聚合困难。</li>
-        <li>在日志里写入请求全文或密钥：可观测性不能牺牲隐私和安全。</li>
-        <li>只记录最终失败，不记录中间重试：慢请求的真正原因会被隐藏。</li>
-        <li>把诊断字段加入公共响应体：容易让内部实现细节变成外部契约。</li>
-        <li>测试只断言有日志文本：没有验证 attempt、delay、reason 等真正关键的诊断字段。</li>
+        <li><strong>caplog 抓不到日志</strong>：logger 名称或级别不对。解决：<code>caplog.set_level(logging.INFO, logger="first_api.services.provider_http")</code>。</li>
+        <li><strong>日志只有 retrying</strong>：没有 attempt/reason/delay 字段。解决：使用 <code>extra</code> 记录结构化上下文。</li>
+        <li><strong>日志记录原始 text</strong>：AI 输入可能敏感。解决：只记录元信息，不记录完整请求文本。</li>
+        <li><strong>日志字段命名漂移</strong>：不同分支字段不一致。解决：所有 retry scheduled 都走 <code>wait_before_retry()</code>。</li>
       </ul>
     </section>
 
     <section>
-      <h2>11. 面试视角：如何回答“你们怎么排查 provider 不稳定”</h2>
-      <p>一个比较成熟的回答可以这样组织：</p>
-      <blockquote>
-        <p>我会把 provider 调用封装在 adapter 或 service 边界里，在那里统一处理 timeout、HTTP 状态错误、request error、非法响应和 retry。对于 retry，我不会只做等待，还会记录结构化日志，例如 attempt、max_attempts、retry_reason、status_code、Retry-After、delay_seconds 和 delay_source。这样线上排查时可以区分是 provider 限流、临时 5xx、网络问题，还是客户端本地 backoff 导致的等待。</p>
-      </blockquote>
-      <p>这段回答背后的核心不是“我会打日志”，而是“我知道日志应该放在哪里、记录哪些稳定字段、如何避免污染公共 API 契约”。</p>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>日志出口</td><td>终端与 caplog</td><td>JSON 日志、集中检索、trace 关联</td></tr>
+          <tr><td>字段规模</td><td>attempt/reason/delay/source</td><td>request id、tenant、region、provider request id</td></tr>
+          <tr><td>隐私</td><td>不记录原始 text</td><td>脱敏、采样、保留周期、访问审计</td></tr>
+          <tr><td>监控</td><td>日志断言</td><td>日志转指标、告警、SLO 看板</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>12. 记忆练习</h2>
-      <details>
-        <summary>1. 为什么 retry observability 不只是打印 retrying？</summary>
-        <p class="answer">因为生产排查需要稳定事件名和结构化字段，才能筛选、聚合、测试和解释失败路径。</p>
-      </details>
-      <details>
-        <summary>2. <code>delay_source</code> 为什么有价值？</summary>
-        <p class="answer">它能说明等待来自 provider 的 Retry-After，还是客户端本地 backoff 计算，排查含义完全不同。</p>
-      </details>
-      <details>
-        <summary>3. 为什么日志写在 sleep 前更合适？</summary>
-        <p class="answer">因为 sleep 前已经确定重试计划，即使等待期间程序被取消，也留下了准备重试的诊断事实。</p>
-      </details>
-      <details>
-        <summary>4. 为什么本节不修改 <code>PredictionResponse</code>？</summary>
-        <p class="answer">因为 retry 细节是内部诊断事实，不应轻易变成外部调用方依赖的公共 JSON 契约。</p>
-      </details>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details><summary>1. 为什么 retry 日志不能只写 <code>retrying</code>？</summary><p class="answer">生产排查需要 attempt、reason、delay、source 等结构化字段，否则无法过滤、聚合和解释慢请求。</p></details>
+      <details><summary>2. <code>delay_source</code> 的价值是什么？</summary><p class="answer">它区分等待来自 provider 的 Retry-After，还是客户端本地 backoff。</p></details>
+      <details><summary>3. 为什么日志写在 sleep 之前？</summary><p class="answer">这样即使等待期间任务取消，也保留了准备重试和等待多久的证据。</p></details>
+      <details><summary>4. 为什么不把 retry 细节加进 <code>PredictionResponse</code>？</summary><p class="answer">retry 细节是内部诊断事实，不应轻易变成外部 API 契约。</p></details>
     </section>
 
     <section>
-      <h2>13. 本节总结</h2>
-      <p>本节把 provider retry 从“会自动重试”升级成“重试过程可解释”。我们新增了 <code>RetryDelayPlan</code> 来保存等待秒数和等待来源，并在真正 sleep 前写入结构化日志。测试使用 <code>caplog</code> 断言日志字段，证明可观测性也可以成为自动化测试的一部分。</p>
-      <p>下一课学习：<a href="./0047-retry-exhaustion.html">Retry Exhaustion</a>。也就是当所有 attempt 都失败后，如何记录最终失败、如何区分“重试中间事件”和“重试耗尽事件”，以及是否需要把最终 attempt 信息传递给 service/router 层。</p>
-      <p>推荐主资源：<a href="https://docs.python.org/3/library/logging.html">Python logging</a>、<a href="https://docs.pytest.org/en/stable/how-to/logging.html">pytest logging/caplog</a>、<a href="https://www.python-httpx.org/exceptions/">HTTPX exceptions</a>。</p>
-      <p class="small">如果你想继续追问，可以问我：“logs、metrics、traces 的区别是什么？”这个问题会把我们带到更完整的后端可观测性体系。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <p><strong>题 1：如何排查 provider 调用偶发变慢？</strong> 答：检查 retry scheduled 日志，查看 attempt、retry_reason、status_code、retry_after、delay_seconds、delay_source，判断慢来自限流、上游 5xx、超时还是本地 backoff。</p>
+      <p><strong>题 2：结构化日志比普通字符串日志强在哪里？</strong> 答：字段稳定可检索、可聚合、可测试，也方便接入日志平台和告警。</p>
+      <p><strong>题 3：为什么可观测性也要写测试？</strong> 答：日志字段是线上排查契约。测试能防止重构时丢失关键诊断字段。</p>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

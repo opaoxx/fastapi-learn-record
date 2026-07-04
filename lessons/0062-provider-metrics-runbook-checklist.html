@@ -13,75 +13,66 @@
       <span class="nav-links">
         <a href="../index.html">课程目录</a>
         <a href="./0061-provider-metrics-documentation-index.html">上一课</a>
-        <a href="../reference/0062-provider-metrics-runbook-checklist-cheatsheet.html">本课速查</a>
+        <a href="../reference/0062-provider-metrics-runbook-checklist-cheatsheet.html">速查</a>
         <a href="../reference/provider-metrics-runbook.html">Runbook</a>
       </span>
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0062</p>
-      <h1>Provider Metrics Runbook Checklist：看到指标异常时按什么顺序排查</h1>
-      <p class="lead">上一课把 provider metrics 整理成文档入口。本课继续往前走一步：把“看到指标变化后怎么查”整理成 runbook。runbook 不是新功能，而是把 endpoint、label、日志、测试和边界说明组织成一套排查动作。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0062 Provider Metrics Runbook Checklist：把指标读数变成可执行排障路径</h1>
+      <p class="lead">本节把 provider metrics 从“可观察数据”升级为“可执行排障清单”。<code>reference/provider-metrics-runbook.html</code> 的价值不在于重复解释指标，而在于规定看到 <code>success</code>、<code>retry_scheduled</code>、<code>retry_exhausted</code>、<code>fail_fast</code> 后下一步应该查什么、不能推出什么结论、应该回到哪些测试验证。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解 runbook 和普通文档的区别：runbook 关注操作顺序和判断分支。</li>
-        <li>学会用 <code>success</code>、<code>retry_scheduled</code>、<code>retry_exhausted</code>、<code>fail_fast</code> 四类 outcome 定位 provider prediction 状态。</li>
-        <li>学会把 metrics endpoint、Prometheus text export、日志测试和 endpoint 测试串成一条排障路径。</li>
-        <li>学会用轻量文档测试保护 runbook 不能漏掉关键 outcome 和入口。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Provider Metrics Runbook Checklist
+├─ Runbook 定位
+│  ├─ 不是概念文章：不重复讲 metrics 基础
+│  ├─ 不是告警策略：当前信号是教学信号
+│  └─ 是排障分支表：把现象映射到下一步动作
+├─ 观测入口
+│  ├─ GET /provider/metrics：人类优先阅读的 JSON snapshot
+│  └─ GET /provider/metrics/prometheus：文本导出形状检查
+├─ 核心指标
+│  └─ provider_prediction_total{operation,outcome,failure_category,error_code,status_code}
+├─ outcome 判断
+│  ├─ success：provider 请求成功
+│  ├─ retry_scheduled：出现可重试失败并安排下一次尝试
+│  ├─ retry_exhausted：重试次数耗尽
+│  └─ fail_fast：非重试型失败或响应结构无效
+├─ 排障字段
+│  ├─ failure_category：失败分类
+│  ├─ error_code：稳定错误码
+│  └─ status_code：HTTP 状态码或 none
+└─ 文档合同测试
+   ├─ runbook 必须保留 endpoint、metric name、outcome
+   ├─ runbook 必须保留 teaching signal, not a paging alert
+   └─ runbook 必须链接文档入口、课程页和测试文件</code></pre>
     </section>
 
     <section>
-      <h2>1. 背景：指标不是答案，排查顺序才是答案</h2>
-      <p>很多初学者看到 metrics 后会直接问：“这个数字是不是异常？”但后端排障里更重要的问题通常是：“我下一步应该查什么？”</p>
-      <p>例如 <code>provider_prediction_total{outcome="retry_scheduled"}</code> 变多，它不一定代表最终请求失败。它只说明系统曾经遇到可重试失败，并安排过重试。真正要判断影响，还要继续看是否出现 <code>retry_exhausted</code>，是否仍有 <code>success</code>，以及失败类别是 timeout、request error、429 还是 5xx。</p>
-      <p>所以本课新增 <a href="../reference/provider-metrics-runbook.html"><code>reference/provider-metrics-runbook.html</code></a>：它不是再解释一遍 metrics，而是给出“看到什么、下一步看什么”的操作清单。</p>
-    </section>
-
-    <section class="callout">
-      <h2>2. 核心心智模型：runbook 是条件分支表</h2>
-      <p>文档入口回答“资料在哪里”；runbook 回答“现在先做哪一步”。一个好的 runbook 至少要包含：</p>
-      <ol>
-        <li>观测入口：去哪儿看，例如 <code>/provider/metrics</code>。</li>
-        <li>判断字段：看哪些 label，例如 <code>outcome</code> 和 <code>failure_category</code>。</li>
-        <li>分支动作：不同 outcome 下一步做什么。</li>
-        <li>边界提醒：当前信号能说明什么，不能说明什么。</li>
-        <li>验证来源：哪些测试保护了这些判断。</li>
-      </ol>
-      <p>这也是为什么 runbook 比普通说明更像“调试脚本”：它把人的排查动作固定成可重复流程。</p>
-    </section>
-
-    <section>
-      <h2>3. 本课新增的 runbook 页面</h2>
-      <p>本课新增的 <code>reference/provider-metrics-runbook.html</code> 包含五个部分：</p>
-      <ul>
-        <li>观测入口：JSON snapshot 和 Prometheus text-style export。</li>
-        <li>Outcome 排查表：四类 outcome 的含义和下一步。</li>
-        <li>五步排查流程：从 snapshot 到失败 label，再到日志和文本导出。</li>
-        <li>相关测试：把 runbook 判断连接到项目测试。</li>
-        <li>不要误用：强调当前指标是教学信号，不是生产 paging alert。</li>
-      </ul>
+      <h2>② 核心概念底层原理</h2>
+      <p><strong>metrics</strong> 记录“发生过什么”，<strong>runbook</strong> 规定“接下来查什么”。一个指标样本本身不能自动等价为故障结论。例如 <code>retry_scheduled</code> 表示系统曾安排重试，不等价于最终用户请求失败；真正判断影响需要继续观察是否出现 <code>retry_exhausted</code>、是否仍有 <code>success</code>、失败分类是否集中在 timeout、429、5xx 或 invalid response。</p>
+      <p>runbook 的底层结构接近条件分支表：输入是观测信号，判断条件是 label，输出是下一步动作。优秀 runbook 不是堆概念，而是减少人在紧张排障时的自由发挥：先查 JSON snapshot，再按 outcome 分组，再读 failure labels，再回到日志和测试证据，最后判断这是教学信号、临时 provider 抖动、重试耗尽还是非重试错误。</p>
+      <table>
+        <thead>
+          <tr><th>对象</th><th>回答的问题</th><th>本节对应物</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Metric</td><td>发生过什么</td><td><code>provider_prediction_total</code></td></tr>
+          <tr><td>Label</td><td>按什么维度归类</td><td><code>outcome</code>、<code>failure_category</code>、<code>status_code</code></td></tr>
+          <tr><td>Endpoint</td><td>去哪里看信号</td><td><code>/provider/metrics</code>、<code>/provider/metrics/prometheus</code></td></tr>
+          <tr><td>Runbook</td><td>看到信号后如何行动</td><td><code>provider-metrics-runbook.html</code></td></tr>
+          <tr><td>Alert</td><td>何时自动通知人</td><td>本课程明确不提供生产 paging alert</td></tr>
+        </tbody>
+      </table>
+      <p>本节必须强调边界：当前 counter 是进程内教学实现，runbook 是学习排障顺序，文本导出是 educational export shape。它们能训练监控思维，但不能直接替代生产的多实例聚合、持久化时序库、阈值告警、值班升级和 SLO 管理。</p>
     </section>
 
     <section>
-      <h2>4. 机制：从 endpoint 到判断分支</h2>
-      <p>排查 provider prediction metrics 时，第一步应该看 JSON snapshot，因为它最容易被人读：</p>
-      <pre><code>GET /provider/metrics</code></pre>
-      <p>它返回的每个 sample 都有 <code>labels</code> 和 <code>count</code>。这时先不要急着看 count 大不大，而是先看 <code>outcome</code>：</p>
-      <ul>
-        <li><code>success</code>：请求成功完成。</li>
-        <li><code>retry_scheduled</code>：某次尝试失败，但系统准备继续重试。</li>
-        <li><code>retry_exhausted</code>：可重试失败用完最大尝试次数。</li>
-        <li><code>fail_fast</code>：遇到不该重试的错误，或者 provider 返回结构无效。</li>
-      </ul>
-      <p>只有当 outcome 指向失败路径时，才继续看 <code>failure_category</code>、<code>error_code</code> 和 <code>status_code</code>。这能避免把所有失败都混成“provider 挂了”。</p>
-    </section>
-
-    <section>
-      <h2>5. 代码精读一：runbook 文档契约测试</h2>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <p>runbook 的持久性由文档合同测试保护。测试不验证每一句排障建议，而是验证最小排障能力是否仍然存在。</p>
       <pre><code>def test_provider_metrics_runbook_lists_investigation_contract() -> None:
     runbook = Path("reference/provider-metrics-runbook.html")
 
@@ -95,11 +86,22 @@
     assert "retry_exhausted" in parser.text
     assert "fail_fast" in parser.text
     assert "teaching signal, not a paging alert" in parser.text</code></pre>
-      <p>这条测试保护的是 runbook 的最小排障能力。如果页面漏掉四类 outcome 中任何一个，读者就可能在真实排查时少走一个分支。</p>
-    </section>
+      <table>
+        <thead><tr><th>代码行</th><th>作用</th><th>为什么必须存在</th></tr></thead>
+        <tbody>
+          <tr><td><code>runbook = Path(...)</code></td><td>锁定 durable runbook 页面</td><td>runbook 是独立参考页，不应只散落在课程正文中。</td></tr>
+          <tr><td><code>parser = parse_html(runbook)</code></td><td>抽取正文和链接</td><td>测试语义内容，不依赖 HTML 排版细节。</td></tr>
+          <tr><td><code>/provider/metrics</code></td><td>保护 JSON snapshot 入口</td><td>排障第一站应是可读性最强的结构化快照。</td></tr>
+          <tr><td><code>/provider/metrics/prometheus</code></td><td>保护文本导出入口</td><td>用于检查 HELP、TYPE、label 渲染形状。</td></tr>
+          <tr><td><code>provider_prediction_total</code></td><td>保护指标名</td><td>没有指标名，读者无法连接 dashboard/query/runbook。</td></tr>
+          <tr><td><code>success</code></td><td>保护成功分支</td><td>没有成功样本就无法判断失败是否孤立或持续。</td></tr>
+          <tr><td><code>retry_scheduled</code></td><td>保护重试安排分支</td><td>这是“发生过可重试失败”而不是“最终失败”。</td></tr>
+          <tr><td><code>retry_exhausted</code></td><td>保护重试耗尽分支</td><td>这是判断可重试失败是否最终失败的关键分支。</td></tr>
+          <tr><td><code>fail_fast</code></td><td>保护快速失败分支</td><td>此类错误通常不应盲目增加重试次数。</td></tr>
+          <tr><td><code>teaching signal...</code></td><td>保护教学边界</td><td>防止读者把学习用信号配置成生产 paging alert。</td></tr>
+        </tbody>
+      </table>
 
-    <section>
-      <h2>6. 代码精读二：runbook 必须能追溯到测试</h2>
       <pre><code>def test_provider_metrics_runbook_links_docs_lessons_and_tests() -> None:
     runbook = Path("reference/provider-metrics-runbook.html")
 
@@ -110,78 +112,150 @@
     assert "../tests/test_provider_http.py" in parser.links
     assert "../tests/test_ai_client_dependency.py" in parser.links
     assert "../tests/test_course_docs_contract.py" in parser.links</code></pre>
-      <p>runbook 给的是操作建议，所以必须能追溯到测试。否则它很容易退化成“看起来有道理，但没人知道是否还和项目一致”的说明。</p>
+      <table>
+        <thead><tr><th>链接断言</th><th>语义</th><th>缺失风险</th></tr></thead>
+        <tbody>
+          <tr><td><code>provider-metrics-index.html</code></td><td>回到专题总入口</td><td>排障页孤立，读者找不到指标契约和生产边界。</td></tr>
+          <tr><td><code>0062...</code></td><td>回到本节课程解释</td><td>runbook 只剩操作表，缺少学习解释。</td></tr>
+          <tr><td><code>test_provider_http.py</code></td><td>指标底层 shape 与渲染测试</td><td>无法追溯 metric name、label、导出文本行为。</td></tr>
+          <tr><td><code>test_ai_client_dependency.py</code></td><td>HTTP endpoint 集成路径测试</td><td>无法验证 runbook 中的端点入口是否被真实路由保护。</td></tr>
+          <tr><td><code>test_course_docs_contract.py</code></td><td>runbook 自身合同测试</td><td>读者不知道文档页为什么不会轻易漂移。</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>7. 排查示例：看到 retry_scheduled 变多</h2>
-      <ol>
-        <li>先打开 <code>/provider/metrics</code>，找到 <code>outcome="retry_scheduled"</code> 的 sample。</li>
-        <li>看 <code>failure_category</code>。如果是 <code>retryable_http_status</code>，继续看 <code>status_code</code> 是否为 429、500、502、503 或 504。</li>
-        <li>看是否也出现 <code>retry_exhausted</code>。如果没有，说明重试可能已经恢复成功。</li>
-        <li>对照 retry scheduled log 测试，确认 delay、attempt、retry reason 是否符合预期。</li>
-        <li>如果需要检查导出格式，再打开 <code>/provider/metrics/prometheus</code> 看文本 label 是否正确。</li>
-      </ol>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>出现 provider prediction 现象
+  → 打开 /provider/metrics
+    → 是否有 provider_prediction_total 样本
+      ├─ 无样本：确认是否触发过 provider prediction 路径，检查测试隔离/进程重启
+      └─ 有样本：按 outcome 分组
+          ├─ success
+          │  └─ 确认成功请求量是否符合预期
+          ├─ retry_scheduled
+          │  ├─ 继续查 failure_category/status_code
+          │  ├─ 查 retry delay log
+          │  └─ 不直接判定最终失败
+          ├─ retry_exhausted
+          │  ├─ 查 max_attempts
+          │  ├─ 查最后一次错误类别
+          │  └─ 判断 provider 临时不可用是否持续
+          └─ fail_fast
+             ├─ 区分 non_retryable_http_status 与 invalid_response
+             ├─ 不盲目增加重试次数
+             └─ 回看响应结构或 4xx 语义
+  → 如需检查导出格式
+    → 打开 /provider/metrics/prometheus
+  → 如需验证文档来源
+    → 回到 provider metrics index 和相关测试</code></pre>
+      <p>调用链路上，provider prediction adapter 在不同结果路径上记录 metrics；metrics endpoint 只是读取快照，不负责解释；runbook 把读取到的 label 组合翻译成排障动作。这个分层很重要：业务代码不应该内置人工排障说明，文档也不应该伪装成运行时权威。</p>
+      <table>
+        <thead><tr><th>数据层级</th><th>样例</th><th>解释方式</th></tr></thead>
+        <tbody>
+          <tr><td>事件</td><td>provider HTTP 503</td><td>请求过程中发生可重试服务端错误</td></tr>
+          <tr><td>指标</td><td><code>outcome="retry_scheduled"</code></td><td>系统安排了下一次尝试</td></tr>
+          <tr><td>日志</td><td><code>provider_prediction_retry_scheduled</code></td><td>包含 delay、attempt、reason 等诊断字段</td></tr>
+          <tr><td>runbook 动作</td><td>继续查 <code>retry_exhausted</code></td><td>判断是否最终失败，而不是看到 retry 就下结论</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>8. 动手实验</h2>
-      <p>运行文档契约测试：</p>
-      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q</code></pre>
-      <p>预期看到 4 个测试通过。然后可以临时从 runbook 页面删除 <code>retry_exhausted</code>，再次运行测试。测试失败说明 runbook 漏掉了一个关键排障分支。</p>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误判断</th><th>正确判断</th></tr></thead>
+        <tbody>
+          <tr><td><code>retry_scheduled</code></td><td>用户请求最终失败</td><td>只表示某次尝试失败并安排重试；必须继续看 <code>success</code> 或 <code>retry_exhausted</code>。</td></tr>
+          <tr><td><code>retry_exhausted</code></td><td>所有 provider 请求都坏了</td><td>表示某类可重试失败耗尽最大尝试次数，需要结合 failure_category 和样本数量判断范围。</td></tr>
+          <tr><td><code>fail_fast</code></td><td>应该增加重试次数</td><td>通常代表不该重试的 4xx 或无效响应结构，应先修请求/响应契约。</td></tr>
+          <tr><td>count 增加</td><td>一定需要告警</td><td>当前是 teaching signal，不能直接当生产 paging alert。</td></tr>
+          <tr><td>Prometheus text endpoint</td><td>等同生产 Prometheus pipeline</td><td>只是教学用 text-style rendering，不含 scrape、聚合、存储、alert rule。</td></tr>
+          <tr><td>error_code</td><td>等同根因</td><td>它是稳定分类字段；根因还要结合 status_code、日志、provider 响应和上下游状态。</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>9. 常见错误</h2>
-      <ul>
-        <li>把 <code>retry_scheduled</code> 当成最终失败，忽略后续成功。</li>
-        <li>只看 count，不看 label，导致无法区分 timeout、HTTP 503 和 invalid response。</li>
-        <li>看到 <code>fail_fast</code> 就增加重试次数，但 fail-fast 往往说明错误不该重试。</li>
-        <li>把教学用 in-process counter 当成生产全局指标。</li>
-        <li>runbook 不链接测试，导致排查建议长期漂移。</li>
-      </ul>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>表现</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>只看 count，不看 labels</td><td>无法区分 success、retry、fail-fast</td><td>先按 <code>outcome</code> 分组，再看失败标签。</td></tr>
+          <tr><td>把 <code>retry_scheduled</code> 当最终失败</td><td>误报故障</td><td>继续检查是否有 <code>retry_exhausted</code> 和后续 <code>success</code>。</td></tr>
+          <tr><td>对 <code>fail_fast</code> 盲目加重试</td><td>放大错误请求或无效响应</td><td>先区分 <code>non_retryable_http_status</code> 与 <code>invalid_response</code>。</td></tr>
+          <tr><td>把教学 counter 当全局事实</td><td>多进程/多实例下读数不完整</td><td>课程中明确记录生产边界；生产使用真实 metrics 后端。</td></tr>
+          <tr><td>runbook 不链接测试</td><td>排障建议长期漂移</td><td>链接 endpoint 测试、provider HTTP 测试和文档合同测试。</td></tr>
+          <tr><td>忘记测试隔离</td><td>不同测试之间指标样本互相污染</td><td>使用 reset fixture 清理 in-process counter。</td></tr>
+          <tr><td>只查 JSON，不查 text export</td><td>无法发现 Prometheus label escaping 问题</td><td>排查导出格式时补查 <code>/provider/metrics/prometheus</code>。</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>10. 面试视角：如何解释 runbook</h2>
-      <blockquote>
-        <p>我会把 runbook 解释成一张可重复执行的排查分支表。指标本身只告诉我们发生过什么，runbook 告诉我们下一步该查哪个字段、哪个日志、哪个测试。比如 provider metrics 里我会先看 JSON snapshot，再按 outcome 区分 success、retry_scheduled、retry_exhausted 和 fail_fast，最后结合 failure_category、status_code 和相关测试判断是临时失败、重试耗尽、非重试错误还是响应结构错误。</p>
-      </blockquote>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学 runbook</th><th>生产 runbook</th></tr></thead>
+        <tbody>
+          <tr><td>触发方式</td><td>学习者手动打开端点观察</td><td>由 alert rule、SLO burn rate、异常检测触发</td></tr>
+          <tr><td>信号来源</td><td>单进程内存 counter</td><td>多实例聚合时序数据、日志、trace、事件流</td></tr>
+          <tr><td>告警边界</td><td>teaching signal, not a paging alert</td><td>明确 severity、值班人、升级路径、抑制规则</td></tr>
+          <tr><td>排障动作</td><td>检查 endpoint、labels、测试</td><td>还要查 dashboard、trace、依赖状态页、变更记录、容量指标</td></tr>
+          <tr><td>修复流程</td><td>修改代码/测试/文档</td><td>回滚、降级、熔断、扩容、供应商工单、事故沟通</td></tr>
+          <tr><td>文档治理</td><td>合同测试保护关键文本和链接</td><td>owner、review 周期、演练记录、事故复盘驱动更新</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>11. 记忆练习</h2>
-      <details>
-        <summary>1. runbook 和 documentation index 的区别是什么？</summary>
-        <p class="answer">documentation index 告诉读者资料在哪里；runbook 告诉读者按什么顺序排查、遇到不同信号下一步做什么。</p>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open>
+        <summary>1. runbook 与 documentation index 的区别是什么？</summary>
+        <p class="answer">documentation index 负责回答“资源在哪里”；runbook 负责回答“看到某个现象后下一步怎么查”。前者是导航入口，后者是操作分支表。</p>
       </details>
       <details>
-        <summary>2. 为什么看到 retry_scheduled 不能直接判断最终失败？</summary>
-        <p class="answer">因为 retry_scheduled 只表示某次尝试安排了重试，后续请求可能成功；需要继续看 retry_exhausted 和 success。</p>
+        <summary>2. 为什么 <code>retry_scheduled</code> 不能直接等价为最终失败？</summary>
+        <p class="answer">它只表示某次尝试失败后系统安排了重试；后续重试可能成功。必须继续观察 <code>retry_exhausted</code> 和 <code>success</code>。</p>
       </details>
       <details>
-        <summary>3. fail_fast 出现时为什么不应该先增加重试次数？</summary>
-        <p class="answer">fail_fast 通常代表非重试型 HTTP 错误或无效响应体，盲目重试可能放大错误而不是修复问题。</p>
+        <summary>3. <code>fail_fast</code> 出现时为什么不应第一反应增加重试次数？</summary>
+        <p class="answer"><code>fail_fast</code> 通常表示非重试型 HTTP 错误或无效响应结构。盲目重试会放大错误请求、浪费资源，并掩盖真正的契约问题。</p>
       </details>
       <details>
-        <summary>4. runbook 文档测试保护的重点是什么？</summary>
-        <p class="answer">保护关键入口、指标名、四类 outcome、边界提醒和测试链接，避免排查清单失去可执行性。</p>
+        <summary>4. 排查失败样本时应优先看哪些 labels？</summary>
+        <p class="answer">先看 <code>outcome</code>，再看 <code>failure_category</code>、<code>error_code</code>、<code>status_code</code>。不要只看 count。</p>
+      </details>
+      <details>
+        <summary>5. 为什么当前 runbook 明确写 teaching signal, not a paging alert？</summary>
+        <p class="answer">因为当前指标来自进程内教学 counter，没有生产级聚合、持久化、阈值治理和值班升级机制，不能直接作为生产分页告警信号。</p>
       </details>
     </section>
 
     <section>
-      <h2>12. 本节总结</h2>
-      <p>本课把 provider metrics 从“可以被读取的指标”推进到“可以按步骤排查的信号”。你现在应该能解释：为什么要先看 outcome，再看 failure_category、error_code 和 status_code；为什么 retry_scheduled 不等于最终失败；为什么 fail_fast 不应该默认重试；以及为什么 runbook 也值得被测试保护。</p>
-      <p>下一节建议继续做 Provider Metrics Scenario Fixtures：用少量固定场景生成可预测的 metrics 样本，让 runbook 能配合更具体的实验数据。</p>
-      <p>推荐主资源：<a href="https://prometheus.io/docs/practices/instrumentation/">Prometheus instrumentation practices</a>、<a href="https://prometheus.io/docs/practices/alerting/">Prometheus alerting practices</a>、<a href="https://sre.google/sre-book/monitoring-distributed-systems/">Google SRE Book - Monitoring Distributed Systems</a>。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open>
+        <summary>面试题 1：如何设计一个 metrics runbook？</summary>
+        <p class="answer">先定义观测入口，再列出关键指标和 label；然后把不同 label 组合映射为排障分支；每个分支写清下一步查什么、不能推出什么结论、对应日志/测试/文档在哪里；最后标明生产边界、告警等级、owner 和升级路径。</p>
+      </details>
+      <details>
+        <summary>面试题 2：看到重试相关指标上升，你如何判断是否影响用户？</summary>
+        <p class="answer">不能只看 <code>retry_scheduled</code>。应检查是否有 <code>retry_exhausted</code>，成功样本是否仍在增长，失败分类是否集中在特定状态码或 provider，日志中的 attempt、delay、reason 是否符合预期，并结合接口错误率或用户请求结果判断影响。</p>
+      </details>
+      <details>
+        <summary>面试题 3：为什么教学项目的 metrics 不能直接用于生产告警？</summary>
+        <p class="answer">教学项目通常使用单进程内存状态，进程重启会丢失，多实例无法聚合，也没有 scrape、存储、保留周期、SLO、告警抑制和值班升级。生产告警必须建立在可靠的指标采集和治理体系之上。</p>
+      </details>
+      <details>
+        <summary>面试题 4：runbook 为什么也要被测试保护？</summary>
+        <p class="answer">runbook 承载排障入口和判断分支，一旦漏掉 endpoint、metric name、关键 outcome 或测试链接，排障流程就会失真。轻量合同测试可以防止核心信号和证据链被无意删除。</p>
+      </details>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">
       <span class="nav-title">继续学习</span>
       <span class="nav-links">
-        <a href="../index.html">回到课程目录</a>
+        <a href="../index.html">课程目录</a>
         <a href="./0061-provider-metrics-documentation-index.html">上一课：Provider Metrics Documentation Index</a>
-        <a href="../reference/0062-provider-metrics-runbook-checklist-cheatsheet.html">查看本课速查</a>
         <a href="../reference/provider-metrics-runbook.html">打开 Runbook</a>
       </span>
     </nav>

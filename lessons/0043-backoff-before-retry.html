@@ -13,271 +13,150 @@
       <span class="nav-links">
         <a href="../index.html">课程目录</a>
         <a href="./0042-provider-retry-policy.html">上一课</a>
-        <a href="../reference/0043-backoff-before-retry-cheatsheet.html">本课速查</a>
         <a href="./0044-honor-retry-after.html">下一课</a>
+        <a href="../reference/0043-backoff-before-retry-cheatsheet.html">本课速查</a>
       </span>
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0043</p>
-      <h1>Backoff Before Retry：重试之前先等一等</h1>
-      <p class="lead">第 42 课解决了“哪些错误可以重试”。本节解决另一个真实系统问题：如果所有客户端在失败后马上重试，短暂故障会被放大成请求风暴。我们会给 provider retry 加入指数退避，让每次下一次尝试之前等待一小段时间。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0043 Backoff Before Retry：重试之前必须先退避</h1>
+      <p class="lead">第 42 课解决“哪些错误可以重试”。本节解决“什么时候重试”：外部 provider 暂时不可用时，立即重试会放大故障；指数退避用可配置等待时间把重试压力摊开，并通过 fake sleep 让等待策略可测试。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解 immediate retry 为什么可能伤害 provider 和自己的系统。</li>
-        <li>掌握 backoff、exponential backoff、cap 三个概念。</li>
-        <li>理解 <code>await asyncio.sleep(...)</code> 为什么适合 async provider adapter。</li>
-        <li>学会把等待时间做成配置，而不是写死在业务代码里。</li>
-        <li>用假的 sleep 函数测试 retry 等待逻辑，避免测试真的变慢。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Backoff Before Retry
+├─ 问题：immediate retry 会制造请求峰值
+├─ 策略：exponential backoff = base * 2 ** (attempt - 1)
+├─ 边界：retry_max_delay_seconds 截断最大等待
+├─ 异步等待：await asyncio.sleep(delay)
+├─ 可测试性：sleep 函数注入，测试不真实等待
+└─ 落点：wait_before_retry() 只在还有下一次 attempt 时执行</code></pre>
+      <p>核心结论：重试预算控制“最多试几次”，backoff 控制“每次失败后隔多久再试”。没有 backoff 的 retry 会在 provider 已经拥塞时继续加压。</p>
     </section>
 
     <section>
-      <h2>1. 背景：立即重试会把小故障放大</h2>
-      <p>上一节我们允许 provider prediction 在 timeout、网络错误、429、部分 5xx 时重试。这个方向是对的，但还缺一个关键保护：两次尝试之间要不要等待？</p>
-      <p>想象一个 AI provider 短暂返回 503。你的服务同时有 100 个请求失败，如果每个请求都立刻重试 3 次，provider 瞬间会从 100 个请求变成 300 个额外请求。provider 本来只是短暂拥塞，现在反而被客户端一起压得更慢。</p>
-      <p>Google Cloud 的 retry 指南也提醒：如果失败请求不等待就重试，可能在短时间内发送大量 retry，触发配额和限制。真实系统里这类现象常被称为 thundering herd，也就是许多客户端同步重试造成的请求浪潮。</p>
-    </section>
-
-    <section class="callout">
-      <h2>2. 核心概念：backoff 是“失败后放慢脚步”</h2>
-      <p><strong>Backoff</strong> 是指 retry 之间的等待策略。它不是取消重试，而是让下一次尝试稍微晚一点发生，给 provider 恢复和限流窗口留出空间。</p>
-      <div class="two-col">
-        <div>
-          <h3>Immediate retry</h3>
-          <pre><code>fail -&gt; retry now
-fail -&gt; retry now
-fail -&gt; retry now</code></pre>
-          <p>实现简单，但多个客户端会同步冲击 provider。</p>
-        </div>
-        <div>
-          <h3>Exponential backoff</h3>
-          <pre><code>fail -&gt; wait 0.1s
-fail -&gt; wait 0.2s
-fail -&gt; wait 0.4s</code></pre>
-          <p>失败越多，等待越长，直到达到最大等待上限。</p>
-        </div>
-      </div>
-      <p>本项目这节先实现“有上限的指数退避”：第 1 次失败等 base，第 2 次失败等 base * 2，第 3 次失败等 base * 4，但不能超过 max delay。jitter 暂时不加，因为随机性会让初学者和测试更难理解；后续再专门讲。</p>
-    </section>
-
-    <section>
-      <h2>3. 数学模型：指数增长加上上限</h2>
-      <p>本节新增的计算规则是：</p>
-      <pre><code>delay = min(base_delay * 2 ** (attempt - 1), max_delay)</code></pre>
-      <p>如果 <code>base_delay=1.0</code>，<code>max_delay=3.0</code>，那么第 1 到第 4 次失败后的等待是：</p>
+      <h2>② 核心概念底层原理</h2>
+      <p><strong>Immediate retry</strong> 会让大量客户端在同一瞬间再次冲向 provider；<strong>exponential backoff</strong> 让连续失败后的等待时间逐步变长，给 provider、网络和限流窗口恢复空间。</p>
       <table>
-        <thead>
-          <tr>
-            <th>失败 attempt</th>
-            <th>未截断计算</th>
-            <th>最终等待</th>
-          </tr>
-        </thead>
+        <thead><tr><th>策略</th><th>公式</th><th>效果</th></tr></thead>
         <tbody>
-          <tr>
-            <td>1</td>
-            <td>1.0 * 2^0 = 1.0</td>
-            <td>1.0 秒</td>
-          </tr>
-          <tr>
-            <td>2</td>
-            <td>1.0 * 2^1 = 2.0</td>
-            <td>2.0 秒</td>
-          </tr>
-          <tr>
-            <td>3</td>
-            <td>1.0 * 2^2 = 4.0</td>
-            <td>3.0 秒</td>
-          </tr>
-          <tr>
-            <td>4</td>
-            <td>1.0 * 2^3 = 8.0</td>
-            <td>3.0 秒</td>
-          </tr>
+          <tr><td>立即重试</td><td>delay = 0</td><td>最容易形成请求风暴</td></tr>
+          <tr><td>固定间隔</td><td>delay = base</td><td>简单，但多客户端仍可能同步</td></tr>
+          <tr><td>指数退避</td><td>delay = base * 2 ** (attempt - 1)</td><td>失败越多，请求越慢</td></tr>
+          <tr><td>截断退避</td><td>min(delay, max_delay)</td><td>避免等待时间无限膨胀</td></tr>
         </tbody>
       </table>
-      <p>上限很重要。如果没有 <code>max_delay</code>，等待时间会快速变得不可接受。对 API 请求来说，用户不可能一直等你指数级睡下去。</p>
+      <p>在 async provider adapter 中，等待必须使用 <code>await asyncio.sleep()</code>。它挂起当前协程，不阻塞事件循环；<code>time.sleep()</code> 会阻塞线程，影响同进程其他请求。</p>
     </section>
 
     <section>
-      <h2>4. 运行机制：retry 现在多了一个等待步骤</h2>
-      <pre><code>request_provider_prediction()
-  -&gt; attempt 1
-       -&gt; provider fails with retryable error
-       -&gt; calculate delay for attempt 1
-       -&gt; await asyncio.sleep(delay)
-  -&gt; attempt 2
-       -&gt; provider fails with retryable error
-       -&gt; calculate delay for attempt 2
-       -&gt; await asyncio.sleep(delay)
-  -&gt; attempt 3
-       -&gt; provider succeeds or final error is raised</code></pre>
-      <p>注意：最后一次失败不会再 sleep，因为已经没有下一次尝试了。等待只发生在“还有下一次 retry”的情况下。</p>
-    </section>
-
-    <section>
-      <h2>5. 代码精读一：配置项进入 Settings</h2>
+      <h2>③ 全套代码逐行精读解析</h2>
       <pre><code>class Settings(BaseSettings):
-    ai_max_attempts: int = Field(default=1, ge=1, le=5)
     ai_retry_base_delay_seconds: float = Field(default=0.1, ge=0)
     ai_retry_max_delay_seconds: float = Field(default=2.0, ge=0)</code></pre>
-      <p><code>max_attempts</code> 控制最多尝试几次，<code>base_delay</code> 控制第一次失败后的等待，<code>max_delay</code> 控制等待上限。它们都属于 provider 调用策略，所以放进 settings，再传入 <code>AIClientConfig</code>。</p>
-      <p>这也意味着读者可以在 <code>.env</code> 中调整策略，而不需要修改 Python 代码：</p>
-      <pre><code>FIRST_API_AI_MAX_ATTEMPTS="3"
-FIRST_API_AI_RETRY_BASE_DELAY_SECONDS="0.1"
-FIRST_API_AI_RETRY_MAX_DELAY_SECONDS="2.0"</code></pre>
-    </section>
-
-    <section>
-      <h2>6. 代码精读二：延迟计算函数</h2>
-      <pre><code>def calculate_retry_delay(attempt: int, config: AIClientConfig) -&gt; float:
+      <p>退避时间是部署策略，不应写死在业务代码中。<code>ge=0</code> 禁止负等待；默认值较小，保证教学项目不会因为 retry 变得难以运行。</p>
+      <pre><code>@dataclass(frozen=True)
+class AIClientConfig:
+    retry_base_delay_seconds: float = 0.1
+    retry_max_delay_seconds: float = 2.0</code></pre>
+      <p>settings 是环境入口，<code>AIClientConfig</code> 是 provider adapter 接收的运行时配置。把配置集中传入 adapter，避免 adapter 自己读取全局环境。</p>
+      <pre><code>def build_retry_delay_plan(... ) -&gt; RetryDelayPlan:
     base_delay = max(config.retry_base_delay_seconds, 0.0)
     max_delay = max(config.retry_max_delay_seconds, 0.0)
     exponential_delay = base_delay * (2 ** (attempt - 1))
-    return min(exponential_delay, max_delay)</code></pre>
-      <p>把计算单独抽成函数，是为了让策略可以被直接测试。否则你只能通过“跑一个 provider 请求”间接推断等待时间，测试会更脆弱。</p>
-      <p>这里用 <code>max(..., 0.0)</code> 做了一层保护。Settings 已经用 <code>Field(ge=0)</code> 限制环境变量，但 <code>AIClientConfig</code> 是普通 dataclass，测试或内部代码仍然可能直接构造它。这个保护让计算函数面对负数时不会生成负等待。</p>
-    </section>
-
-    <section>
-      <h2>7. 代码精读三：等待函数和 sleep 注入</h2>
-      <pre><code>RetrySleep = Callable[[float], Awaitable[None]]
-
-async def wait_before_retry(
+    jitter_delay = calculate_retry_jitter(config, random_fraction=random_fraction)
+    return RetryDelayPlan(
+        delay_seconds=min(exponential_delay + jitter_delay, max_delay),
+        source="local_backoff",
+    )</code></pre>
+      <p><code>max(..., 0.0)</code> 是第二道防线，防止测试或内部代码直接构造负数配置。<code>2 ** (attempt - 1)</code> 让第 1 次失败等待 base，第 2 次等待 2 倍 base。<code>min</code> 是上限保护。</p>
+      <pre><code>async def wait_before_retry(
     attempt: int,
     config: AIClientConfig,
     sleep: RetrySleep,
+    ...
 ) -&gt; None:
-    delay_seconds = calculate_retry_delay(attempt, config)
-    if delay_seconds &gt; 0:
-        await sleep(delay_seconds)</code></pre>
-      <p>这里没有直接在测试里真的等 1 秒、2 秒，而是把 <code>sleep</code> 当成可注入函数。生产代码默认传 <code>asyncio.sleep</code>，测试代码传一个假的 async 函数记录参数。</p>
-      <p>Python 官方文档说明 <code>asyncio.sleep()</code> 会挂起当前 task，让其他 task 继续运行。也就是说，在 async route 或 async adapter 中，应该使用 <code>await asyncio.sleep(...)</code>，不要用会阻塞线程的 <code>time.sleep(...)</code>。</p>
+    delay_plan = build_retry_delay_plan(...)
+    if delay_plan.delay_seconds &gt; 0:
+        await sleep(delay_plan.delay_seconds)</code></pre>
+      <p><code>sleep</code> 被注入而不是写死，生产默认用 <code>asyncio.sleep</code>，测试传 fake async 函数记录参数。没有注入，测试只能真的等，既慢又不稳定。</p>
+      <pre><code>if attempt &lt; config.max_attempts:
+    await wait_before_retry(...)
+    continue</code></pre>
+      <p>只有还存在下一次 attempt 时才等待。最后一次失败后再 sleep 没有意义，只会拖慢错误返回。</p>
     </section>
 
     <section>
-      <h2>8. 代码精读四：失败分支里的等待位置</h2>
-      <pre><code>except httpx.HTTPStatusError as exc:
-    status_code = exc.response.status_code
-    if (
-        attempt &lt; config.max_attempts
-        and is_retryable_provider_status(status_code)
-    ):
-        await wait_before_retry(attempt, config, sleep)
-        continue
-    raise AIClientError(...) from exc</code></pre>
-      <p>等待发生在 <code>continue</code> 之前。也就是说：确认这次错误可重试、确认还有下一次尝试、先等待、再进入下一轮循环。</p>
-      <p>timeout 和 request error 分支也是同样逻辑。不可重试错误不会 sleep；最后一次失败也不会 sleep。这样既减少无意义等待，也让失败响应更快返回给调用方。</p>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>attempt 1 失败
+  → 判断错误可重试
+  → attempt &lt; max_attempts
+  → delay = min(base * 2 ** 0, max_delay)
+  → await sleep(delay)
+  → continue 到 attempt 2
+
+attempt 2 失败
+  → delay = min(base * 2 ** 1, max_delay)
+  → await sleep(delay)
+  → continue 到 attempt 3
+
+最后一次失败
+  → 不 sleep
+  → retry_exhausted / AIClientError</code></pre>
+      <p>数据流从 <code>Settings</code> 进入 <code>AIClientConfig</code>，再进入 <code>request_provider_prediction()</code>，最后由 <code>wait_before_retry()</code> 消费。调用链保持在 adapter 层，不污染 router 和 service。</p>
     </section>
 
     <section>
-      <h2>9. 测试精读一：直接测试数学规则</h2>
-      <pre><code>def test_calculate_retry_delay_uses_exponential_backoff_with_cap():
-    config = AIClientConfig(
-        retry_base_delay_seconds=1.0,
-        retry_max_delay_seconds=3.0,
-    )
-
-    delays = [calculate_retry_delay(attempt, config) for attempt in range(1, 5)]
-
-    assert delays == [1.0, 2.0, 3.0, 3.0]</code></pre>
-      <p>这条测试不需要 HTTPX，也不需要 FastAPI。它直接保护 backoff 数学规则：指数增长，同时被最大等待截断。</p>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>正确理解</th><th>隐患</th></tr></thead>
+        <tbody>
+          <tr><td>retry vs backoff</td><td>retry 是再试，backoff 是再试前等待</td><td>只有 retry 会放大故障</td></tr>
+          <tr><td><code>attempt</code> 编号</td><td>第 1 次失败指数为 <code>2 ** 0</code></td><td>写错会让等待翻倍或少一档</td></tr>
+          <tr><td>最后一次失败是否 sleep</td><td>不 sleep</td><td>无意义拖慢错误响应</td></tr>
+          <tr><td><code>asyncio.sleep</code> vs <code>time.sleep</code></td><td>前者让出事件循环，后者阻塞线程</td><td>高并发下吞吐下降</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>10. 测试精读二：假的 sleep 让测试又快又准</h2>
-      <pre><code>sleep_calls = []
-
-async def fake_sleep(delay_seconds: float) -&gt; None:
-    sleep_calls.append(delay_seconds)</code></pre>
-      <p>然后让 provider 前两次返回 503，第三次成功：</p>
-      <pre><code>result = run_async_prediction(
-    client,
-    max_attempts=3,
-    retry_base_delay_seconds=1.0,
-    retry_max_delay_seconds=3.0,
-    sleep=fake_sleep,
-)
-
-assert sleep_calls == [1.0, 2.0]</code></pre>
-      <p>这条测试验证了两个事实：第一，adapter 确实在 retryable failure 后等待；第二，等待只发生在前两次失败后，因为第三次已经成功，没有下一次 retry。</p>
-    </section>
-
-    <section class="practice">
-      <h2>11. 课堂实验</h2>
-      <p>先运行 provider adapter 测试：</p>
-      <pre><code>.\.venv\Scripts\python.exe -m pytest tests/test_provider_http.py -q</code></pre>
-      <p>预期看到：</p>
-      <pre><code>22 passed</code></pre>
-      <p>再运行全量测试：</p>
-      <pre><code>.\.venv\Scripts\python.exe -m pytest -q</code></pre>
-      <p>观察重点：</p>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
       <ul>
-        <li>测试没有因为 backoff 变慢，因为测试注入了假的 sleep。</li>
-        <li>旧的 retry 行为仍然成立：400 和非法响应体不会重试。</li>
-        <li>新增配置没有改变默认 demo backend 的行为。</li>
+        <li><strong>测试耗时突然变长</strong>：真实执行了 <code>asyncio.sleep</code>。解决：注入 <code>fake_sleep</code>，只记录 delay。</li>
+        <li><strong>等待时间无限变大</strong>：只做指数增长，没有 cap。解决：用 <code>retry_max_delay_seconds</code> 截断。</li>
+        <li><strong>负数等待</strong>：内部构造了非法 config。解决：settings 层 <code>Field(ge=0)</code>，计算层再 <code>max(..., 0)</code>。</li>
+        <li><strong>不可重试错误也 sleep</strong>：等待逻辑放错位置。解决：先判断 retryable 与 attempt 预算，再调用 <code>wait_before_retry()</code>。</li>
       </ul>
     </section>
 
     <section>
-      <h2>12. 常见错误与诊断</h2>
-      <div class="two-col">
-        <div class="callout">
-          <h3>错误一：用 <code>time.sleep</code></h3>
-          <p>在 async adapter 中会阻塞当前线程，影响其他请求。应该使用 <code>await asyncio.sleep</code>。</p>
-        </div>
-        <div class="callout">
-          <h3>错误二：最后一次失败后还等待</h3>
-          <p>如果没有下一次 retry，等待没有意义。判断 <code>attempt &lt; max_attempts</code> 后再 sleep。</p>
-        </div>
-        <div class="callout">
-          <h3>错误三：没有最大等待上限</h3>
-          <p>指数增长会很快变大。必须有 <code>retry_max_delay_seconds</code> 作为截断。</p>
-        </div>
-        <div class="callout">
-          <h3>错误四：测试真的睡几秒</h3>
-          <p>测试会变慢又不稳定。把 sleep 函数注入进去，测试只记录 delay 参数。</p>
-        </div>
-      </div>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>退避参数</td><td>小默认值，便于测试和演示</td><td>结合 SLA、总超时、供应商限流配置</td></tr>
+          <tr><td>等待位置</td><td>请求内 await sleep</td><td>长等待可能改为队列任务或后台重试</td></tr>
+          <tr><td>策略完整度</td><td>先讲指数退避</td><td>通常再加 Retry-After、jitter、熔断</td></tr>
+          <tr><td>测试</td><td>fake sleep 验证 delay</td><td>还会验证负载、超时预算、监控指标</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>13. 面试视角：怎么解释 backoff</h2>
-      <blockquote>
-        <p>我不会让外部 provider 失败后立刻连续重试，因为这可能在 provider 过载时制造更多请求。我的做法是在 adapter 层对 retryable failure 使用有上限的指数退避：第 n 次失败后等待 <code>base * 2 ** (n - 1)</code>，并用最大等待时间截断。异步代码里用 <code>await asyncio.sleep</code>，测试里注入 fake sleep 来验证等待时间而不拖慢测试。</p>
-      </blockquote>
-    </section>
-
-    <section class="checkpoint">
-      <h2>14. 小测：先回忆，再展开</h2>
-      <details>
-        <summary>1. 为什么立即重试可能伤害系统？</summary>
-        <p class="answer">多个客户端会在同一时间重复请求，把短暂 provider 故障放大成请求风暴。</p>
-      </details>
-      <details>
-        <summary>2. <code>base=1</code>、<code>max=3</code> 时前四次失败后等待多少？</summary>
-        <p class="answer">分别是 1、2、3、3 秒；第三次开始被最大等待上限截断。</p>
-      </details>
-      <details>
-        <summary>3. 为什么 async 代码里不用 <code>time.sleep</code>？</summary>
-        <p class="answer"><code>time.sleep</code> 会阻塞线程；<code>await asyncio.sleep</code> 会挂起当前 task，让事件循环运行其他任务。</p>
-      </details>
-      <details>
-        <summary>4. 为什么测试里要注入 fake sleep？</summary>
-        <p class="answer">这样可以验证等待时间是否正确，同时避免测试真的等待几秒。</p>
-      </details>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details><summary>1. 为什么不能在失败后立即重试？</summary><p class="answer">大量请求会同步重试，放大 provider 故障，形成请求风暴。</p></details>
+      <details><summary>2. <code>base=1</code>、<code>max=3</code> 时前四次失败后的 delay 是多少？</summary><p class="answer">分别是 1、2、3、3 秒；第 3 次开始被最大等待上限截断。</p></details>
+      <details><summary>3. 为什么 async 代码中不用 <code>time.sleep</code>？</summary><p class="answer"><code>time.sleep</code> 阻塞线程；<code>await asyncio.sleep</code> 挂起当前协程，让事件循环处理其他任务。</p></details>
+      <details><summary>4. 为什么测试要注入 fake sleep？</summary><p class="answer">这样可以断言等待参数，同时避免测试真实等待。</p></details>
     </section>
 
     <section>
-      <h2>15. 本节总结</h2>
-      <p>本节把 provider retry 从“可以再试一次”升级成“有节制地再试”。现在 adapter 会在 retryable failure 后根据 <code>retry_base_delay_seconds</code> 和 <code>retry_max_delay_seconds</code> 计算指数退避，并通过 <code>await asyncio.sleep</code> 等待后再进入下一次尝试。你也学到了一个重要测试技巧：把时间等待注入进去，用 fake sleep 记录行为。</p>
-      <p>下一课建议学习：<a href="./0044-honor-retry-after.html">Honor Retry-After</a>。我们会解析 provider 返回的 <code>Retry-After</code> 响应头，让服务端提示优先于本地 backoff 估算。</p>
-      <p>推荐主资源：<a href="https://docs.cloud.google.com/iam/docs/retry-strategy">Google Cloud Retry Strategy</a>、<a href="https://docs.python.org/3/library/asyncio-task.html#sleeping">Python asyncio Sleeping</a>、<a href="https://datatracker.ietf.org/doc/html/rfc9110#section-10.2.3">RFC 9110 Retry-After</a>。</p>
-      <p class="small">如果你想继续追问，可以问我：“为什么还需要 jitter？”这个问题会引出分布式系统里多个客户端同步重试的问题。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <p><strong>题 1：什么是指数退避？</strong> 答：连续失败后按指数增长等待时间，例如 base、2*base、4*base，并使用最大值截断，避免等待无限增长。</p>
+      <p><strong>题 2：为什么 retry 要有 backoff？</strong> 答：外部服务故障时立即重试会提高瞬时流量；backoff 能降低 provider 压力，提高整体恢复概率。</p>
+      <p><strong>题 3：如何测试 backoff 而不拖慢测试？</strong> 答：把 sleep 函数作为依赖注入，测试传入 async fake sleep 收集 delay 列表并断言。</p>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">
@@ -285,8 +164,8 @@ assert sleep_calls == [1.0, 2.0]</code></pre>
       <span class="nav-links">
         <a href="../index.html">回到课程目录</a>
         <a href="./0042-provider-retry-policy.html">上一课：Provider Retry Policy</a>
-        <a href="../reference/0043-backoff-before-retry-cheatsheet.html">查看本课速查</a>
         <a href="./0044-honor-retry-after.html">下一课：Honor Retry-After</a>
+        <a href="../reference/0043-backoff-before-retry-cheatsheet.html">查看本课速查</a>
       </span>
     </nav>
   </main>

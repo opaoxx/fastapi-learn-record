@@ -13,49 +13,50 @@
       <span class="nav-links">
         <a href="../index.html">课程目录</a>
         <a href="./0059-provider-metrics-naming-contract.html">上一课</a>
-        <a href="../reference/0060-provider-metrics-naming-refactor-boundary-cheatsheet.html">本课速查</a>
         <a href="./0061-provider-metrics-documentation-index.html">下一课</a>
+        <a href="../reference/0060-provider-metrics-naming-refactor-boundary-cheatsheet.html">速查</a>
       </span>
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0060</p>
-      <h1>Provider Metrics Naming Refactor Boundary：真要改指标名时怎么安全迁移</h1>
-      <p class="lead">上一课把 metric name 和 label names 当作监控 API 来保护。本课继续回答一个现实问题：如果未来真的需要改名，能不能直接改字符串？答案通常是不行。我们会新增一个 metrics contract snapshot helper，让重命名前必须审查的字段集中可见，并讲清兼容窗口、双写、Dashboard/告警迁移和文档更新。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0060 Provider Metrics Naming Refactor Boundary：指标改名是迁移，不是普通重构</h1>
+      <p class="lead">本节回答一个真实工程问题：如果未来必须修改 metric name 或 label names，能不能直接改字符串？通常不能。metrics 命名被外部查询、告警和文档依赖，因此改名属于兼容性迁移。课程通过 <code>get_provider_prediction_metric_contract()</code> 把 rename-sensitive 字段集中暴露并测试保护。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解 metrics rename 为什么是兼容性变更，而不是普通重构。</li>
-        <li>知道 metric name、HELP 文本和 label names 哪些字段最容易影响外部消费者。</li>
-        <li>学会用 contract snapshot helper 集中暴露“重命名前要审查的字段”。</li>
-        <li>理解安全改名的基本步骤：新增、并行、迁移、验证、下线。</li>
-        <li>完成本批 provider metrics naming 主题的 3/3 checkpoint。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Naming Refactor Boundary
+├─ 改名影响面
+│  ├─ Prometheus query
+│  ├─ dashboard panel
+│  ├─ alert rule
+│  ├─ runbook
+│  └─ course/docs/tests
+├─ rename-sensitive fields
+│  ├─ metric_name
+│  ├─ help
+│  └─ label_names
+├─ 代码落点
+│  ├─ PROVIDER_PREDICTION_METRIC_LABEL_NAMES
+│  └─ get_provider_prediction_metric_contract()
+├─ 安全迁移步骤
+│  ├─ 新增
+│  ├─ 并行导出
+│  ├─ 迁移消费者
+│  ├─ 验证旧名无依赖
+│  └─ 下线旧名
+└─ 本课约束：只建立审查边界，不伪造不需要的双写</code></pre>
     </section>
 
     <section>
-      <h2>1. 背景：重构和迁移不是一回事</h2>
-      <p>在内部代码里，我们经常做重构：改变量名、抽函数、移动文件，只要测试通过，对外行为就不变。但 metrics name 和 label names 已经被导出到系统外部，它们可能被 Dashboard、告警规则、录屏、文档和排障手册引用。</p>
-      <p>所以如果把 <code>provider_prediction_total</code> 改成 <code>ai_provider_prediction_total</code>，这不是简单重构，而是迁移。迁移要考虑外部消费者还在读旧名字时怎么办。</p>
-    </section>
-
-    <section class="callout">
-      <h2>2. 核心心智模型：先做契约盘点，再做命名变更</h2>
-      <p>安全改名的第一步不是动代码，而是列出所有会被外部依赖的字段。本课新增的 helper 就是做这件事：</p>
-      <pre><code>def get_provider_prediction_metric_contract() -> dict[str, object]:
-    return {
-        "metric_name": PROVIDER_PREDICTION_METRIC_NAME,
-        "help": PROVIDER_PREDICTION_METRIC_HELP,
-        "label_names": list(PROVIDER_PREDICTION_METRIC_LABEL_NAMES),
-    }</code></pre>
-      <p>这不是生产监控 registry，只是教学项目里的契约视图。它把重命名前需要审查的关键字段集中到一个地方，让测试和课程材料都能引用同一份边界。</p>
+      <h2>② 核心概念底层原理</h2>
+      <p>内部变量重命名只要不改变行为，通常是重构。metrics 名称重命名不同：metric name 与 label names 进入时间序列身份，会被外部系统长期引用。改名会产生新时间序列，旧查询不会自动迁移。</p>
+      <p>因此 metrics rename 的正确心智是“兼容迁移”：先盘点契约字段，再设计并行期，再迁移 dashboard、alert、文档、runbook，最后下线旧名。没有迁移窗口的直接改名会让监控突然失明。</p>
     </section>
 
     <section>
-      <h2>3. 代码精读一：label names 常量化</h2>
-      <p>以前 label names 只隐含在 <code>ProviderMetricLabels.as_dict()</code> 的返回字典里。本课新增一个显式 tuple：</p>
+      <h2>③ 全套代码逐行精读解析</h2>
       <pre><code>PROVIDER_PREDICTION_METRIC_LABEL_NAMES = (
     "operation",
     "outcome",
@@ -63,24 +64,24 @@
     "error_code",
     "status_code",
 )</code></pre>
-      <p>这样做的意义不是减少几行重复，而是让“哪些 label name 属于契约”更容易被审查。如果未来要改 <code>failure_category</code>，开发者会更容易意识到这不是局部变量名。</p>
-    </section>
+      <p>将 label names 提取为常量，不只是减少重复，而是把“哪些 label 属于公共契约”显式化。未来改 <code>failure_category</code> 或新增 label 时，review 能看到这是 contract 变化。</p>
 
-    <section>
-      <h2>4. 代码精读二：contract snapshot helper</h2>
-      <p>新增 helper 返回普通字典：</p>
       <pre><code>def get_provider_prediction_metric_contract() -> dict[str, object]:
     return {
         "metric_name": PROVIDER_PREDICTION_METRIC_NAME,
         "help": PROVIDER_PREDICTION_METRIC_HELP,
         "label_names": list(PROVIDER_PREDICTION_METRIC_LABEL_NAMES),
     }</code></pre>
-      <p>这里故意返回 <code>list(...)</code>，而不是直接返回 tuple，是为了让它更像文档和 JSON 中常见的 contract snapshot。调用方即使修改返回的 list，也不会修改原始 tuple 常量。</p>
-    </section>
+      <table>
+        <thead><tr><th>字段</th><th>含义</th><th>为什么 rename-sensitive</th></tr></thead>
+        <tbody>
+          <tr><td><code>metric_name</code></td><td>指标主名称</td><td>查询、dashboard、告警直接引用</td></tr>
+          <tr><td><code>help</code></td><td>人类说明</td><td>误导性说明会改变使用者理解</td></tr>
+          <tr><td><code>label_names</code></td><td>标签维度列表</td><td>改变时间序列身份和查询过滤条件</td></tr>
+          <tr><td><code>list(...)</code></td><td>返回普通列表</td><td>更像 JSON/文档快照，也避免暴露 tuple 对象本身</td></tr>
+        </tbody>
+      </table>
 
-    <section>
-      <h2>5. 代码精读三：用测试保护迁移审查面</h2>
-      <p>新增测试检查这份 contract snapshot：</p>
       <pre><code>def test_provider_metric_contract_collects_rename_sensitive_fields() -> None:
     contract = get_provider_prediction_metric_contract()
 
@@ -88,92 +89,93 @@
         "metric_name": "provider_prediction_total",
         "help": "Provider prediction outcomes recorded by the teaching metrics counter.",
         "label_names": list(PROVIDER_PREDICTION_METRIC_LABEL_NAMES),
-    }</code></pre>
-      <p>这条测试的意义是：未来任何人改 metric name、HELP 文本或 label names，都要面对一个清晰失败点。失败后要做的不是机械更新断言，而是先判断这是不是需要兼容迁移。</p>
+    }
+    assert contract["label_names"] == [
+        "operation",
+        "outcome",
+        "failure_category",
+        "error_code",
+        "status_code",
+    ]</code></pre>
+      <p>测试集中保护“改名前必须审查”的字段。若未来有人调整 metric name 或 label_names，测试失败点会把这次修改从普通字符串变化提升为契约变更讨论。</p>
     </section>
 
     <section>
-      <h2>6. 安全改名的五步</h2>
-      <ol>
-        <li><strong>新增新名字</strong>：先添加新 metric 或新 label，不要立刻删除旧名字。</li>
-        <li><strong>并行导出</strong>：在一个兼容窗口内同时导出旧名字和新名字。</li>
-        <li><strong>迁移消费者</strong>：更新 Dashboard、告警、文档、查询和排障手册。</li>
-        <li><strong>验证流量</strong>：确认旧名字已经没有关键消费者依赖。</li>
-        <li><strong>下线旧名字</strong>：在进度记录、发布说明和测试里明确删除时机。</li>
-      </ol>
-      <p>本项目当前没有真的改名，所以不需要并行导出。我们只把迁移审查面建立起来。</p>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>开发者准备改名
+  → 查看 get_provider_prediction_metric_contract()
+  → 识别 metric_name/help/label_names 影响面
+  → 搜索 dashboard / alert / docs / tests / runbook 依赖
+  → 决定是否需要双写或兼容窗口
+  → 更新代码与文档
+  → 更新合同测试
+  → 验证新旧消费者迁移完成
+  → 下线旧名</code></pre>
+      <p>本课程没有真的做双写，因为当前没有真实外部消费者。强行加入旧指标别名会增加噪声。本节只建立迁移审查面：如果以后真的要改名，知道从哪里开始盘点。</p>
     </section>
 
     <section>
-      <h2>7. 为什么不在本课真的做一个旧指标别名</h2>
-      <p>给教学项目增加一个旧指标别名会让代码更复杂，而且没有真实外部消费者需要兼容。我们现在最需要的是让学习者知道“如果未来要改，就不能直接改”。</p>
-      <p>所以本课的实现保持克制：只新增 contract snapshot helper 和测试，不引入双指标导出，也不伪造不存在的迁移压力。这符合当前项目阶段。</p>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>操作</th><th>普通重构</th><th>metrics 迁移</th></tr></thead>
+        <tbody>
+          <tr><td>改内部变量名</td><td>测试通过即可</td><td>通常不影响外部</td></tr>
+          <tr><td>改 metric name</td><td>不是普通重构</td><td>会破坏查询、告警、dashboard</td></tr>
+          <tr><td>改 label name</td><td>不是普通重构</td><td>过滤条件和时间序列身份变化</td></tr>
+          <tr><td>改 HELP 文本</td><td>看似文案</td><td>可能改变使用者对能力边界的理解</td></tr>
+          <tr><td>新增 label</td><td>功能扩展</td><td>可能增加基数和查询复杂度</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>8. 和 Prometheus 数据模型的关系</h2>
-      <p>Prometheus 的时间序列由 metric name 和 label key/value 组合识别。换句话说，改 metric name 会产生新的时间序列；增加、删除或改名 label，也会改变序列身份。对于查询和告警来说，这就是一个外部可见变化。</p>
-      <p>这也是为什么本课把 metric name 和 label names 放进 contract snapshot：它们是最容易造成查询断裂的字段。</p>
-    </section>
-
-    <section class="practice">
-      <h2>9. 动手实验</h2>
-      <p>运行本节相关测试：</p>
-      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q</code></pre>
-      <p>然后尝试临时改动 <code>PROVIDER_PREDICTION_METRIC_LABEL_NAMES</code> 的顺序或内容，再运行测试。你会看到 contract snapshot 测试和 label contract 测试一起提醒：这是监控契约变化。</p>
-    </section>
-
-    <section>
-      <h2>10. 常见错误</h2>
-      <ul>
-        <li>把指标重命名当作普通变量重命名。</li>
-        <li>删除旧 metric 后才通知 Dashboard 和告警维护者。</li>
-        <li>只更新 text export，不更新 OpenAPI、课程文档和测试。</li>
-        <li>改 label name 时没有意识到它会改变时间序列身份。</li>
-        <li>没有兼容窗口，导致查询和告警突然断裂。</li>
-      </ul>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>后果</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>直接改 metric name</td><td>旧查询全部失效</td><td>新增新名并并行导出，迁移后再下线旧名</td></tr>
+          <tr><td>改 label name 不通知消费者</td><td>alert 过滤条件失效</td><td>发布迁移说明并更新 runbook/dashboard</td></tr>
+          <tr><td>只更新代码不更新文档</td><td>学习材料与真实输出不一致</td><td>合同测试覆盖 docs 和 code</td></tr>
+          <tr><td>把 HELP 改成生产承诺</td><td>误导使用者</td><td>保持 teaching/in-process 边界准确</td></tr>
+          <tr><td>新增高基数 label</td><td>成本暴涨</td><td>做基数评估，必要时放日志而非 metrics</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>11. 面试视角：如何解释 metrics rename</h2>
-      <blockquote>
-        <p>我会把 metrics rename 当成兼容性迁移。因为 metric name 和 label names 会被 Dashboard、告警和查询依赖，所以不能直接改字符串。安全做法是先盘点契约字段，再在兼容窗口内并行导出旧新名字，迁移消费者，验证旧名字不再被依赖，最后再下线旧名字。测试应该保护这些 rename-sensitive fields。</p>
-      </blockquote>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学项目</th><th>生产项目</th></tr></thead>
+        <tbody>
+          <tr><td>消费者</td><td>课程、测试、少量文档</td><td>dashboard、alert、SLO、runbook、外部团队</td></tr>
+          <tr><td>迁移方式</td><td>测试失败提醒</td><td>版本计划、双写、兼容窗口、公告、下线流程</td></tr>
+          <tr><td>影响评估</td><td>本仓库 grep 和测试</td><td>监控平台查询、告警规则、事故流程审计</td></tr>
+          <tr><td>回滚</td><td>还原常量</td><td>需要恢复旧导出和旧查询兼容</td></tr>
+          <tr><td>治理</td><td>contract helper</td><td>指标 registry、owner、review checklist</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>12. 记忆练习</h2>
-      <details>
-        <summary>1. 为什么 metrics rename 不是普通重构？</summary>
-        <p class="answer">因为 metric name 和 label names 会被外部 Dashboard、告警、查询和文档依赖，改名会影响外部消费者。</p>
-      </details>
-      <details>
-        <summary>2. contract snapshot helper 收集了哪些字段？</summary>
-        <p class="answer">它收集 metric_name、help 和 label_names，这些都是重命名前需要审查的字段。</p>
-      </details>
-      <details>
-        <summary>3. 安全改名为什么需要兼容窗口？</summary>
-        <p class="answer">兼容窗口让旧查询和告警继续工作，同时给 Dashboard、文档和消费者迁移到新名字的时间。</p>
-      </details>
-      <details>
-        <summary>4. 本课为什么没有真的导出旧指标别名？</summary>
-        <p class="answer">因为当前项目没有真实旧消费者。新增别名会增加复杂度，本课只需要建立重命名前的审查边界。</p>
-      </details>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details><summary>1. 为什么 metrics rename 是迁移而不是普通重构？</summary><p class="answer">因为 metric name 和 label names 被外部查询、dashboard、alert 和文档依赖。直接改名会破坏外部消费者。</p></details>
+      <details><summary>2. contract helper 收集哪些字段？</summary><p class="answer">收集 <code>metric_name</code>、<code>help</code>、<code>label_names</code>，它们都是重命名前必须审查的字段。</p></details>
+      <details><summary>3. 安全改名为什么需要兼容窗口？</summary><p class="answer">兼容窗口允许旧查询继续工作，同时给 dashboard、alert、runbook 和使用者迁移到新名称的时间。</p></details>
+      <details><summary>4. 为什么本节不真的做旧指标别名？</summary><p class="answer">当前没有真实外部消费者。加入别名会增加课程复杂度。本节目标是建立审查边界，而不是制造不存在的迁移压力。</p></details>
     </section>
 
     <section>
-      <h2>13. 本节总结</h2>
-      <p>本节完成了 provider metrics naming 小批次的收尾：0058 讲生产边界，0059 讲命名契约，0060 讲如果必须改名该如何迁移。你现在应该能把 metrics naming 当成可演进的外部契约，而不是代码内部字符串。</p>
-      <p>下一批建议学习：Provider Metrics Documentation Index。可以把当前 provider metrics 的 endpoint、contract、测试、生产边界和命名约定整理成一个统一的文档入口。</p>
-      <p>推荐主资源：<a href="https://prometheus.io/docs/practices/naming/">Prometheus metric and label naming</a>、<a href="https://prometheus.io/docs/concepts/data_model/">Prometheus data model</a>、<a href="https://prometheus.io/docs/practices/instrumentation/">Prometheus instrumentation practices</a>。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：如何安全修改一个生产 metrics 名称？</summary><p class="answer">先盘点 metric name、labels、dashboard、alert、文档依赖；新增新名称并与旧名称并行导出；迁移消费者；验证旧名称无关键依赖；最后按计划下线旧名称。</p></details>
+      <details><summary>面试题 2：为什么 label name 改动也危险？</summary><p class="answer">label name 是时间序列身份的一部分，也是查询过滤条件。改名会导致旧查询无法匹配，新旧序列割裂。</p></details>
+      <details><summary>面试题 3：contract snapshot helper 的价值是什么？</summary><p class="answer">它把 rename-sensitive 字段集中暴露，让测试和 review 能明确看到哪些字段属于外部观测契约，避免无意识破坏。</p></details>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">
       <span class="nav-title">继续学习</span>
       <span class="nav-links">
-        <a href="../index.html">回到课程目录</a>
+        <a href="../index.html">课程目录</a>
         <a href="./0059-provider-metrics-naming-contract.html">上一课：Provider Metrics Naming Contract</a>
-        <a href="../reference/0060-provider-metrics-naming-refactor-boundary-cheatsheet.html">查看本课速查</a>
         <a href="./0061-provider-metrics-documentation-index.html">下一课：Provider Metrics Documentation Index</a>
       </span>
     </nav>

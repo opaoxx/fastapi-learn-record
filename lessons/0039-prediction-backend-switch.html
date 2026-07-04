@@ -19,101 +19,65 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0039</p>
-      <h1>Prediction Backend Switch：用配置开关切换 demo 与 provider 后端</h1>
-      <p class="lead">第 38 课我们新增了 <code>/provider/predict</code> 来验证真实 provider 链路。本节把能力收回到正式入口 <code>/predict</code>：通过 <code>FIRST_API_AI_PREDICTION_BACKEND</code> 配置选择 demo 后端或 provider 后端，同时继续保持 <code>PredictionResponse</code> 稳定。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0039 Prediction Backend Switch：用配置选择 demo 或 provider 后端</h1>
+      <p class="lead">本节把真实 provider 能力收回到正式入口 <code>POST /predict</code>：调用方继续使用同一个 URL、同一个请求体、同一个响应体；服务端通过 <code>FIRST_API_AI_PREDICTION_BACKEND</code> 决定内部走 demo client 还是 provider adapter。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解为什么真实项目需要“后端选择开关”，而不是长期保留多个相似入口。</li>
-        <li>学会用 settings 控制同一个 endpoint 的内部实现路径。</li>
-        <li>理解公共 API 契约稳定与内部实现可切换之间的关系。</li>
-        <li>学会把同步 demo client 和异步 provider adapter 放在同一个 <code>async</code> endpoint 中协调。</li>
-        <li>学会用依赖覆盖测试配置分支，而不改真实 <code>.env</code>。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Prediction Backend Switch
+├─ 公共入口：POST /predict
+├─ 配置开关：ai_prediction_backend = "demo" | "provider"
+├─ demo 分支：AIClient.predict_sentiment(text, mode)
+├─ provider 分支：request_provider_prediction(...)
+├─ 输出归一：PredictionResult → PredictionResponse
+└─ 测试策略：override get_settings + override get_provider_http_client</code></pre>
+      <p>核心结论：后端实现可以切换，但公共 API 契约不能跟着抖动。配置开关属于服务端部署策略，不应暴露成普通用户可控请求参数。</p>
     </section>
 
     <section>
-      <h2>1. 背景：两个预测入口不能一直并排长大</h2>
-      <p>上一课以后，项目里有两个预测入口：</p>
-      <ul>
-        <li><code>POST /predict</code>：走本地 <code>DemoAIClient</code>。</li>
-        <li><code>POST /provider/predict</code>：走外部 provider adapter。</li>
-      </ul>
-      <p>这在学习阶段很好，因为它能把 demo 路径和 provider 路径分开观察。但真实项目长期保留两个相似入口，会慢慢产生问题：</p>
-      <ul>
-        <li>前端不知道应该调用哪个入口。</li>
-        <li>两个入口都要维护请求体、响应体和错误契约。</li>
-        <li>以后加鉴权、日志、限流、追踪时容易漏改其中一个。</li>
-        <li>文档里会出现“两个都能预测”的歧义。</li>
-      </ul>
-      <p>更成熟的做法是：保留一个正式公共入口 <code>/predict</code>，内部通过配置选择使用 demo 后端还是 provider 后端。</p>
-    </section>
-
-    <section class="callout">
-      <h2>2. 核心概念：公共接口稳定，后端实现可换</h2>
-      <p>这节课的核心是一个工程原则：</p>
-      <blockquote>
-        <p>调用方依赖的是 API 契约，不应该依赖服务内部到底使用 demo、provider、本地模型还是队列任务。</p>
-      </blockquote>
-      <p>所以我们的目标不是让前端选择 <code>/predict</code> 或 <code>/provider/predict</code>，而是让服务端根据配置决定内部后端：</p>
-      <pre><code>POST /predict
-  request:  PredictionRequest
-  response: PredictionResponse
-
-FIRST_API_AI_PREDICTION_BACKEND=demo
-  -&gt; DemoAIClient
-
-FIRST_API_AI_PREDICTION_BACKEND=provider
-  -&gt; request_provider_prediction()</code></pre>
-      <p>这就是“同一个公共契约，多种内部实现”。它也是以后做灰度发布、A/B 测试、本地开发和生产环境切换的基础心智模型。</p>
+      <h2>② 核心概念底层原理</h2>
+      <p>后端选择属于<strong>环境边界</strong>：开发环境默认 demo，便于离线学习；集成环境或生产环境可切 provider，验证真实供应商。若让前端传 <code>?backend=provider</code>，等于把服务部署策略交给调用方，可能绕过成本控制、稳定性策略和安全边界。</p>
+      <table>
+        <thead><tr><th>方案</th><th>优点</th><th>隐患</th></tr></thead>
+        <tbody>
+          <tr><td>两个长期入口</td><td>学习时直观</td><td>契约重复、文档分裂、权限和日志容易漏改</td></tr>
+          <tr><td>请求参数选择 backend</td><td>调试方便</td><td>调用方可随意切换内部实现</td></tr>
+          <tr><td>服务端配置选择 backend</td><td>公共 API 稳定，部署可控</td><td>需要测试覆盖不同配置分支</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>3. 配置开关不是普通 if，而是环境边界</h2>
-      <p>本节新增配置：</p>
-      <pre><code>FIRST_API_AI_PREDICTION_BACKEND="demo"</code></pre>
-      <p>它只有两个合法值：</p>
-      <ul>
-        <li><code>demo</code>：本地演示、离线学习、GitHub 读者开箱即用。</li>
-        <li><code>provider</code>：真实 provider 调用，需要配置 provider prediction URL。</li>
-      </ul>
-      <p>为什么用配置，而不是请求参数 <code>?backend=provider</code>？因为预测后端属于服务部署策略，不应该让普通调用方随意切换。调用方只负责提交预测请求；服务端负责决定当前环境用哪个实现。</p>
-    </section>
-
-    <section>
-      <h2>4. 运行机制：/predict 现在怎样选择后端</h2>
-      <pre><code>POST /predict
-  -&gt; parse PredictionRequest
-  -&gt; get_settings()
-  -&gt; if settings.ai_prediction_backend == "provider"
-       -&gt; get_provider_http_client()
-       -&gt; await request_provider_prediction(...)
-     else
-       -&gt; get_ai_client()
-       -&gt; ai_client.predict_sentiment(...)
-  -&gt; build PredictionResponse</code></pre>
-      <p>注意一个细节：因为 provider 分支需要 <code>await</code> 异步 HTTP 调用，所以 <code>/predict</code> 从同步 <code>def</code> 升级成了 <code>async def</code>。demo 分支仍然可以在 async endpoint 中调用普通同步函数；这没有问题，因为 demo 逻辑非常轻量。</p>
-    </section>
-
-    <section>
-      <h2>5. 代码精读一：Settings 新增后端选择</h2>
+      <h2>③ 全套代码逐行精读解析</h2>
       <pre><code>class Settings(BaseSettings):
-    app_name: str = "First FastAPI API"
-    environment: str = "development"
-    api_key: str = "dev-secret-key"
     ai_provider: Literal["demo"] = "demo"
-    ai_prediction_backend: Literal["demo", "provider"] = "demo"
-    ai_provider_health_url: str = "https://example.com"
-    ai_provider_prediction_url: str = "https://example.com/predict"</code></pre>
-      <p><code>Literal["demo", "provider"]</code> 很重要。它不是随便写一个字符串字段，而是把合法值限制住。这样如果有人把环境变量写成 <code>prodvider</code> 这种拼错值，应用配置加载阶段就能暴露问题，而不是等请求进来才出现诡异行为。</p>
-      <p>默认值是 <code>demo</code>，这是为了保证新手克隆项目后不配置真实 provider 也能继续使用 <code>/predict</code>。</p>
-    </section>
-
-    <section>
-      <h2>6. 代码精读二：统一响应构造函数</h2>
+    ai_prediction_backend: Literal["demo", "provider"] = "demo"</code></pre>
+      <p><code>Literal</code> 把合法配置值限制在有限集合。若环境变量拼成 <code>prodvider</code>，配置加载阶段就会暴露错误；如果写成普通 <code>str</code>，错误可能直到请求进来才表现为奇怪分支。</p>
+      <pre><code>async def predict(
+    payload: PredictionRequest,
+    response: Response,
+    settings: Annotated[Settings, Depends(get_settings)],
+    ai_client: Annotated[AIClient, Depends(get_ai_client)],
+    provider_http_client: Annotated[httpx.AsyncClient, Depends(get_provider_http_client)],
+) -&gt; PredictionResponse:</code></pre>
+      <p><code>/predict</code> 升级为 <code>async def</code>，因为 provider 分支要等待异步 HTTP。demo 分支虽然是同步轻量函数，但可以在 async endpoint 中直接调用。</p>
+      <pre><code>result = await run_prediction(
+    text=payload.text,
+    mode=payload.mode,
+    settings=settings,
+    ai_client=ai_client,
+    provider_http_client=provider_http_client,
+)</code></pre>
+      <p>路由不再自己写 <code>if backend == ...</code>，而是把选择逻辑交给 service。此处仍注入两类依赖，是为了让 service 拥有执行任意分支所需的资源。</p>
+      <pre><code>active_backend = backend or settings.ai_prediction_backend
+if active_backend == "provider":
+    config = AIClientConfig(...)
+    prediction = await request_provider_prediction(...)
+else:
+    prediction = ai_client.predict_sentiment(text, mode)</code></pre>
+      <p><code>backend</code> 参数允许 <code>/provider/predict</code> 强制 provider；普通 <code>/predict</code> 不传该参数，使用 settings。两个分支最终都必须生成 <code>PredictionResult</code>，这就是输出归一。</p>
       <pre><code>def build_prediction_response(
     prediction: PredictionResult,
     text: str,
@@ -124,185 +88,72 @@ FIRST_API_AI_PREDICTION_BACKEND=provider
         source=prediction.source,
         text_length=len(text),
     )</code></pre>
-      <p>这个小函数的作用是去重。无论预测来自 demo client 还是 provider adapter，最终都应该变成同一个 <code>PredictionResponse</code>。如果两条分支各自手写一遍响应拼装，未来字段变化时很容易一个分支改了，另一个分支漏了。</p>
-      <p>这也是契约稳定的代码表达：不同后端先统一成 <code>PredictionResult</code>，再统一转成 <code>PredictionResponse</code>。</p>
+      <p>响应构造集中化，避免 demo/provider 两个分支各自拼 JSON。若未来响应增加字段，只改一个函数即可。</p>
     </section>
 
     <section>
-      <h2>7. 代码精读三：/predict 的后端选择逻辑</h2>
-      <pre><code>@router.post("/predict", response_model=PredictionResponse)
-async def predict(
-    payload: PredictionRequest,
-    settings: Annotated[Settings, Depends(get_settings)],
-    ai_client: Annotated[AIClient, Depends(get_ai_client)],
-    provider_http_client: Annotated[
-        httpx.AsyncClient,
-        Depends(get_provider_http_client),
-    ],
-) -&gt; PredictionResponse:
-    try:
-        if settings.ai_prediction_backend == "provider":
-            config = AIClientConfig(
-                provider=settings.ai_provider,
-                timeout_seconds=settings.ai_timeout_seconds,
-                max_attempts=settings.ai_max_attempts,
-            )
-            prediction = await request_provider_prediction(
-                url=settings.ai_provider_prediction_url,
-                text=payload.text,
-                mode=payload.mode,
-                config=config,
-                client=provider_http_client,
-            )
-        else:
-            prediction = ai_client.predict_sentiment(payload.text, payload.mode)
-    except AIClientError as exc:
-        raise HTTPException(status_code=503, detail={...}) from exc
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>POST /predict
+  → PredictionRequest 校验
+  → get_settings() 读取 ai_prediction_backend
+  → run_prediction()
+      ├─ demo：AIClient.predict_sentiment()
+      └─ provider：request_provider_prediction()
+  → PredictionServiceResult(prediction, backend, elapsed_ms)
+  → router 设置 headers / logs
+  → PredictionResponse</code></pre>
+      <p>配置从环境进入 <code>Settings</code>，再进入 service，而不是从请求参数进入业务分支。这个方向很关键：环境决定服务行为，用户请求只携带预测输入。</p>
+    </section>
 
-    return build_prediction_response(prediction, payload.text)</code></pre>
-      <p>这段代码的职责分层如下：</p>
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>辨析</th><th>工程判断</th></tr></thead>
+        <tbody>
+          <tr><td>feature flag vs query 参数</td><td>前者是服务治理，后者是用户输入</td><td>backend 选择应放服务端配置</td></tr>
+          <tr><td>接口稳定 vs 实现稳定</td><td>接口要尽量稳定，实现可以替换</td><td><code>/predict</code> 不因 provider 改响应体</td></tr>
+          <tr><td>demo client vs provider adapter</td><td>前者本地模拟，后者外部 I/O</td><td>统一为 <code>PredictionResult</code></td></tr>
+          <tr><td>配置默认值</td><td>默认 demo 不是偷懒</td><td>保证 GitHub 新手开箱即用</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
       <ul>
-        <li><code>settings</code> 决定走哪条分支。</li>
-        <li><code>ai_client</code> 是 demo 分支的实现。</li>
-        <li><code>provider_http_client</code> 是 provider 分支需要的长期 HTTP client。</li>
-        <li><code>request_provider_prediction()</code> 负责 provider HTTP 调用和外部 JSON 校验。</li>
-        <li><code>build_prediction_response()</code> 保证两个分支的输出契约一致。</li>
+        <li><strong>环境变量拼错导致启动失败</strong>：<code>Literal</code> 会拒绝非法值。解决：检查 <code>FIRST_API_AI_PREDICTION_BACKEND</code> 是否为 <code>demo</code> 或 <code>provider</code>。</li>
+        <li><strong>provider 分支访问外网</strong>：测试只覆盖 settings，忘记覆盖 HTTP client。解决：同时覆盖 <code>get_settings</code> 与 <code>get_provider_http_client</code>。</li>
+        <li><strong>两个分支响应不一致</strong>：分别手写返回体。解决：统一经过 <code>build_prediction_response()</code>。</li>
+        <li><strong>把 backend 暴露给前端</strong>：短期方便，长期破坏治理。解决：后端配置或专门的管理侧开关控制。</li>
       </ul>
-      <p>这里有一个可以继续优化的点：FastAPI 会先解析所有依赖，所以即使 demo 分支不使用 <code>provider_http_client</code>，它也会被注入。对当前教学项目来说这没问题，因为 lifespan 本来就会创建 provider client。更大型项目可以进一步把后端选择抽成一个更深的 service dependency。</p>
     </section>
 
     <section>
-      <h2>8. 测试精读一：旧 demo 行为仍然稳定</h2>
-      <p>之前已有测试仍然通过：</p>
-      <pre><code>def test_predict_uses_overridable_ai_client_dependency() -&gt; None:
-    app.dependency_overrides[get_ai_client] = override_ai_client
-    ...
-    response = client.post("/predict", json={...})
-
-    assert response.status_code == 200
-    assert response.json()["source"] == "fixed-test-client"</code></pre>
-      <p>这说明新增配置开关没有破坏默认路径。默认 <code>ai_prediction_backend="demo"</code> 时，<code>/predict</code> 仍然走 <code>get_ai_client</code>，测试替身也仍然有效。</p>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>默认 backend</td><td><code>demo</code>，无外部依赖</td><td>按环境、灰度、租户或区域选择</td></tr>
+          <tr><td>切换方式</td><td><code>.env</code> 或测试覆盖</td><td>配置中心、灰度平台、发布系统</td></tr>
+          <tr><td>验证</td><td>pytest 覆盖两个分支</td><td>契约测试、回归测试、金丝雀监控</td></tr>
+          <tr><td>风险</td><td>主要防止新手无法运行</td><td>成本、SLA、数据合规、供应商限流</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>9. 测试精读二：用 dependency_overrides 切到 provider</h2>
-      <pre><code>def test_predict_can_switch_to_provider_backend() -&gt; None:
-    def handler(request: httpx.Request) -&gt; httpx.Response:
-        return httpx.Response(
-            status_code=200,
-            json={"label": "positive", "score": 0.914},
-            request=request,
-        )
-
-    def override_provider_settings() -&gt; Settings:
-        return Settings(ai_prediction_backend="provider")
-
-    replacement_client = httpx.AsyncClient(
-        transport=httpx.MockTransport(handler),
-        trust_env=False,
-    )
-    app.dependency_overrides[get_settings] = override_provider_settings
-    app.dependency_overrides[get_provider_http_client] = lambda: replacement_client
-
-    response = client.post("/predict", json={...})
-
-    assert response.json()["source"] == "demo-provider"</code></pre>
-      <p>这里没有修改真实 <code>.env</code>。测试通过 <code>app.dependency_overrides</code> 替换了两个依赖：</p>
-      <ul>
-        <li><code>get_settings</code>：让本次测试进入 provider 分支。</li>
-        <li><code>get_provider_http_client</code>：让 provider HTTP 调用使用 <code>MockTransport</code>，不访问外网。</li>
-      </ul>
-      <p>这正是 FastAPI 依赖系统的强大之处：运行时代码用真实依赖，测试代码可以替换依赖边界。</p>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details><summary>1. 为什么 backend 选择不应该由普通请求参数控制？</summary><p class="answer">因为它是服务部署与治理策略，不是业务输入。暴露给调用方会带来成本、稳定性和权限风险。</p></details>
+      <details><summary>2. <code>Literal["demo", "provider"]</code> 的价值是什么？</summary><p class="answer">限制配置合法值，让拼写错误在配置加载阶段暴露，避免运行时进入未知分支。</p></details>
+      <details><summary>3. 为什么两个后端都要转成 <code>PredictionResult</code>？</summary><p class="answer">这样 router 只依赖统一内部结果，公共响应构造逻辑不会关心底层实现来自 demo 还是 provider。</p></details>
+      <details><summary>4. 测试 provider 分支时为什么要覆盖两个依赖？</summary><p class="answer">覆盖 settings 是为了进入 provider 分支，覆盖 provider client 是为了把外部 HTTP 调用替换成 MockTransport。</p></details>
     </section>
 
     <section>
-      <h2>10. 测试精读三：provider 错误仍然是稳定 503</h2>
-      <pre><code>def test_predict_provider_backend_maps_provider_errors_to_503() -&gt; None:
-    def handler(request: httpx.Request) -&gt; httpx.Response:
-        return httpx.Response(status_code=503, request=request)
-
-    def override_provider_settings() -&gt; Settings:
-        return Settings(ai_prediction_backend="provider")
-
-    ...
-
-    assert response.status_code == 503
-    assert response.json() == {
-        "detail": {
-            "error_code": "ai_provider_http_error",
-            "message": "The AI provider returned HTTP 503.",
-        }
-    }</code></pre>
-      <p>这条测试说明：即使 <code>/predict</code> 的内部后端切到了 provider，公共错误契约也没有变成 HTTPX 异常或 provider 原始错误，而是继续走项目自己的 <code>ErrorResponse</code> 风格。</p>
-    </section>
-
-    <section class="practice">
-      <h2>11. 课堂实验</h2>
-      <p>运行预测相关测试：</p>
-      <pre><code>.\.venv\Scripts\python.exe -m pytest tests/test_ai_client_dependency.py -q</code></pre>
-      <p>预期看到：</p>
-      <pre><code>7 passed</code></pre>
-      <p>默认启动服务时，<code>/predict</code> 仍然走 demo 后端。如果你想手动切换 provider，可以在 <code>.env</code> 中设置：</p>
-      <pre><code>FIRST_API_AI_PREDICTION_BACKEND="provider"
-FIRST_API_AI_PROVIDER_PREDICTION_URL="https://your-provider.example/predict"</code></pre>
-      <p>重启服务后，<code>/predict</code> 会走 provider 分支。注意：真实 provider 必须返回课程约定的 JSON 形状，例如 <code>{"label": "positive", "score": 0.91}</code>。</p>
-    </section>
-
-    <section>
-      <h2>12. 常见错误与诊断</h2>
-      <div class="two-col">
-        <div class="callout">
-          <h3>错误一：让前端传 backend</h3>
-          <p>后端选择是部署策略，不应该让普通请求随意控制。用服务端配置更清楚。</p>
-        </div>
-        <div class="callout">
-          <h3>错误二：两个分支返回不同 JSON</h3>
-          <p>无论 demo 还是 provider，公共响应都应该是 <code>PredictionResponse</code>。</p>
-        </div>
-        <div class="callout">
-          <h3>错误三：测试直接改 .env</h3>
-          <p>测试更适合覆盖 <code>get_settings</code> 依赖，这样不会污染本地环境。</p>
-        </div>
-        <div class="callout">
-          <h3>错误四：配置值没有限制</h3>
-          <p>用 <code>Literal["demo", "provider"]</code> 限制合法值，避免拼写错误进入运行时。</p>
-        </div>
-      </div>
-    </section>
-
-    <section>
-      <h2>13. 面试视角：怎样解释后端选择开关</h2>
-      <blockquote>
-        <p>我会让 /predict 保持稳定的请求和响应契约，然后用配置项选择内部预测后端。默认 demo 方便本地开发和教学；provider 模式则通过 lifespan-managed HTTP client 调用外部 provider adapter。测试时我不会改真实环境变量，而是用 dependency_overrides 替换 settings 和 HTTP client。这样公共 API 稳定，内部实现可以按环境切换。</p>
-      </blockquote>
-    </section>
-
-    <section class="checkpoint">
-      <h2>14. 小测：先回忆，再展开</h2>
-      <details>
-        <summary>1. 为什么后端选择用配置，而不是请求参数？</summary>
-        <p class="answer">因为后端选择属于服务端部署策略，不应该让普通调用方随意控制内部实现。</p>
-      </details>
-      <details>
-        <summary>2. 为什么 <code>/predict</code> 变成了 <code>async def</code>？</summary>
-        <p class="answer">因为 provider 分支需要 <code>await</code> 异步 HTTP adapter；demo 分支仍可在 async endpoint 中调用轻量同步函数。</p>
-      </details>
-      <details>
-        <summary>3. <code>build_prediction_response()</code> 解决了什么问题？</summary>
-        <p class="answer">它让 demo 和 provider 两个分支统一转换成同一个 <code>PredictionResponse</code>，避免响应拼装重复和不一致。</p>
-      </details>
-      <details>
-        <summary>4. 测试 provider 分支为什么要覆盖 <code>get_settings</code>？</summary>
-        <p class="answer">因为测试需要临时切换到 provider 后端，但不应该修改真实 <code>.env</code> 或污染本地配置。</p>
-      </details>
-    </section>
-
-    <section>
-      <h2>15. 本节总结</h2>
-      <p>本节把 <code>/predict</code> 从单一 demo 实现升级成可配置后端入口：默认仍走 demo，配置为 <code>provider</code> 时走真实 provider adapter。外部调用方看到的请求体、响应体和错误契约保持稳定，内部实现则可以根据环境切换。</p>
-      <p>下一课建议学习：给预测调用加入更清楚的可观测信息，例如 provider backend、耗时、错误码在日志或响应调试字段中的表达。真实 AI 服务不只要能调用，还要能排查。</p>
-      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/advanced/settings/">FastAPI Settings and Environment Variables</a>、<a href="https://fastapi.tiangolo.com/async/">FastAPI async / await</a>、<a href="https://fastapi.tiangolo.com/tutorial/dependencies/">FastAPI Dependencies</a>、<a href="https://fastapi.tiangolo.com/advanced/testing-dependencies/">FastAPI Testing Dependencies with Overrides</a>、<a href="https://fastapi.tiangolo.com/tutorial/response-model/">FastAPI Response Model</a>。</p>
-      <p class="small">如果你想继续追问，可以问我：“这个 if 分支以后会不会变胖，什么时候该抽成更深的 service dependency？”这就是下一阶段架构设计会遇到的问题。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <p><strong>题 1：如何让同一个 API 支持多个后端实现？</strong> 答：保持公共请求/响应契约不变，在服务端通过配置或策略选择内部实现，各实现输出统一内部模型，再由 router 统一转响应。</p>
+      <p><strong>题 2：为什么配置开关要有类型约束？</strong> 答：类型约束可以把错误从运行时请求阶段前移到配置加载阶段，减少未知状态和隐式默认分支。</p>
+      <p><strong>题 3：backend switch 后路由为什么会变胖，下一步怎么处理？</strong> 答：分支选择、耗时、错误包装会堆进 router。下一步应抽到 service 层，让 router 只做 HTTP 翻译。</p>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

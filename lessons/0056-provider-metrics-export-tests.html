@@ -13,48 +13,43 @@
       <span class="nav-links">
         <a href="../index.html">课程目录</a>
         <a href="./0055-provider-metrics-export-shape.html">上一课</a>
-        <a href="../reference/0056-provider-metrics-export-tests-cheatsheet.html">本课速查</a>
         <a href="./0057-provider-metrics-snapshot-boundary.html">下一课</a>
+        <a href="../reference/0056-provider-metrics-export-tests-cheatsheet.html">速查</a>
       </span>
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0056</p>
-      <h1>Provider Metrics Export Tests：把文本导出契约测试牢</h1>
-      <p class="lead">上一课我们把 provider metrics snapshot 渲染成 Prometheus text 风格输出。文本导出看起来只是字符串拼接，但它对监控系统来说就是 API 契约。本课不改业务行为，而是补齐边界测试：空 snapshot、多个失败 outcome、特殊 label 转义，以及 endpoint 的 text/plain 响应。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0056 Provider Metrics Export Tests：把文本导出契约测试牢</h1>
+      <p class="lead">本节只做一件事：为 provider metrics 文本导出补齐边界测试。对 metrics export 而言，<code>200 OK</code> 远远不够；HELP、TYPE、样本行、失败 outcome、label 转义、<code>text/plain</code> 都是对采集器和运维人员可见的契约。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解为什么文本导出比普通 JSON 更依赖精确的字符串契约测试。</li>
-        <li>能说清空 metrics snapshot 仍然应该返回 HELP 和 TYPE 行。</li>
-        <li>能测试 retry failure outcome 在文本 endpoint 中的完整输出。</li>
-        <li>能解释 label value 中反斜杠、换行和双引号为什么必须转义。</li>
-        <li>学会用 endpoint 测试同时保护状态码、Content-Type 和响应正文。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Export Tests
+├─ helper 层测试
+│  ├─ stable text shape
+│  ├─ empty snapshot header only
+│  └─ special label value escaping
+├─ endpoint 层测试
+│  ├─ success export text
+│  ├─ empty export text
+│  ├─ retry failure outcome text
+│  └─ content-type starts with text/plain
+├─ 测试隔离
+│  ├─ autouse reset provider metrics
+│  └─ dependency_overrides finally clear
+└─ 核心思想：文本响应正文就是 API 契约</code></pre>
     </section>
 
     <section>
-      <h2>1. 背景：为什么 text export 不能只测 200</h2>
-      <p>很多初学者写 endpoint 测试时，只检查 <code>response.status_code == 200</code>。这对普通页面可能勉强够用，但对 metrics text export 远远不够。因为采集器读取的是完整文本格式：HELP 行、TYPE 行、metric name、label 顺序、label 转义和数值都属于契约。</p>
-      <p>如果某次重构把 label 顺序变成随机顺序，人类肉眼还能读，但测试快照、监控查询和告警规则可能会变得难以维护。如果某个 label value 没有转义，文本格式甚至会被破坏。本课的核心心智模型是：<strong>文本导出不是展示层细节，它是给另一个系统读取的机器契约。</strong></p>
-    </section>
-
-    <section class="callout">
-      <h2>2. 本节只推进测试，不扩大功能面</h2>
-      <p>本节没有新增新的 endpoint，也没有接入 Prometheus 依赖。我们只做一件事：用更完整的测试描述上一课已经暴露的文本导出边界。</p>
-      <ul>
-        <li><strong>空状态</strong>：counter 还没有任何样本时，导出仍然是合法文本。</li>
-        <li><strong>失败状态</strong>：retry scheduled 和 retry exhausted 都要能在文本中出现。</li>
-        <li><strong>特殊字符</strong>：反斜杠、换行、双引号必须转义。</li>
-        <li><strong>HTTP 边界</strong>：FastAPI endpoint 要返回 text/plain，而不是 JSON。</li>
-      </ul>
+      <h2>② 核心概念底层原理</h2>
+      <p>普通 JSON API 可以用 response model 帮你约束字段；文本导出没有 Pydantic schema 自动兜底。文本格式是否正确，主要依赖显式字符串测试。</p>
+      <p>metrics export 的测试必须覆盖“无数据”和“异常数据”。无数据时仍应有 HELP/TYPE；失败路径最能体现指标价值；特殊字符最容易破坏格式。只测 success happy path，会让关键风险沉到生产阶段。</p>
     </section>
 
     <section>
-      <h2>3. 代码精读一：空 snapshot 不是空字符串</h2>
-      <p>新增的第一个测试保护空 metrics 状态：</p>
+      <h2>③ 全套代码逐行精读解析</h2>
       <pre><code>def test_render_provider_metrics_prometheus_text_handles_empty_snapshot() -> None:
     text = render_provider_metrics_prometheus_text([])
 
@@ -63,115 +58,139 @@
         "the teaching metrics counter.\n"
         "# TYPE provider_prediction_total counter\n"
     )</code></pre>
-      <p>这里最重要的点是：没有样本不等于没有响应。HELP 和 TYPE 行描述指标的存在、名字和类型，即使当前 count 还没有任何 label set，也能让读者或采集器知道这个 endpoint 的输出语义。</p>
-    </section>
+      <p>空列表输入代表当前 Counter 没有样本。测试要求输出 header-only text，而不是空字符串。否则调用者无法从导出中获知指标名和类型。</p>
 
-    <section>
-      <h2>4. 代码精读二：endpoint 空状态也要返回 text/plain</h2>
-      <p>渲染 helper 的空状态测试还不够，因为 FastAPI endpoint 还有自己的响应边界：</p>
-      <pre><code>def test_provider_metrics_prometheus_endpoint_returns_header_only_when_empty() -> None:
-    with TestClient(app) as client:
-        metrics_response = client.get("/provider/metrics/prometheus")
+      <pre><code>def test_render_provider_metrics_prometheus_text_escapes_special_label_values() -> None:
+    samples = [
+        {
+            "labels": build_provider_metric_labels(
+                outcome="fail_fast",
+                failure_category="invalid_response",
+                error_code='line\\one\n"two"',
+                status_code=200,
+            ).as_dict(),
+            "count": 1,
+        }
+    ]
+
+    text = render_provider_metrics_prometheus_text(samples)
+
+    assert 'error_code="line\\\\one\\n\\"two\\""' in text</code></pre>
+      <table>
+        <thead><tr><th>输入字符</th><th>文本中应变成</th><th>原因</th></tr></thead>
+        <tbody>
+          <tr><td>反斜杠</td><td><code>\\</code></td><td>避免和后续转义序列混淆</td></tr>
+          <tr><td>真实换行</td><td><code>\n</code></td><td>避免一条 sample 被拆成多行</td></tr>
+          <tr><td>双引号</td><td><code>\"</code></td><td>避免 label value 提前结束</td></tr>
+        </tbody>
+      </table>
+
+      <pre><code>def test_provider_metrics_prometheus_endpoint_returns_text_export_shape() -> None:
+    ...
+    metrics_response = client.get("/provider/metrics/prometheus")
 
     assert metrics_response.status_code == 200
     assert metrics_response.headers["content-type"].startswith("text/plain")
-    assert metrics_response.text == expected_header_only_text</code></pre>
-      <p>这个测试覆盖的是 HTTP 层：路由存在、状态码正确、Content-Type 是文本、正文是 header-only export。注意，这个测试依赖上一课的 autouse fixture：每个 endpoint 测试开始前都会清空 provider metrics counter。</p>
+    assert metrics_response.text == expected_text</code></pre>
+      <p>endpoint 测试保护 HTTP 层：路由存在、content-type 正确、实际响应正文完整。helper 测试无法发现 <code>response_class</code> 配错的问题，所以两层测试不能互相替代。</p>
+
+      <pre><code>def test_provider_metrics_prometheus_endpoint_exposes_retry_failure_outcomes() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code=503, request=request)
+
+    def override_retry_settings() -> Settings:
+        return Settings(
+            ai_max_attempts=2,
+            ai_retry_base_delay_seconds=0.0,
+            ai_retry_max_delay_seconds=0.0,
+        )</code></pre>
+      <p>503 测试用 <code>MockTransport</code> 制造可重试失败，并把 retry delay 设为 0，避免测试真实等待。它验证 text export 能表达 <code>retry_scheduled</code> 与 <code>retry_exhausted</code>。</p>
     </section>
 
     <section>
-      <h2>5. 代码精读三：失败 outcome 的文本导出</h2>
-      <p>我们还新增了 retry failure 的文本 endpoint 测试。它先让 provider 连续返回 503，并把最大尝试次数设为 2：</p>
-      <pre><code>def override_retry_settings() -> Settings:
-    return Settings(
-        ai_max_attempts=2,
-        ai_retry_base_delay_seconds=0.0,
-        ai_retry_max_delay_seconds=0.0,
-    )</code></pre>
-      <p>请求 <code>POST /provider/predict</code> 失败后，再读取 <code>GET /provider/metrics/prometheus</code>，应该看到两个样本：</p>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>helper test
+  → 构造 samples
+  → render_provider_metrics_prometheus_text(samples)
+  → 精确断言字符串
+
+endpoint test
+  → MockTransport 模拟 provider
+  → POST /provider/predict 制造 metrics
+  → GET /provider/metrics/prometheus
+  → 断言 status_code + content-type + text
+
+isolation
+  → autouse fixture reset_provider_metrics()
+  → finally 清 dependency_overrides
+  → close replacement AsyncClient</code></pre>
+      <p>失败 outcome 的文本测试同时覆盖两条样本：</p>
       <pre><code>provider_prediction_total{error_code="ai_provider_http_error",failure_category="retryable_http_status",operation="prediction",outcome="retry_exhausted",status_code="503"} 1
 provider_prediction_total{error_code="ai_provider_http_error",failure_category="retryable_http_status",operation="prediction",outcome="retry_scheduled",status_code="503"} 1</code></pre>
-      <p>这说明 text export 并不只适合 success。它必须完整表达我们前面课程建立的 outcome taxonomy：成功、安排重试、重试耗尽、快速失败。</p>
+      <p>这证明文本导出没有只服务 success 场景，而是承接了前面建立的 failure outcome taxonomy。</p>
     </section>
 
     <section>
-      <h2>6. 代码精读四：特殊 label value 转义</h2>
-      <p>虽然当前真实 label 值都是低基数字符串，但渲染 helper 仍然需要防御特殊字符。本课新增测试故意构造了一个麻烦的 <code>error_code</code>：</p>
-      <pre><code>error_code='line\\one\n"two"'</code></pre>
-      <p>输出中必须变成：</p>
-      <pre><code>error_code="line\\one\n\"two\""</code></pre>
-      <p>注意这里讲的是文本格式里的可见转义：反斜杠变成 <code>\\</code>，换行变成 <code>\n</code>，双引号变成 <code>\"</code>。如果不转义，label value 会提前结束，后面的文本就不再是合法样本行。</p>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>测试类型</th><th>验证对象</th><th>不能替代的原因</th></tr></thead>
+        <tbody>
+          <tr><td>helper 测试</td><td>纯字符串渲染规则</td><td>无法发现 FastAPI 路由、Content-Type、依赖覆盖问题</td></tr>
+          <tr><td>endpoint 测试</td><td>真实 HTTP 响应边界</td><td>构造特殊转义样本不如 helper 直接</td></tr>
+          <tr><td>OpenAPI 测试</td><td>文档与契约描述</td><td>不验证运行时正文</td></tr>
+          <tr><td>全量测试</td><td>集成回归</td><td>失败定位慢，不应替代小测试</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>7. 测试设计：helper 测试和 endpoint 测试各管一层</h2>
-      <p>本节新增的测试有两种层级：</p>
-      <ul>
-        <li><strong>helper 测试</strong>直接调用 <code>render_provider_metrics_prometheus_text()</code>，重点保护字符串格式、排序和转义。</li>
-        <li><strong>endpoint 测试</strong>通过 <code>TestClient</code> 请求路由，重点保护 FastAPI 响应类型、依赖覆盖、请求流程和实际 endpoint 输出。</li>
-      </ul>
-      <p>这两个层级不能互相替代。只测 helper 会漏掉路由配置错误；只测 endpoint 会让边界条件很难构造，也会让失败定位变慢。</p>
-    </section>
-
-    <section class="practice">
-      <h2>8. 动手实验</h2>
-      <p>运行本节相关测试：</p>
-      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py tests\test_ai_client_dependency.py -q</code></pre>
-      <p>你应该看到所有相关测试通过。然后可以试着临时破坏 <code>escape_prometheus_label_value()</code>，例如删掉 <code>.replace("\n", "\\n")</code>，再运行测试，观察转义测试如何失败。</p>
-      <p>这个实验的重点不是记住某一行字符串，而是体会：测试会把“文本格式也是契约”这件事变成可执行的约束。</p>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>表现</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>只断言 200</td><td>正文格式坏了仍通过</td><td>精确断言关键文本输出</td></tr>
+          <tr><td>只测 success</td><td>失败指标导出无人保护</td><td>加入 retry_exhausted、retry_scheduled、fail_fast 场景</td></tr>
+          <tr><td>不测空快照</td><td>无样本时导出不合法</td><td>断言 HELP/TYPE header-only 输出</td></tr>
+          <tr><td>不测转义</td><td>特殊字符破坏格式</td><td>构造包含反斜杠、换行、双引号的 label value</td></tr>
+          <tr><td>不清全局 Counter</td><td>测试顺序影响输出</td><td>使用 reset fixture 隔离每个测试</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>9. 常见错误</h2>
-      <ul>
-        <li>只测试 status code，不测试正文。对 metrics export 来说，正文才是主要契约。</li>
-        <li>把空 snapshot 渲染成空字符串。这样会丢失指标说明和类型信息。</li>
-        <li>忘记 endpoint 的 Content-Type。文本 endpoint 不应该被客户端当成 JSON 处理。</li>
-        <li>只测试 success，不测试 failure outcome。监控最常用的恰恰是失败指标。</li>
-        <li>没有隔离全局 counter。上一个测试留下的样本会污染下一个测试。</li>
-      </ul>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学测试</th><th>生产验证</th></tr></thead>
+        <tbody>
+          <tr><td>格式测试</td><td>精确字符串断言</td><td>结合 client library、promtool、采集器回归</td></tr>
+          <tr><td>失败场景</td><td>MockTransport 控制 503/400</td><td>压测、混沌、真实 provider 故障演练</td></tr>
+          <tr><td>隔离方式</td><td>reset 进程内 Counter</td><td>隔离 registry、测试 exporter、独立环境</td></tr>
+          <tr><td>告警验证</td><td>暂不涉及</td><td>验证 alert rule、dashboard query、SLO 计算</td></tr>
+          <tr><td>兼容性</td><td>单项目内断言</td><td>需要下游查询迁移和版本窗口</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>10. 面试视角：如何解释 metrics export 测试</h2>
-      <blockquote>
-        <p>我会把 metrics text export 当成机器读取的 API 契约来测试。helper 层测试负责保护 HELP、TYPE、label 顺序、转义和空 snapshot；endpoint 层测试负责保护路由、Content-Type 和真实请求流程。这样即使当前只是教学用 in-process counter，也能养成生产系统里监控契约测试的思维。</p>
-      </blockquote>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details><summary>1. 为什么 text export 不能只测 HTTP 200？</summary><p class="answer">因为正文格式本身才是采集契约。HELP、TYPE、metric name、label、转义、换行错误都可能在 200 状态下发生。</p></details>
+      <details><summary>2. 为什么空 snapshot 仍然要测试？</summary><p class="answer">空状态是系统启动后常见状态。它应输出合法 header-only 文本，不能返回空字符串或错误响应。</p></details>
+      <details><summary>3. helper 测试和 endpoint 测试如何分工？</summary><p class="answer">helper 测试验证纯渲染规则；endpoint 测试验证路由、HTTP 状态、Content-Type、依赖覆盖和真实业务触发后的输出。</p></details>
+      <details><summary>4. 为什么 retry delay 在 endpoint 测试中设为 0？</summary><p class="answer">本测试目标是验证 metrics 输出，不是验证等待时间。将 delay 设为 0 可避免测试变慢和关注点混淆。</p></details>
     </section>
 
     <section>
-      <h2>11. 记忆练习</h2>
-      <details>
-        <summary>1. 为什么空 snapshot 仍然应该输出 HELP 和 TYPE？</summary>
-        <p class="answer">因为它们描述指标名、含义和类型。没有样本只是当前没有计数，不代表 endpoint 没有可解释的导出契约。</p>
-      </details>
-      <details>
-        <summary>2. helper 测试和 endpoint 测试的边界分别是什么？</summary>
-        <p class="answer">helper 测试保护纯渲染规则；endpoint 测试保护 HTTP 路由、响应类型、依赖覆盖和真实请求流程。</p>
-      </details>
-      <details>
-        <summary>3. label value 为什么要转义反斜杠、换行和双引号？</summary>
-        <p class="answer">这些字符会影响文本格式解析。如果不转义，label 字符串可能提前结束或跨行破坏样本结构。</p>
-      </details>
-      <details>
-        <summary>4. 为什么失败 outcome 的 text export 测试很重要？</summary>
-        <p class="answer">监控最常被用来发现失败和退化。只测试 success 会让 retry_scheduled、retry_exhausted、fail_fast 这些关键路径缺少契约保护。</p>
-      </details>
-    </section>
-
-    <section>
-      <h2>12. 本节总结</h2>
-      <p>本节没有扩大功能，而是把上一课的文本导出契约测试得更完整。你现在应该能把 metrics export 看成一个机器可读接口，并理解为什么空状态、失败状态、转义规则和 Content-Type 都值得单独测试。</p>
-      <p>下一课建议学习：Provider Metrics Snapshot Boundary。我们会继续从边界角度看 metrics，证明 snapshot 是对内部 counter 的安全拷贝，而不是可被外部修改的内部状态引用。</p>
-      <p>推荐主资源：<a href="https://prometheus.io/docs/instrumenting/exposition_formats/">Prometheus exposition formats</a>、<a href="https://fastapi.tiangolo.com/tutorial/testing/">FastAPI testing</a>、<a href="https://docs.pytest.org/en/stable/how-to/fixtures.html">pytest fixtures</a>。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：你会如何测试一个 Prometheus text endpoint？</summary><p class="answer">我会分 helper 与 endpoint 两层：helper 精确测试 HELP、TYPE、样本行、label 顺序、转义和空快照；endpoint 用 TestClient 验证状态码、Content-Type、真实业务触发后的响应正文，并覆盖成功和失败 outcome。</p></details>
+      <details><summary>面试题 2：为什么要测试特殊字符转义？</summary><p class="answer">因为文本协议依赖引号、换行和反斜杠表达结构。未转义字符会破坏 label value 边界，导致采集器解析失败或样本语义错误。</p></details>
+      <details><summary>面试题 3：如何避免 metrics endpoint 测试互相污染？</summary><p class="answer">识别进程内全局 Counter，使用 autouse fixture 在每个测试前后 reset；同时在 finally 中清 FastAPI dependency overrides 并关闭替换的 AsyncClient。</p></details>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">
       <span class="nav-title">继续学习</span>
       <span class="nav-links">
-        <a href="../index.html">回到课程目录</a>
+        <a href="../index.html">课程目录</a>
         <a href="./0055-provider-metrics-export-shape.html">上一课：Provider Metrics Export Shape</a>
-        <a href="../reference/0056-provider-metrics-export-tests-cheatsheet.html">查看本课速查</a>
         <a href="./0057-provider-metrics-snapshot-boundary.html">下一课：Provider Metrics Snapshot Boundary</a>
       </span>
     </nav>

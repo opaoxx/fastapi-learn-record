@@ -13,273 +13,150 @@
       <span class="nav-links">
         <a href="../index.html">课程目录</a>
         <a href="./0041-prediction-service-orchestration.html">上一课</a>
-        <a href="../reference/0042-provider-retry-policy-cheatsheet.html">本课速查</a>
         <a href="./0043-backoff-before-retry.html">下一课</a>
+        <a href="../reference/0042-provider-retry-policy-cheatsheet.html">本课速查</a>
       </span>
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0042</p>
-      <h1>Provider Retry Policy：给外部 AI 调用加有限重试</h1>
-      <p class="lead">上一课把预测业务编排放进了 service 层，本课继续把外部 provider 的稳定性策略放在 adapter 层：当 AI provider 暂时超时、网络抖动、返回 429 或部分 5xx 时，我们允许有限次数重试；当请求本身错误或响应契约错误时，立刻失败。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0042 Provider Retry Policy：给外部 AI 调用增加有限重试</h1>
+      <p class="lead">Retry 不是“失败了再试试”的本能反应，而是一套有边界的工程策略：哪些故障可重试，最多尝试几次，哪些故障必须立即失败，重试逻辑应该放在哪一层。本节把这些问题收敛到 provider adapter 内部。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解 retry 不是“失败了再试试”这么简单，而是一条明确的工程策略。</li>
-        <li>区分 retryable failure 和 non-retryable failure。</li>
-        <li>理解为什么 <code>max_attempts</code> 是重试预算，不是无限循环。</li>
-        <li>学会把 retry 放在 provider adapter 层，而不是散落到 router 或 service。</li>
-        <li>用 <code>httpx.MockTransport</code> 写测试，证明哪些错误会重试，哪些错误不会重试。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Provider Retry Policy
+├─ 重试预算：AIClientConfig.max_attempts
+├─ 可重试故障：timeout / request error / 429 / 500 / 502 / 503 / 504
+├─ 不可重试故障：400 / 401 / 403 / 404 / invalid JSON / schema validation
+├─ 执行位置：request_provider_prediction() adapter
+├─ 成功退出：任一尝试成功即返回 PredictionResult
+├─ 耗尽退出：最后一次仍失败 → AIClientError
+└─ 测试边界：attempts 计数 + MockTransport + caplog</code></pre>
+      <p>核心结论：重试策略必须同时提升短暂故障下的成功率，并避免把确定性错误、认证错误和契约错误隐藏起来。</p>
     </section>
 
     <section>
-      <h2>1. 背景：外部 AI provider 的失败常常是“临时”的</h2>
-      <p>真实 AI 服务不是本地函数调用。你的 FastAPI 应用发出一次 provider 请求时，中间会经过 DNS、TCP/TLS、代理、provider 网关、模型排队、限流系统和响应序列化。任意一层短暂抖动，都可能让一次本来可成功的请求失败。</p>
-      <p>但是 retry 也不是越多越好。AI provider 往往计费、限流，而且一次预测请求可能占用 GPU 排队资源。如果你无限重试，短暂故障会被放大成更高的成本和更重的 provider 压力。</p>
-      <p>所以本节的核心不是“加一个 for 循环”，而是建立一个判断模型：什么失败值得再试，什么失败必须立刻暴露出来。</p>
-    </section>
-
-    <section class="callout">
-      <h2>2. 核心概念：retry policy 是一组边界规则</h2>
-      <p><strong>Retry policy</strong> 指的是调用外部依赖失败后，客户端是否再次尝试、最多尝试几次、哪些错误可以重试、哪些错误不能重试的规则集合。</p>
-      <div class="two-col">
-        <div>
-          <h3>可以谨慎重试</h3>
-          <ul>
-            <li><code>TimeoutException</code>：provider 或网络一段时间没有响应。</li>
-            <li><code>RequestError</code>：请求发出阶段或网络层发生错误。</li>
-            <li><code>429</code>：provider 表示当前请求过多。</li>
-            <li><code>500/502/503/504</code>：provider 或网关一侧出现临时服务问题。</li>
-          </ul>
-        </div>
-        <div>
-          <h3>不应该重试</h3>
-          <ul>
-            <li><code>400</code>：请求格式或参数错了，再发一次还是错。</li>
-            <li><code>401/403</code>：认证或权限错了，重试不能修复密钥。</li>
-            <li><code>404</code>：URL 或资源不存在，通常不是瞬时问题。</li>
-            <li>非法 JSON 或字段校验失败：provider 响应契约坏了，应该暴露。</li>
-          </ul>
-        </div>
-      </div>
-      <p>HTTPX 官方异常层级里，<code>TimeoutException</code>、网络错误和 <code>HTTPStatusError</code> 是不同类型；<code>response.raise_for_status()</code> 会把 4xx/5xx 响应转成 <code>HTTPStatusError</code>。这正好给我们提供了编写 retry policy 的分支边界。</p>
-    </section>
-
-    <section>
-      <h2>3. 状态码原则：为什么 429 和 5xx 比 400 更适合重试</h2>
-      <p>429 表示 Too Many Requests，也就是请求速率过高。RFC 6585 说明 429 响应可以携带 <code>Retry-After</code>，告诉客户端多久以后再试。503 表示 Service Unavailable，RFC 9110 把它描述为临时过载或维护，并且也可以配合 <code>Retry-After</code>。</p>
-      <p>本项目现在先做“有限立即重试”：只看 <code>max_attempts</code>，不读取 <code>Retry-After</code>，也不加入指数退避。原因是教学节奏要小步走：先把“哪些错误可以重试”讲清楚，再在后续课程加入 backoff、jitter 和 provider 限流礼貌。</p>
+      <h2>② 核心概念底层原理</h2>
+      <p>外部 AI provider 失败来源复杂：网络抖动、DNS、TLS、网关、队列、限流、模型服务临时不可用都可能导致一次请求失败。但重试也会放大流量、成本和供应商压力，所以必须有<strong>重试预算</strong>。</p>
       <table>
-        <thead>
-          <tr>
-            <th>失败类型</th>
-            <th>本节策略</th>
-            <th>原因</th>
-          </tr>
-        </thead>
+        <thead><tr><th>故障类型</th><th>是否重试</th><th>原因</th></tr></thead>
         <tbody>
-          <tr>
-            <td>Timeout / RequestError</td>
-            <td>重试到 <code>max_attempts</code></td>
-            <td>可能是网络或连接的短暂抖动。</td>
-          </tr>
-          <tr>
-            <td>429</td>
-            <td>重试到 <code>max_attempts</code></td>
-            <td>限流通常是临时状态，后续会学习 <code>Retry-After</code>。</td>
-          </tr>
-          <tr>
-            <td>500/502/503/504</td>
-            <td>重试到 <code>max_attempts</code></td>
-            <td>服务端或网关侧临时失败，下一次可能恢复。</td>
-          </tr>
-          <tr>
-            <td>400/401/403/404</td>
-            <td>不重试</td>
-            <td>客户端输入、认证、权限或路径问题，不会靠重复请求变好。</td>
-          </tr>
-          <tr>
-            <td>非法响应体</td>
-            <td>不重试</td>
-            <td>契约已经被破坏，应该尽快暴露给日志、测试和调用方。</td>
-          </tr>
+          <tr><td>Timeout / RequestError</td><td>是</td><td>可能是瞬时网络或连接问题</td></tr>
+          <tr><td>429</td><td>是</td><td>限流通常具有时间窗口，后续可结合 Retry-After</td></tr>
+          <tr><td>500/502/503/504</td><td>是</td><td>服务端或网关临时故障，下一次可能恢复</td></tr>
+          <tr><td>400/401/403/404</td><td>否</td><td>请求、认证、权限或路径错误，重复发送通常仍失败</td></tr>
+          <tr><td>invalid JSON / ValidationError</td><td>否</td><td>provider 契约被破坏，应暴露问题而非掩盖</td></tr>
+        </tbody>
+      </table>
+      <p><code>max_attempts</code> 表示总尝试次数，不是额外 retry 次数。<code>max_attempts=3</code> 代表最多发送 3 次请求，而不是 1 次初始请求加 3 次重试。</p>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>RETRYABLE_PROVIDER_STATUS_CODES = {429, 500, 502, 503, 504}</code></pre>
+      <p>将策略常量显式放在模块顶部，使读者和测试都能看到“哪些 HTTP 状态被视为临时故障”。不要把魔法数字散落在多个 except 分支里。</p>
+      <pre><code>def is_retryable_provider_status(status_code: int) -&gt; bool:
+    return status_code in RETRYABLE_PROVIDER_STATUS_CODES</code></pre>
+      <p>小函数让策略具名化。后续扩展分类、metrics、日志时，可以复用统一判断。</p>
+      <pre><code>for attempt in range(1, config.max_attempts + 1):</code></pre>
+      <p>尝试编号从 1 开始，便于日志和测试表达“第几次尝试”。<code>+ 1</code> 是 Python <code>range</code> 右开区间要求；漏写会少尝试一次。</p>
+      <pre><code>response = await active_client.post(
+    url,
+    json=ProviderPredictionPayload(text=text, mode=mode).model_dump(),
+)
+response.raise_for_status()
+body = ProviderPredictionBody.model_validate(response.json())</code></pre>
+      <p>每次尝试都完整执行一次 provider 调用与校验。只有 HTTP 状态、超时、请求错误进入 retry 判断；响应体校验失败不会 retry。</p>
+      <pre><code>except httpx.TimeoutException as exc:
+    if attempt &lt; config.max_attempts:
+        await wait_before_retry(...)
+        continue
+    log_retry_exhausted(...)
+    raise AIClientError(..., error_code="ai_provider_timeout") from exc</code></pre>
+      <p>超时可重试，但只在还有预算时继续。最后一次仍失败时记录 retry exhausted，再抛稳定错误码。</p>
+      <pre><code>except httpx.HTTPStatusError as exc:
+    status_code = exc.response.status_code
+    retryable_status = (
+        classify_provider_http_status(status_code) == "retryable_http_status"
+    )
+    if attempt &lt; config.max_attempts and retryable_status:
+        await wait_before_retry(...)
+        continue</code></pre>
+      <p>HTTP 错误不能一概重试。先拿状态码，再通过分类函数判断。<code>400</code> 会 fail fast；<code>503</code> 在预算未耗尽时重试。</p>
+      <pre><code>except (ValueError, ValidationError) as exc:
+    log_prediction_fail_fast(...)
+    raise AIClientError(
+        message="The AI provider returned an invalid prediction response.",
+        error_code="ai_provider_invalid_response",
+    ) from exc</code></pre>
+      <p>非法响应体直接失败。原因是 provider 已经返回了不可被信任的数据，这属于契约破坏，不是瞬时网络故障。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>request_provider_prediction()
+  → for attempt in 1..max_attempts
+      → POST provider
+      → 成功：validate body → record success → return PredictionResult
+      → timeout/request error：有预算则等待后重试，否则 exhausted
+      → HTTP 429/5xx：有预算则等待后重试，否则 exhausted
+      → HTTP 4xx：fail_fast
+      → invalid JSON/schema：fail_fast
+  → 若循环异常结束：抛 AIClientError</code></pre>
+      <p>retry 放在 adapter 的原因很明确：它依赖 HTTPX 异常、HTTP 状态码、Retry-After、provider 响应校验，这些都是 provider 通信细节。router 和 service 不应知道这些细节。</p>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>正确理解</th><th>风险</th></tr></thead>
+        <tbody>
+          <tr><td><code>max_attempts</code> vs <code>retries</code></td><td>本项目表示总尝试次数</td><td>理解错会多打 provider</td></tr>
+          <tr><td>所有 HTTP 错误都重试</td><td>只重试 429 和常见临时 5xx</td><td>认证错误、请求错误被掩盖</td></tr>
+          <tr><td>invalid response 也重试</td><td>不重试，立即暴露契约错误</td><td>schema 漂移被悄悄吞掉</td></tr>
+          <tr><td>retry 写在 router</td><td>应写在 adapter</td><td>HTTP 协议层被 provider 细节污染</td></tr>
         </tbody>
       </table>
     </section>
 
     <section>
-      <h2>4. 运行机制：一次 provider prediction 的 retry 流程</h2>
-      <pre><code>request_provider_prediction()
-  -&gt; create or reuse AsyncClient
-  -&gt; for attempt in 1..max_attempts
-       -&gt; POST provider prediction payload
-       -&gt; raise_for_status()
-       -&gt; validate provider JSON with Pydantic
-       -&gt; success: return internal PredictionResult
-       -&gt; timeout/request error: retry if attempts remain
-       -&gt; 429 or 5xx: retry if attempts remain
-       -&gt; 400/401/403/404: raise AIClientError immediately
-       -&gt; invalid JSON/schema: raise AIClientError immediately
-  -&gt; close owned client</code></pre>
-      <p>注意这个流程仍然保留原来的内部错误契约：对外层 service 来说，adapter 失败仍然是 <code>AIClientError</code>，只是 adapter 在抛出错误前多做了有限次数的尝试。</p>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <ul>
+        <li><strong>无限循环重试</strong>：使用 <code>while True</code> 且退出条件不完整。解决：使用 <code>range(1, max_attempts + 1)</code> 明确预算。</li>
+        <li><strong>401 被反复重试</strong>：把所有 <code>HTTPStatusError</code> 都视为可恢复。解决：用 <code>classify_provider_http_status()</code> 分类。</li>
+        <li><strong>测试真的 sleep</strong>：retry 测试等待变慢。解决：注入 fake async sleep，断言 delay 参数。</li>
+        <li><strong>POST 盲目重试导致副作用</strong>：如果 provider 会创建任务或扣费，重复 POST 可能不是安全的。解决：确认接口语义，必要时使用幂等键。</li>
+      </ul>
     </section>
 
     <section>
-      <h2>5. 代码精读一：可重试状态码集合</h2>
-      <pre><code>RETRYABLE_PROVIDER_STATUS_CODES = {429, 500, 502, 503, 504}
-
-def is_retryable_provider_status(status_code: int) -&gt; bool:
-    return status_code in RETRYABLE_PROVIDER_STATUS_CODES</code></pre>
-      <p>把状态码集合放在模块顶部，有两个好处。第一，规则是显式的，读者一眼能知道本项目认为哪些 HTTP 状态是临时失败。第二，测试和后续课程可以围绕这个策略扩展，而不是把魔法数字散落在多个 <code>except</code> 分支里。</p>
-      <p>这里没有把所有 5xx 都重试到失控。我们选了真实网关和 provider 调用中最常见的临时失败：500、502、503、504；再加上 429。</p>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>重试次数</td><td><code>ai_max_attempts</code> 1 到 5</td><td>按 SLA、成本、超时预算精细配置</td></tr>
+          <tr><td>等待策略</td><td>后续课程讲 backoff、Retry-After、jitter</td><td>指数退避、抖动、限流反馈、熔断</td></tr>
+          <tr><td>幂等性</td><td>预测视作读式推理</td><td>任务型或计费型 API 必须考虑幂等键</td></tr>
+          <tr><td>观测</td><td>caplog 断言 scheduled/exhausted/fail_fast</td><td>日志、metrics、trace、告警闭环</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>6. 代码精读二：<code>max_attempts</code> 是重试预算</h2>
-      <pre><code>for attempt in range(1, config.max_attempts + 1):
-    try:
-        response = await active_client.post(...)
-        response.raise_for_status()
-        body = ProviderPredictionBody.model_validate(response.json())
-        return PredictionResult(...)
-    except httpx.TimeoutException as exc:
-        if attempt &lt; config.max_attempts:
-            continue
-        raise AIClientError(...) from exc</code></pre>
-      <p><code>range(1, config.max_attempts + 1)</code> 表示总尝试次数，而不是“失败后额外重试次数”。如果 <code>max_attempts=1</code>，函数只请求一次；如果 <code>max_attempts=3</code>，最多请求三次。</p>
-      <p>这种命名对初学者很重要。很多系统会把配置命名为 <code>retries</code>，这时 <code>retries=3</code> 往往表示“第一次之外再试三次”，总请求数可能是四次。我们这里用 <code>max_attempts</code>，避免这个歧义。</p>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details><summary>1. <code>max_attempts=3</code> 表示最多发送几次 provider 请求？</summary><p class="answer">最多 3 次。它是总尝试次数，不是额外重试次数。</p></details>
+      <details><summary>2. 为什么 400 不应该自动重试？</summary><p class="answer">400 通常表示请求格式或参数错误，同样请求再次发送大概率仍失败，应快速暴露。</p></details>
+      <details><summary>3. 为什么无效 provider 响应不重试？</summary><p class="answer">这是契约问题，provider 已返回不可被信任的数据，重试会掩盖 schema 漂移或供应商 bug。</p></details>
+      <details><summary>4. retry 为什么放在 adapter 层？</summary><p class="answer">retry 判断依赖 HTTPX 异常、状态码、响应头和 provider schema 校验，这些属于外部 provider 通信细节。</p></details>
     </section>
 
     <section>
-      <h2>7. 代码精读三：HTTP 错误要分状态码</h2>
-      <pre><code>except httpx.HTTPStatusError as exc:
-    status_code = exc.response.status_code
-    if (
-        attempt &lt; config.max_attempts
-        and is_retryable_provider_status(status_code)
-    ):
-        continue
-    raise AIClientError(
-        message=f"The AI provider returned HTTP {status_code}.",
-        error_code="ai_provider_http_error",
-    ) from exc</code></pre>
-      <p>这里不能简单地说“HTTP 错误都重试”。<code>HTTPStatusError</code> 同时覆盖 4xx 和 5xx。400、401、403 这类错误重试没有意义，因为问题来自请求本身或认证状态；503 这类错误才更像 provider 暂时无法服务。</p>
-      <p>因此，<code>HTTPStatusError</code> 分支先取出 <code>status_code</code>，再用 <code>is_retryable_provider_status()</code> 判断。这个判断就是本节最核心的工程策略。</p>
-    </section>
-
-    <section>
-      <h2>8. 代码精读四：非法响应不重试</h2>
-      <pre><code>except (ValueError, ValidationError) as exc:
-    raise AIClientError(
-        message="The AI provider returned an invalid prediction response.",
-        error_code="ai_provider_invalid_response",
-    ) from exc</code></pre>
-      <p><code>response.json()</code> 可能因为不是合法 JSON 而失败，<code>ProviderPredictionBody.model_validate(...)</code> 可能因为字段不符合契约而失败。本节选择不重试这类错误。</p>
-      <p>为什么？因为这不是“网络路上抖了一下”，而是 provider 已经返回了一个我们不能信任的结果。此时正确动作是暴露错误、保留日志和测试证据，而不是悄悄再发一次，掩盖 provider 契约问题。</p>
-    </section>
-
-    <section>
-      <h2>9. 为什么 retry 放在 adapter，而不是 router 或 service</h2>
-      <p>上一课我们刚把预测编排抽到 <code>services/predictions.py</code>。那本课为什么不在 <code>run_prediction()</code> 里重试？答案是：retry 的判断依赖 provider HTTP 细节，比如 <code>httpx.TimeoutException</code>、<code>HTTPStatusError</code>、状态码集合和响应体校验。这些都属于 provider adapter 知识。</p>
-      <p>如果把 retry 放进 router，HTTP 协议翻译层会变胖；如果放进 service，业务编排层会知道太多 provider 传输细节。放在 <code>request_provider_prediction()</code> 里，边界最干净：adapter 负责“如何可靠地和 provider 说话”，service 负责“预测用例怎么跑”，router 负责“怎么翻译成 HTTP 响应”。</p>
-    </section>
-
-    <section>
-      <h2>10. 测试精读：用 MockTransport 证明 retry 规则</h2>
-      <pre><code>def test_request_provider_prediction_retries_retryable_http_error_then_succeeds():
-    attempts = 0
-
-    def handler(request):
-        nonlocal attempts
-        attempts += 1
-        if attempts == 1:
-            return httpx.Response(status_code=503, request=request)
-        return httpx.Response(
-            status_code=200,
-            json={"label": "positive", "score": 0.93},
-            request=request,
-        )
-
-    result = run_async_prediction(client, max_attempts=2)
-
-    assert attempts == 2
-    assert result.label == "positive"</code></pre>
-      <p>这个测试刻意让第一次请求返回 503，第二次返回成功。它验证的不是“函数最后能成功”这么简单，而是验证 adapter 确实把 503 识别成 retryable failure，并且没有超过预算。</p>
-      <p>本课还加入了三个保护性测试：连续 503 最多请求 <code>max_attempts</code> 次；400 只请求一次；非法响应体只请求一次。它们一起证明 retry policy 的边界没有被写宽。</p>
-    </section>
-
-    <section class="practice">
-      <h2>11. 课堂实验</h2>
-      <p>先运行 provider adapter 测试：</p>
-      <pre><code>.\.venv\Scripts\python.exe -m pytest tests/test_provider_http.py -q</code></pre>
-      <p>预期看到：</p>
-      <pre><code>22 passed</code></pre>
-      <p>再运行全量测试，确认 retry 没有破坏现有路由、service、系统接口和数据库相关课程：</p>
-      <pre><code>.\.venv\Scripts\python.exe -m pytest -q</code></pre>
-      <p>如果你想在本地手动观察配置，可以在 <code>.env</code> 里设置：</p>
-      <pre><code>FIRST_API_AI_PREDICTION_BACKEND=provider
-FIRST_API_AI_MAX_ATTEMPTS=3</code></pre>
-      <p>不过当前 demo provider URL 是 <code>example.com</code>，真实调用还需要后续接入真实 provider 或测试服务。本节重点先放在 adapter 策略和可测试性。</p>
-    </section>
-
-    <section>
-      <h2>12. 常见错误与诊断</h2>
-      <div class="two-col">
-        <div class="callout">
-          <h3>错误一：所有异常都重试</h3>
-          <p>这会掩盖 400、401、非法 JSON 等确定性错误。诊断方式是写“不可重试错误只调用一次”的测试。</p>
-        </div>
-        <div class="callout">
-          <h3>错误二：没有最大次数</h3>
-          <p>无限 retry 会放大故障和成本。任何 retry policy 都必须有预算，例如 <code>max_attempts</code>。</p>
-        </div>
-        <div class="callout">
-          <h3>错误三：在 router 里写 retry</h3>
-          <p>router 会被 provider 细节污染。HTTPX 异常、状态码策略和响应体验证更适合放在 adapter。</p>
-        </div>
-        <div class="callout">
-          <h3>错误四：忽略 POST 的副作用</h3>
-          <p>不是所有 POST 都适合重试。预测请求在本项目里被设计成读式推理；如果 provider 会创建任务或扣费，策略要更谨慎。</p>
-        </div>
-      </div>
-    </section>
-
-    <section>
-      <h2>13. 面试视角：怎么解释 retry policy</h2>
-      <blockquote>
-        <p>我会把外部 provider 的 retry 放在 adapter 层，因为它依赖 HTTPX 异常、HTTP 状态码和 provider 响应契约。策略上，我只对超时、网络错误、429 以及常见临时 5xx 做有限重试，用 <code>max_attempts</code> 控制总尝试次数；对 400、401、403、404 和非法响应体不重试。这样可以提升短暂故障下的成功率，同时避免把确定性错误、认证问题或 provider 契约问题隐藏起来。</p>
-      </blockquote>
-    </section>
-
-    <section class="checkpoint">
-      <h2>14. 小测：先回忆，再展开</h2>
-      <details>
-        <summary>1. <code>max_attempts=3</code> 表示总共请求几次？</summary>
-        <p class="answer">最多请求三次。它是总尝试次数，不是第一次失败后的额外重试次数。</p>
-      </details>
-      <details>
-        <summary>2. 为什么 400 不应该自动重试？</summary>
-        <p class="answer">400 通常表示请求格式或参数错误；同一个错误请求再发一次，大概率仍然失败。</p>
-      </details>
-      <details>
-        <summary>3. 为什么非法 provider 响应体不重试？</summary>
-        <p class="answer">因为 provider 已经返回了无法通过契约校验的数据，这属于契约问题，应该暴露而不是掩盖。</p>
-      </details>
-      <details>
-        <summary>4. retry 为什么适合放在 adapter 层？</summary>
-        <p class="answer">因为 retry 判断依赖 provider HTTP 细节，例如 HTTPX 异常、状态码和响应体验证；这些属于 adapter 的职责。</p>
-      </details>
-    </section>
-
-    <section>
-      <h2>15. 本节总结</h2>
-      <p>本节给 provider prediction adapter 加入了有限 retry。现在 <code>request_provider_prediction()</code> 会根据 <code>config.max_attempts</code> 控制总尝试次数，对 timeout、request error、429 和常见 5xx 做谨慎重试，对客户端错误和非法响应体立刻失败。更重要的是，你现在知道 retry 是一条工程策略，而不是一个盲目的循环。</p>
-      <p>下一课建议学习：<a href="./0043-backoff-before-retry.html">Backoff Before Retry</a>。我们会讨论为什么真实系统不能连续立即重试，以及如何用等待策略降低雪崩风险。</p>
-      <p>推荐主资源：<a href="https://www.python-httpx.org/exceptions/">HTTPX Exceptions</a>、<a href="https://www.python-httpx.org/advanced/timeouts/">HTTPX Timeouts</a>、<a href="https://datatracker.ietf.org/doc/html/rfc6585">RFC 6585: 429 Too Many Requests</a>、<a href="https://www.rfc-editor.org/rfc/rfc9110.html#name-503-service-unavailable">RFC 9110: 503 Service Unavailable</a>。</p>
-      <p class="small">如果你想继续追问，可以问我：“POST 请求到底什么时候可以重试？”这个问题会引出幂等性、幂等键、计费语义和任务型 provider API。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <p><strong>题 1：哪些错误适合重试，哪些不适合？</strong> 答：timeout、网络请求错误、429、临时 5xx 适合有限重试；400、401、403、404、无效 JSON、schema 校验失败不适合。</p>
+      <p><strong>题 2：如何避免 retry storm？</strong> 答：设置最大尝试次数、总超时预算、指数退避、jitter、熔断和限流；本节先建立 <code>max_attempts</code> 预算，后续再扩展等待策略。</p>
+      <p><strong>题 3：POST 请求能否重试？</strong> 答：取决于语义。若是纯推理读取且服务端无副作用，可以谨慎有限重试；若会创建任务、扣费或改变状态，必须使用幂等键或避免自动重试。</p>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">
@@ -287,8 +164,8 @@ FIRST_API_AI_MAX_ATTEMPTS=3</code></pre>
       <span class="nav-links">
         <a href="../index.html">回到课程目录</a>
         <a href="./0041-prediction-service-orchestration.html">上一课：Prediction Service Orchestration</a>
-        <a href="../reference/0042-provider-retry-policy-cheatsheet.html">查看本课速查</a>
         <a href="./0043-backoff-before-retry.html">下一课：Backoff Before Retry</a>
+        <a href="../reference/0042-provider-retry-policy-cheatsheet.html">查看本课速查</a>
       </span>
     </nav>
   </main>

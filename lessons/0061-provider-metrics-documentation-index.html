@@ -13,93 +13,118 @@
       <span class="nav-links">
         <a href="../index.html">课程目录</a>
         <a href="./0060-provider-metrics-naming-refactor-boundary.html">上一课</a>
-        <a href="../reference/0061-provider-metrics-documentation-index-cheatsheet.html">本课速查</a>
+        <a href="../reference/0061-provider-metrics-documentation-index-cheatsheet.html">速查</a>
         <a href="../reference/provider-metrics-index.html">文档入口</a>
         <a href="./0062-provider-metrics-runbook-checklist.html">下一课</a>
       </span>
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0061</p>
-      <h1>Provider Metrics Documentation Index：把监控知识整理成可维护入口</h1>
-      <p class="lead">前几课已经完成 provider metrics 的端点、文本导出、生产边界、命名契约和安全改名边界。现在的问题不是“还能加什么代码”，而是“后来的人从哪里开始读”。本课新增一个文档入口页，并用测试保护它必须包含端点、指标名、边界说明和测试链接。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0061 Provider Metrics Documentation Index：把监控知识组织成可验证入口</h1>
+      <p class="lead">本节不再新增业务代码，而是把 0050-0060 累积的 provider metrics 知识收束为一个可维护文档入口：<code>reference/provider-metrics-index.html</code>。核心思想是 docs-as-contract：关键文档不是“写完给人看”的静态说明，而是项目契约的一部分，必须被测试保护，必须能追溯到 endpoint、指标名、生产边界、课程来源和代码测试。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解 documentation index 不是重复讲义，而是把分散知识变成一个入口。</li>
-        <li>学会判断哪些信息必须出现在监控文档首页：endpoint、metric name、label contract、production boundary、test ownership。</li>
-        <li>学会给静态 HTML 文档写轻量契约测试，避免文档入口慢慢失真。</li>
-        <li>把 provider metrics 小专题从“多节课程”收束成“可检索、可验证、可继续维护”的资料区。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Provider Metrics Documentation Index
+├─ 目标定位
+│  ├─ 单一入口：把分散课程、端点、测试、边界聚合到一个页面
+│  ├─ 检索边界：回答“从哪里开始查”，不是重复讲完整实现
+│  └─ 契约保护：用测试防止入口漏掉关键运行事实
+├─ 必须索引的运行事实
+│  ├─ GET /provider/metrics：JSON snapshot
+│  ├─ GET /provider/metrics/prometheus：Prometheus text-style export
+│  ├─ provider_prediction_total：稳定外部指标名
+│  ├─ get_provider_prediction_metric_contract()：改名前审查入口
+│  └─ not a production multi-instance metrics pipeline：生产边界
+├─ 必须索引的追溯来源
+│  ├─ Lessons 0058-0062：生产边界、命名契约、改名边界、文档入口、runbook
+│  ├─ tests/test_provider_http.py：指标 shape 与导出行为
+│  ├─ tests/test_openapi_contract.py：OpenAPI 生产边界说明
+│  └─ tests/test_course_docs_contract.py：文档入口本身的合同测试
+└─ 工程价值
+   ├─ 降低新读者搜索成本
+   ├─ 防止文档与代码长期漂移
+   ├─ 让 GitHub 读者从一个页面进入完整知识链
+   └─ 为面试中的“文档治理/可观测性治理”提供案例</code></pre>
     </section>
 
     <section>
-      <h2>1. 背景：课程越长，入口越重要</h2>
-      <p>当项目只有一两个 endpoint 时，读者可以从头翻课程。但 provider metrics 现在已经覆盖了很多层：counter、snapshot、JSON endpoint、Prometheus text endpoint、失败 outcome、测试隔离、生产边界、命名契约和 rename migration。</p>
-      <p>如果后续开发者想回答一个具体问题，比如“这个指标可以用于生产告警吗？”或者“改 <code>provider_prediction_total</code> 会影响什么？”，让他逐节翻 0050 到 0060 并不现实。文档入口的作用就是把这些答案组织成一张地图。</p>
-    </section>
-
-    <section class="callout">
-      <h2>2. 核心心智模型：文档入口是检索边界，不是复述正文</h2>
-      <p>好的文档入口不应该把每节课重新讲一遍。它应该回答四个问题：</p>
-      <ol>
-        <li>我要看哪个运行入口？例如 <code>/provider/metrics</code> 和 <code>/provider/metrics/prometheus</code>。</li>
-        <li>这个入口的契约是什么？例如 <code>provider_prediction_total</code> 和稳定 label keys。</li>
-        <li>这个入口不能承诺什么？例如它不是 production multi-instance metrics pipeline。</li>
-        <li>如果我要改它，应该先看哪些测试和课程？</li>
-      </ol>
-      <p>也就是说，documentation index 是“从问题到资料”的路由器，而不是另一篇长文章。</p>
-    </section>
-
-    <section>
-      <h2>3. 本课新增的文档入口</h2>
-      <p>本课新增 <a href="../reference/provider-metrics-index.html"><code>reference/provider-metrics-index.html</code></a>。它固定收纳五类信息：</p>
-      <ul>
-        <li>两个可读端点：<code>GET /provider/metrics</code> 和 <code>GET /provider/metrics/prometheus</code>。</li>
-        <li>当前指标契约：<code>provider_prediction_total</code>、HELP 文本和低基数 label keys。</li>
-        <li>rename 审查入口：<code>get_provider_prediction_metric_contract</code>。</li>
-        <li>生产边界提醒：text endpoint 是 educational export shape, not a production multi-instance metrics pipeline。</li>
-        <li>测试入口：provider HTTP 测试、OpenAPI 契约测试和文档契约测试。</li>
-      </ul>
+      <h2>② 核心概念底层原理</h2>
+      <p><strong>documentation index</strong> 的本质是导航型契约，不是教程正文。教程正文负责按知识依赖展开原理；文档入口负责把“读者现在要解决的问题”路由到正确资源。对于 metrics 主题，读者通常不会从第一节慢慢翻，而是带着问题进入：端点在哪里、指标名是什么、能不能用于生产告警、改名会不会破坏 dashboard、对应测试在哪。</p>
+      <p><strong>docs-as-contract</strong> 的底层逻辑来自接口稳定性治理。代码契约通常由类型、测试和 OpenAPI 保护；文档契约则保护“人类依赖的信息入口”。如果指标名变了但入口页面仍写旧名字，读者会配置错误查询；如果文档漏掉生产边界，教学用 in-process counter 可能被误认为生产级 metrics pipeline；如果入口不链接测试，读者无法判断文档陈述是否仍由项目验证。</p>
+      <table>
+        <thead>
+          <tr><th>概念</th><th>关注点</th><th>与本节的区别</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>课程正文</td><td>解释一个知识点的因果链、代码、流程</td><td>偏学习路径，篇幅可长</td></tr>
+          <tr><td>Documentation Index</td><td>把分散资源聚合为入口</td><td>偏检索路径，必须短、准、可追溯</td></tr>
+          <tr><td>Runbook</td><td>遇到现象后按步骤排查</td><td>偏操作路径，强调判断分支</td></tr>
+          <tr><td>OpenAPI</td><td>机器可读 HTTP 合同</td><td>偏接口形状，不负责完整学习路线</td></tr>
+          <tr><td>README</td><td>项目全局介绍</td><td>范围过大，不能替代专题索引</td></tr>
+        </tbody>
+      </table>
+      <p>本节的设计取舍是：只保护入口页的关键事实，不逐字测试整篇文档。逐字测试会把排版修改、措辞优化都变成失败；关键事实测试则只锁住端点、指标名、改名 helper、生产边界、课程链接和测试链接这些真正属于契约的内容。</p>
     </section>
 
     <section>
-      <h2>4. 机制：为什么文档页也要测试</h2>
-      <p>很多项目会遇到一种慢性问题：代码和测试越来越准，文档却停留在旧状态。对监控文档来说，这尤其危险，因为文档常常被用来配置 dashboard、告警、值班手册和排障流程。</p>
-      <p>本课没有把文档测试做成复杂系统，而是用 Python 标准库 <code>HTMLParser</code> 解析静态 HTML，检查两类东西：</p>
-      <ul>
-        <li>正文必须包含关键契约词：endpoint、metric name、rename helper 和生产边界句子。</li>
-        <li>链接必须指向相关课程和测试文件，让读者可以继续追溯。</li>
-      </ul>
-      <p>这不是要测试每个中文句子，而是保护“文档入口不能失去入口功能”。</p>
-    </section>
-
-    <section>
-      <h2>5. 代码精读一：HTML parser 测试夹具</h2>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <p>本节主要代码是文档合同测试。它使用 Python 标准库 <code>HTMLParser</code>，不引入 BeautifulSoup 等额外依赖，符合教学项目“少依赖、够表达”的原则。</p>
       <pre><code>class LinkAndTextParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self.links: list[str] = []
-        self.text_parts: list[str] = []
+        self.text_parts: list[str] = []</code></pre>
+      <table>
+        <thead><tr><th>代码行</th><th>作用</th><th>为什么这样写 / 不这样写的隐患</th></tr></thead>
+        <tbody>
+          <tr><td><code>class LinkAndTextParser(HTMLParser)</code></td><td>继承标准库 HTML 解析器</td><td>比正则解析 HTML 更稳；正则容易被属性顺序、换行、嵌套标签破坏。</td></tr>
+          <tr><td><code>super().__init__()</code></td><td>初始化父类状态机</td><td>省略后 parser 内部状态可能不完整，属于继承初始化错误。</td></tr>
+          <tr><td><code>self.links</code></td><td>收集所有 <code>&lt;a href&gt;</code></td><td>入口文档的核心能力之一是“可追溯”，因此链接是合同对象。</td></tr>
+          <tr><td><code>self.text_parts</code></td><td>收集正文文本片段</td><td>正文关键事实可能分布在表格、段落、列表中，统一抽取更稳定。</td></tr>
+        </tbody>
+      </table>
 
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag != "a":
-            return
-        attributes = dict(attrs)
-        href = attributes.get("href")
-        if href is not None:
-            self.links.append(href)
+      <pre><code>def handle_starttag(
+    self,
+    tag: str,
+    attrs: list[tuple[str, str | None]],
+) -> None:
+    if tag != "a":
+        return
+    attributes = dict(attrs)
+    href = attributes.get("href")
+    if href is not None:
+        self.links.append(href)</code></pre>
+      <table>
+        <thead><tr><th>代码行</th><th>作用</th><th>工程含义</th></tr></thead>
+        <tbody>
+          <tr><td><code>handle_starttag</code></td><td>解析起始标签时回调</td><td>只在结构层抽取链接，不关心 CSS 和视觉排版。</td></tr>
+          <tr><td><code>if tag != "a": return</code></td><td>过滤非链接标签</td><td>减少测试噪声；文档入口只需要验证导航能力。</td></tr>
+          <tr><td><code>dict(attrs)</code></td><td>把属性列表转为字典</td><td>避免依赖属性顺序；HTML 属性顺序不属于语义契约。</td></tr>
+          <tr><td><code>attributes.get("href")</code></td><td>读取链接目标</td><td>允许没有 href 的 a 标签存在，不因为无关结构直接报错。</td></tr>
+          <tr><td><code>self.links.append(href)</code></td><td>记录链接</td><td>后续断言可以直接检查课程和测试是否被链接。</td></tr>
+        </tbody>
+      </table>
 
-    def handle_data(self, data: str) -> None:
-        if data.strip():
-            self.text_parts.append(data.strip())</code></pre>
-      <p>这里没有用字符串正则去猜 HTML 结构，而是让标准库 parser 提取两个稳定投影：链接列表和正文文本。这样测试关注的是文档作为“入口”的行为，而不是某个缩进、换行或标签顺序。</p>
-    </section>
+      <pre><code>def handle_data(self, data: str) -> None:
+    if data.strip():
+        self.text_parts.append(data.strip())
 
-    <section>
-      <h2>6. 代码精读二：保护文档必须包含的契约词</h2>
+@property
+def text(self) -> str:
+    return " ".join(self.text_parts)</code></pre>
+      <table>
+        <thead><tr><th>代码行</th><th>作用</th><th>不这么写的隐患</th></tr></thead>
+        <tbody>
+          <tr><td><code>data.strip()</code></td><td>去掉纯空白文本</td><td>避免换行缩进进入断言文本，降低测试脆弱性。</td></tr>
+          <tr><td><code>append(data.strip())</code></td><td>保留有意义正文</td><td>表格单元格、列表项、段落都能被统一检查。</td></tr>
+          <tr><td><code>" ".join(...)</code></td><td>把片段拼成可检索文本</td><td>如果直接比较原始 HTML，会被标签和排版细节干扰。</td></tr>
+        </tbody>
+      </table>
+
       <pre><code>def test_provider_metrics_documentation_index_lists_operational_contract() -> None:
     docs_index = Path("reference/provider-metrics-index.html")
 
@@ -110,11 +135,8 @@
     assert "provider_prediction_total" in parser.text
     assert "get_provider_prediction_metric_contract" in parser.text
     assert "not a production multi-instance metrics pipeline" in parser.text</code></pre>
-      <p>这些断言不是随便挑的。两个 endpoint 是运行入口；指标名是 dashboard 和查询会依赖的外部名字；helper 是 rename 前的审查入口；生产边界句子防止读者误把教学 counter 当成真实生产方案。</p>
-    </section>
+      <p>这一组断言锁住文档入口的最小运行合同：两个端点、一个指标名、一个改名审查 helper、一个生产边界。缺任何一项，入口页就不再能回答 provider metrics 的核心问题。</p>
 
-    <section>
-      <h2>7. 代码精读三：保护文档链接能追溯到课程和测试</h2>
       <pre><code>def test_provider_metrics_documentation_index_links_learning_and_tests() -> None:
     docs_index = Path("reference/provider-metrics-index.html")
 
@@ -123,69 +145,132 @@
     assert "../lessons/0058-provider-metrics-production-boundary.html" in parser.links
     assert "../lessons/0059-provider-metrics-naming-contract.html" in parser.links
     assert "../lessons/0060-provider-metrics-naming-refactor-boundary.html" in parser.links
+    assert "../lessons/0061-provider-metrics-documentation-index.html" in parser.links
     assert "../tests/test_provider_http.py" in parser.links
     assert "../tests/test_openapi_contract.py" in parser.links</code></pre>
-      <p>这组测试保护的是“可追溯性”。如果一个文档入口只给结论，不给测试和课程来源，后来的人很难判断哪些内容是项目真实契约，哪些只是历史解释。</p>
+      <p>这一组断言锁住可追溯性。没有课程链接，读者只能看到结论；没有测试链接，读者无法判断结论是否被当前代码保护。文档入口的价值不在于“看起来完整”，而在于能把读者带到真实证据。</p>
     </section>
 
     <section>
-      <h2>8. 动手实验</h2>
-      <p>先运行本课新增的文档契约测试：</p>
-      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q</code></pre>
-      <p>预期看到 2 个测试通过。然后可以临时把 <code>reference/provider-metrics-index.html</code> 里的 <code>provider_prediction_total</code> 删除，再运行一次测试。你会看到测试失败，说明文档入口漏掉了监控契约的核心字段。</p>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>读者进入 GitHub 仓库
+  → 打开 provider metrics 文档入口
+    → 定位运行端点
+      → /provider/metrics 或 /provider/metrics/prometheus
+    → 定位指标契约
+      → provider_prediction_total + label keys + HELP text
+    → 定位边界说明
+      → educational export shape, not production multi-instance pipeline
+    → 定位变更审查点
+      → get_provider_prediction_metric_contract()
+    → 定位证据链
+      → 课程页 + provider_http 测试 + OpenAPI 合同测试
+    → 若要排障
+      → 跳转 provider-metrics-runbook.html</code></pre>
+      <p>从数据流角度看，provider metrics 的真实运行数据来自 provider prediction 过程，先被计入 in-process counter，再由 JSON endpoint 和 Prometheus text endpoint 读取；documentation index 不参与运行链路，它参与知识链路。两条链路必须互相指向：运行端点提供事实，文档入口组织事实，合同测试保护入口不脱离事实。</p>
+      <table>
+        <thead><tr><th>阶段</th><th>输入</th><th>处理</th><th>输出</th></tr></thead>
+        <tbody>
+          <tr><td>运行层</td><td>provider prediction outcome</td><td>记录低基数 metric labels</td><td>counter snapshot</td></tr>
+          <tr><td>接口层</td><td>counter snapshot</td><td>渲染 JSON 或 text</td><td><code>/provider/metrics*</code></td></tr>
+          <tr><td>文档层</td><td>端点、指标、边界、测试</td><td>聚合为入口页</td><td><code>provider-metrics-index.html</code></td></tr>
+          <tr><td>测试层</td><td>HTML 文本和链接</td><td>断言关键事实存在</td><td>CI 中发现文档漂移</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>9. 常见错误</h2>
-      <ul>
-        <li>把文档入口写成另一篇长讲义，导致读者还是找不到入口。</li>
-        <li>只链接课程，不链接测试；这样文档看起来完整，但缺少可验证来源。</li>
-        <li>只写 endpoint，不写生产边界，导致教学实现被误认为生产方案。</li>
-        <li>只写指标名，不写 rename helper 和 label keys，导致未来改名时缺少审查点。</li>
-        <li>用过细的文档测试锁死所有措辞，导致文案小改动也造成无意义失败。</li>
-      </ul>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>文档入口 vs 长教程</td><td>入口页越长越好</td><td>入口页应该高信噪比，负责路由，不负责重复讲完整课程。</td></tr>
+          <tr><td>文档测试 vs 文案测试</td><td>逐字锁死整篇文章</td><td>只保护端点、指标、边界、链接等契约事实。</td></tr>
+          <tr><td>README vs 专题索引</td><td>README 写了就够</td><td>README 是全局入口；专题索引负责某一技术域的深链接与证据链。</td></tr>
+          <tr><td>OpenAPI vs 文档入口</td><td>有 Swagger 就不需要文档页</td><td>OpenAPI 描述接口形状；文档入口还要组织课程、测试、生产边界和迁移说明。</td></tr>
+          <tr><td>教学指标 vs 生产指标</td><td>能导出文本就是生产监控</td><td>当前是教学级 in-process counter，不是多实例聚合、持久存储、告警治理体系。</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>10. 面试视角：如何解释 docs-as-contract</h2>
-      <blockquote>
-        <p>我会把关键文档入口当作轻量契约来维护。文档不需要逐字测试，但要保护它不能漏掉运行入口、外部契约、边界限制和可追溯测试。比如 provider metrics 的文档入口必须包含两个 endpoint、metric name、rename helper、生产边界说明和相关测试链接。这样文档既能服务读者，也能被 CI 发现明显失真。</p>
-      </blockquote>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>问题</th><th>典型表现</th><th>根因</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>链接漂移</td><td>点击课程或测试链接 404</td><td>文件改名后文档未同步</td><td>把关键链接放入 <code>parser.links</code> 断言；改名时同步测试。</td></tr>
+          <tr><td>指标名漂移</td><td>文档写旧的 metric name</td><td>只改代码，漏改文档入口</td><td>断言 <code>provider_prediction_total</code> 或新兼容名必须存在。</td></tr>
+          <tr><td>边界丢失</td><td>读者误把教学 counter 用于生产告警</td><td>文档只写端点，不写限制</td><td>强制保留 <code>not a production multi-instance metrics pipeline</code>。</td></tr>
+          <tr><td>测试过细</td><td>改一个标点导致测试失败</td><td>把文案当作合同全文比较</td><td>只断言关键事实和关键链接，不测试排版措辞。</td></tr>
+          <tr><td>正则解析 HTML</td><td>属性换行或顺序变化导致误判</td><td>HTML 是结构化文本，正则脆弱</td><td>使用 <code>HTMLParser</code> 抽取文本和链接。</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>11. 记忆练习</h2>
-      <details>
-        <summary>1. documentation index 和普通课程正文最大的区别是什么？</summary>
-        <p class="answer">documentation index 负责把问题路由到端点、契约、边界、测试和课程来源；普通课程正文负责逐步讲清一个概念。</p>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>文档目标</td><td>帮助新手建立知识地图</td><td>支撑值班、审计、变更、合规和跨团队协作</td></tr>
+          <tr><td>指标后端</td><td>进程内 counter + 静态文本导出</td><td>Prometheus/OpenTelemetry/托管监控平台，多实例聚合</td></tr>
+          <tr><td>文档责任</td><td>课程作者维护</td><td>服务 owner、SRE、平台团队共同维护</td></tr>
+          <tr><td>契约测试</td><td>检查关键文本和链接</td><td>还会检查 dashboard、alert rule、runbook、SLO、owner 信息</td></tr>
+          <tr><td>变更流程</td><td>PR 中同步课程和测试</td><td>RFC、兼容窗口、公告、灰度、回滚计划、事故复盘</td></tr>
+          <tr><td>边界声明</td><td>明确“不是生产多实例 pipeline”</td><td>明确采样策略、保留周期、告警阈值、升级路径</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open>
+        <summary>1. documentation index 的核心职责是什么？</summary>
+        <p class="answer">把分散的端点、指标契约、生产边界、课程说明和测试证据聚合为一个高信噪比入口，回答“从哪里开始查”。</p>
       </details>
       <details>
-        <summary>2. provider metrics 文档入口为什么必须写生产边界？</summary>
-        <p class="answer">因为当前实现是教学用 in-process counter 和 text-style export，不能被误用成生产多实例 metrics pipeline。</p>
+        <summary>2. 为什么文档入口也需要测试？</summary>
+        <p class="answer">因为入口页承载外部依赖信息。若端点、指标名、生产边界或测试链接漂移，读者会做出错误配置或错误判断。测试能在 CI 中提前发现明显失真。</p>
       </details>
       <details>
-        <summary>3. 为什么本课用 HTMLParser 而不是正则解析 HTML？</summary>
-        <p class="answer">HTMLParser 能提取链接和正文文本这两个稳定投影，让测试关注文档入口行为，而不是脆弱的标签排版细节。</p>
+        <summary>3. 为什么不逐字测试整篇 HTML？</summary>
+        <p class="answer">逐字测试会把排版、换行、措辞优化都变成失败，导致测试脆弱。合理做法是只锁定真正属于合同的关键事实和链接。</p>
       </details>
       <details>
-        <summary>4. 文档测试应该避免什么粒度？</summary>
-        <p class="answer">应该避免逐字锁死全部文案；只保护 endpoint、指标名、边界句子、关键链接等真正属于契约的内容。</p>
+        <summary>4. 本节文档入口必须包含哪些 provider metrics 关键事实？</summary>
+        <p class="answer"><code>/provider/metrics</code>、<code>/provider/metrics/prometheus</code>、<code>provider_prediction_total</code>、<code>get_provider_prediction_metric_contract</code> 和 <code>not a production multi-instance metrics pipeline</code>。</p>
+      </details>
+      <details>
+        <summary>5. documentation index 与 runbook 的区别是什么？</summary>
+        <p class="answer">documentation index 解决“资源在哪里”；runbook 解决“看到某个现象后下一步怎么查”。前者偏导航，后者偏操作流程和判断分支。</p>
       </details>
     </section>
 
     <section>
-      <h2>12. 本节总结</h2>
-      <p>本课把 provider metrics 小专题整理成一个可维护的入口页，并用测试保护它不会漏掉最关键的运行入口、指标契约、生产边界和测试来源。你的心智模型应该从“文档是写完给人看”升级到“关键文档也是项目契约的一部分”。</p>
-      <p>下一节建议继续做 Provider Metrics Runbook Checklist，把“看到指标异常时怎么排查”整理成一张操作清单。</p>
-      <p>推荐主资源：<a href="https://docs.python.org/3/library/html.parser.html">Python html.parser 官方文档</a>、<a href="https://docs.pytest.org/en/stable/how-to/assert.html">pytest assert 官方文档</a>、<a href="https://prometheus.io/docs/practices/instrumentation/">Prometheus instrumentation practices</a>。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open>
+        <summary>面试题 1：如何防止技术文档与代码长期漂移？</summary>
+        <p class="answer">把关键文档当作合同维护。对外部依赖信息，例如 endpoint、metric name、label keys、生产边界、迁移 helper 和测试链接，编写轻量文档合同测试；测试只锁关键事实，不锁整篇文案。变更代码契约时要求同 PR 更新文档和测试。</p>
+      </details>
+      <details>
+        <summary>面试题 2：为什么有 OpenAPI 之后仍然需要专题文档入口？</summary>
+        <p class="answer">OpenAPI 主要描述 HTTP 接口形状，无法完整表达教学路径、生产边界、命名迁移、测试证据和排障入口。专题文档入口把机器合同、人类解释、课程来源和测试证据组织在一起。</p>
+      </details>
+      <details>
+        <summary>面试题 3：文档合同测试应该锁哪些内容，不应该锁哪些内容？</summary>
+        <p class="answer">应该锁 endpoint、指标名、稳定 label、生产边界、关键 helper、课程和测试链接。不应该锁整段措辞、视觉排版、HTML 标签顺序、换行和非契约性描述。</p>
+      </details>
+      <details>
+        <summary>面试题 4：如果团队要修改 <code>provider_prediction_total</code>，文档入口应如何参与变更？</summary>
+        <p class="answer">入口页应链接改名审查 helper 和命名契约课程，标注旧名/新名兼容窗口，说明 dashboard、alert、runbook、测试的迁移状态。文档合同测试应随兼容策略更新，避免旧入口误导使用者。</p>
+      </details>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">
       <span class="nav-title">继续学习</span>
       <span class="nav-links">
-        <a href="../index.html">回到课程目录</a>
+        <a href="../index.html">课程目录</a>
         <a href="./0060-provider-metrics-naming-refactor-boundary.html">上一课：Provider Metrics Naming Refactor Boundary</a>
-        <a href="../reference/0061-provider-metrics-documentation-index-cheatsheet.html">查看本课速查</a>
         <a href="../reference/provider-metrics-index.html">打开文档入口</a>
         <a href="./0062-provider-metrics-runbook-checklist.html">下一课：Provider Metrics Runbook Checklist</a>
       </span>

@@ -19,129 +19,61 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0048</p>
-      <h1>Fail-fast Observability：让不可重试失败也有清楚语义</h1>
-      <p class="lead">上一课我们记录了 retry exhausted，说明一个可重试错误已经用完所有 attempt。本节继续补齐另一条路径：当 provider 返回 400 或非法响应体时，系统应该快速失败，并用结构化日志说明“为什么不重试”。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0048 Fail-fast Observability：不可重试失败也要有清晰诊断语义</h1>
+      <p class="lead">Fail fast 不是“没做错误处理”，而是系统判断继续尝试没有意义后主动停止。本节为 HTTP 400 类错误与无效 provider 响应补充 <code>provider_prediction_fail_fast</code> 日志，防止它们被误标为 retry exhausted。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解 fail fast 和 retry exhausted 的边界。</li>
-        <li>知道为什么不可重试错误也需要可观测性。</li>
-        <li>掌握 provider adapter 如何记录 <code>provider_prediction_fail_fast</code>。</li>
-        <li>学会用 <code>caplog</code> 验证 400 和非法响应体没有被误标为 retry exhausted。</li>
-        <li>理解日志事件名、错误码、状态码和 attempt 字段之间的诊断关系。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Fail-fast Observability
+├─ fail_fast 场景：non-retryable HTTP status / invalid response
+├─ 稳定事件：provider_prediction_fail_fast
+├─ 原因字段：fail_fast_reason = http_status | invalid_response
+├─ 诊断字段：attempt / max_attempts / status_code / error_code
+├─ 边界：不 sleep、不 continue、不 exhausted
+└─ 测试：attempts == 1 且 exhausted_records == []</code></pre>
+      <p>核心结论：不可重试失败必须快速返回，同时留下“为什么没有重试”的证据。否则线上排查会把确定性错误误判成 provider 连续失败。</p>
     </section>
 
     <section>
-      <h2>1. 背景：不重试不代表不用解释</h2>
-      <p>在 provider 调用里，并不是所有失败都应该重试。前几节课已经建立了 retry policy：timeout、request error、429 和常见 5xx 可以重试；而 400 一类错误通常说明请求本身有问题，继续发送同样的请求很难自动恢复。</p>
-      <p>还有一种失败是非法响应体。比如 provider 返回了 200，但 JSON 里给出 <code>{"label": "confused", "score": 1.5}</code>。这不是网络抖动，也不是限流，而是 provider 的响应不符合我们内部契约。重试可能偶尔成功，但默认把它当成可重试错误会掩盖真正的问题：provider 契约漂移了，或者 mock/provider 实现写错了。</p>
-      <p>所以，fail fast 的重点不是“沉默地失败”。它的重点是：快速停止无意义重试，同时留下足够清楚的诊断信号。</p>
-    </section>
-
-    <section class="callout">
-      <h2>2. 核心概念：Fail Fast 是一种分类决策</h2>
-      <p><strong>Fail fast</strong> 指系统发现某类错误继续尝试也没有意义时，立即停止当前流程，并把稳定错误交给上层处理。它不是“没有错误处理”，而是“已经判断这类错误不该进入 retry 循环”。</p>
-      <pre><code>retryable failure:
-  attempt 1 -> wait -> attempt 2 -> maybe exhausted
-
-fail-fast failure:
-  attempt 1 -> classify as not retryable -> raise stable error</code></pre>
-      <p>这和 retry exhausted 的区别很关键：</p>
-      <ul>
-        <li><strong>retry exhausted</strong>：错误本来值得重试，但 retry budget 用完了。</li>
-        <li><strong>fail fast</strong>：错误从分类上就不应该重试，所以不会消耗后续 attempt。</li>
-      </ul>
-      <p>如果把 400 或非法响应体也记成 retry exhausted，日志会误导排查者，以为系统已经尝试了多次。真实情况是：系统只尝试了一次，然后因为错误类型不适合重试而停止。</p>
+      <h2>② 核心概念底层原理</h2>
+      <p><strong>Fail fast</strong> 是错误分类后的主动终止：系统识别出继续请求大概率无意义，因此不消耗后续 attempt。它与 exhausted 的本质区别是：前者不该重试，后者本该重试但预算用完。</p>
+      <table>
+        <thead><tr><th>错误</th><th>处理</th><th>原因</th></tr></thead>
+        <tbody>
+          <tr><td>HTTP 400/401/403/404</td><td>fail_fast</td><td>请求、认证、权限或路径问题，重复发送不能修复</td></tr>
+          <tr><td>invalid JSON</td><td>fail_fast</td><td>provider 响应不是可解析 JSON</td></tr>
+          <tr><td>Pydantic ValidationError</td><td>fail_fast</td><td>provider 响应不符合内部契约</td></tr>
+          <tr><td>HTTP 503 最后一次失败</td><td>retry_exhausted</td><td>可重试错误耗尽预算</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>3. 本节新增的日志事件</h2>
-      <p>本节新增一个稳定事件名：</p>
-      <pre><code>provider_prediction_fail_fast</code></pre>
-      <p>它表达的语义是：provider prediction adapter 已经识别出不可重试失败，并且不会继续进入下一次 attempt。这个事件不是替代 <code>AIClientError</code>，而是补充内部诊断信息。</p>
-      <p>事件字段保持小而稳定：</p>
-      <ul>
-        <li><code>attempt</code>：在哪一次尝试上做出 fail-fast 决策。</li>
-        <li><code>max_attempts</code>：当前配置最多允许几次尝试。</li>
-        <li><code>fail_fast_reason</code>：为什么快速失败，目前是 <code>http_status</code> 或 <code>invalid_response</code>。</li>
-        <li><code>status_code</code>：如果已经拿到 HTTP 响应，记录响应状态码。</li>
-        <li><code>error_code</code>：将要上抛给 service/router 的稳定错误码。</li>
-      </ul>
-    </section>
-
-    <section>
-      <h2>4. 运行机制：400 为什么只尝试一次</h2>
-      <p>以 <code>max_attempts=3</code>、provider 返回 400 为例，运行过程是：</p>
-      <ol>
-        <li>adapter 发起第 1 次 POST。</li>
-        <li>provider 返回 HTTP 400。</li>
-        <li><code>response.raise_for_status()</code> 抛出 <code>HTTPStatusError</code>。</li>
-        <li>adapter 判断 400 不在可重试状态码集合里。</li>
-        <li>记录 <code>provider_prediction_fail_fast</code>，字段里包含 <code>status_code=400</code>。</li>
-        <li>抛出 <code>AIClientError(error_code="ai_provider_http_error")</code>。</li>
-        <li>不会进入第 2 次或第 3 次 attempt。</li>
-      </ol>
-      <pre><code>attempt 1 -> HTTP 400
-retryable_status = False
-log provider_prediction_fail_fast
-raise AIClientError</code></pre>
-    </section>
-
-    <section>
-      <h2>5. 运行机制：非法响应体为什么也快速失败</h2>
-      <p>非法响应体的路径稍微不同。HTTP 状态码可能是 200，说明传输层和状态码都成功了，但响应 JSON 不符合我们对 provider 的内部契约。</p>
-      <pre><code>class ProviderPredictionBody(BaseModel):
-    label: PredictionLabel
-    score: float = Field(ge=0, le=1)</code></pre>
-      <p>如果 provider 返回 <code>score=1.5</code>，Pydantic 会抛出 <code>ValidationError</code>。如果 provider 返回的不是合法 JSON，<code>response.json()</code> 会抛出 <code>ValueError</code>。这两种情况都会映射成同一个稳定错误码：<code>ai_provider_invalid_response</code>。</p>
-      <p>本节给这条路径也补上 fail-fast 日志。这样排查时能看出：HTTP 请求不是 timeout，也不是 5xx exhausted，而是 provider 响应契约不符合内部模型。</p>
-    </section>
-
-    <section>
-      <h2>6. 代码精读一：FailFastReason</h2>
-      <p>代码先把 fail-fast 原因收敛成一个小的 Literal 类型：</p>
+      <h2>③ 全套代码逐行精读解析</h2>
       <pre><code>FailFastReason = Literal["http_status", "invalid_response"]</code></pre>
-      <p>这不是为了复杂化，而是为了防止日志字段随手写散。以后阅读日志时，<code>fail_fast_reason</code> 的值应该稳定可枚举，而不是一会儿叫 <code>bad_status</code>，一会儿叫 <code>invalid_body</code>。</p>
-    </section>
-
-    <section>
-      <h2>7. 代码精读二：统一的 fail-fast 日志 helper</h2>
-      <p>新增的 helper 只负责一件事：用固定事件名和固定字段写出快速失败日志。</p>
+      <p>fail-fast 原因被收窄为稳定枚举，避免日志里一会儿写 <code>bad_status</code>、一会儿写 <code>invalid_body</code>。</p>
       <pre><code>def log_prediction_fail_fast(
     attempt: int,
     config: AIClientConfig,
     fail_fast_reason: FailFastReason,
     error_code: str,
     status_code: int | None = None,
-) -> None:
-    logger.warning(
-        "provider_prediction_fail_fast",
-        extra={
-            "attempt": attempt,
-            "max_attempts": config.max_attempts,
-            "fail_fast_reason": fail_fast_reason,
-            "status_code": status_code,
-            "error_code": error_code,
-        },
-    )</code></pre>
-      <p>这里用 <code>warning</code>，因为这次 provider prediction 最终会失败并上抛稳定错误。但事件名不是 <code>retry_exhausted</code>，所以它不会误导我们以为 retry budget 已经被用完。</p>
-    </section>
-
-    <section>
-      <h2>8. 代码精读三：HTTP 状态错误的分支</h2>
-      <p>HTTP 状态错误现在被分成两条路径：可重试状态码可能 scheduled retry 或 exhausted；不可重试状态码直接 fail fast。</p>
-      <pre><code>status_code = exc.response.status_code
-retryable_status = is_retryable_provider_status(status_code)
-
-if attempt &lt; config.max_attempts and retryable_status:
-    await wait_before_retry(...)
-    continue
-
-if retryable_status:
+) -&gt; None:</code></pre>
+      <p>helper 参数与诊断语义直接对应：第几次尝试、最多几次、为什么 fail fast、最终稳定错误码、是否有 HTTP 状态码。</p>
+      <pre><code>logger.warning(
+    "provider_prediction_fail_fast",
+    extra={
+        "attempt": attempt,
+        "max_attempts": config.max_attempts,
+        "fail_fast_reason": fail_fast_reason,
+        "status_code": status_code,
+        "error_code": error_code,
+    },
+)</code></pre>
+      <p>使用 warning，因为本次 provider prediction 最终失败；事件名不是 exhausted，避免表达“预算用完”的错误语义。</p>
+      <pre><code>if retryable_status:
     log_retry_exhausted(...)
 else:
     log_prediction_fail_fast(
@@ -151,12 +83,7 @@ else:
         error_code="ai_provider_http_error",
         status_code=status_code,
     )</code></pre>
-      <p>这段代码的关键是 <code>else</code>。它只处理不可重试 HTTP 状态码。于是 400 和 503 会进入不同日志事件：400 是 fail fast，503 在最后一次失败时才是 retry exhausted。</p>
-    </section>
-
-    <section>
-      <h2>9. 代码精读四：非法响应体的分支</h2>
-      <p>非法响应体的捕获点在 JSON 解析和 Pydantic 校验之后：</p>
+      <p>HTTP 分支先分类。400 类状态不进入等待、不进入 exhausted，而是直接 fail fast。</p>
       <pre><code>except (ValueError, ValidationError) as exc:
     log_prediction_fail_fast(
         attempt=attempt,
@@ -165,77 +92,80 @@ else:
         error_code="ai_provider_invalid_response",
         status_code=response.status_code,
     )
-    raise AIClientError(
-        message="The AI provider returned an invalid prediction response.",
-        error_code="ai_provider_invalid_response",
-    ) from exc</code></pre>
-      <p>这里记录 <code>status_code=response.status_code</code> 很有用。它能说明请求拿到了 HTTP 响应，而且通常是 200，但响应体没有通过内部模型校验。这比只看最终 503 更容易定位问题。</p>
-    </section>
-
-    <section class="practice">
-      <h2>10. 动手实验：运行 provider adapter 测试</h2>
-      <p>在项目根目录运行：</p>
-      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q</code></pre>
-      <p>本节新增的测试关注两个场景。</p>
-      <p>第一个场景是 400：</p>
-      <pre><code>assert attempts == 1
-assert fail_fast_records[0].fail_fast_reason == "http_status"
-assert fail_fast_records[0].status_code == 400
-assert exhausted_records == []</code></pre>
-      <p>第二个场景是非法响应体：</p>
-      <pre><code>assert attempts == 1
-assert fail_fast_records[0].fail_fast_reason == "invalid_response"
-assert fail_fast_records[0].status_code == 200
-assert exhausted_records == []</code></pre>
-      <p>注意最后一行很重要：我们不仅证明 fail-fast 日志存在，还证明它没有被误记成 retry exhausted。</p>
+    raise AIClientError(...)</code></pre>
+      <p>无效响应体也只尝试一次。<code>status_code=200</code> 这类日志尤其有价值：它说明传输成功，但业务契约失败。</p>
     </section>
 
     <section>
-      <h2>11. 常见错误</h2>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>HTTP 400 路径
+  → attempt 1
+  → response.raise_for_status()
+  → HTTPStatusError(status_code=400)
+  → classify = non_retryable_http_status
+  → log provider_prediction_fail_fast(reason=http_status)
+  → raise AIClientError(ai_provider_http_error)
+  → attempts == 1
+
+Invalid response 路径
+  → attempt 1
+  → HTTP 200
+  → response.json()/Pydantic validation fails
+  → log provider_prediction_fail_fast(reason=invalid_response)
+  → raise AIClientError(ai_provider_invalid_response)
+  → attempts == 1</code></pre>
+      <p>这两条路径都不会 sleep，不会 continue，也不会写 retry_exhausted。这是本节最重要的语义边界。</p>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>正确理解</th><th>误用后果</th></tr></thead>
+        <tbody>
+          <tr><td>fail fast vs 无处理</td><td>fail fast 是主动分类后的停止</td><td>误以为系统偷懒没有重试</td></tr>
+          <tr><td>400 vs 503</td><td>400 多为确定性错误，503 多为临时错误</td><td>400 重试会制造无意义流量</td></tr>
+          <tr><td>invalid response 是否重试</td><td>默认不重试</td><td>契约漂移被掩盖</td></tr>
+          <tr><td>日志事件名</td><td>fail_fast 与 retry_exhausted 必须区分</td><td>线上排查结论错误</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
       <ul>
-        <li>把不可重试 HTTP 错误也当成 retry exhausted：这会误导排查者以为系统已经多次尝试。</li>
-        <li>只断言 attempts 等于 1，不检查日志事件：行为对了，但诊断信号可能缺失。</li>
-        <li>非法响应体不记录 status code：排查时看不出 provider 是没响应，还是响应了但 body 不合法。</li>
-        <li>日志里塞完整响应体：provider 响应可能包含敏感内容，课程里只记录诊断字段。</li>
-        <li>把 fail-fast 细节加入公共 JSON 响应：内部分类会变成调用方依赖的外部契约。</li>
-        <li>用临时字符串做 reason：后续日志查询和测试会变脆。</li>
+        <li><strong>400 被重试 3 次</strong>：HTTPStatusError 分支未分类。解决：用 <code>classify_provider_http_status()</code> 判断。</li>
+        <li><strong>invalid response 被记为 exhausted</strong>：把所有异常统一打 exhausted。解决：ValueError/ValidationError 单独走 fail fast。</li>
+        <li><strong>日志缺少 status_code</strong>：无法判断 provider 是否返回响应。解决：HTTP 与 invalid response 路径都尽量记录 status_code。</li>
+        <li><strong>测试只看 error_code</strong>：未保护日志语义。解决：断言 <code>fail_fast_records</code> 存在且 <code>exhausted_records == []</code>。</li>
       </ul>
     </section>
 
     <section>
-      <h2>12. 面试视角：如何解释“哪些错误不重试”</h2>
-      <blockquote>
-        <p>我会先把 provider 错误分类。timeout、request error、429 和部分 5xx 可以有限重试；400 类错误通常说明请求本身不对，非法响应体说明 provider 响应不符合内部契约。后两类会 fail fast，不消耗后续 attempt，但会记录结构化日志，例如 attempt、max_attempts、fail_fast_reason、status_code 和 error_code。这样既避免无意义重试，也能解释为什么系统没有继续尝试。</p>
-      </blockquote>
-      <p>这段回答展示的是工程判断：重试不是越多越好，日志也不是越多越好。关键是把错误分类、重试策略和可观测字段对应起来。</p>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>错误分类</td><td>http_status / invalid_response</td><td>可能细分认证、配额、schema、供应商 bug</td></tr>
+          <tr><td>响应处理</td><td>统一抛 <code>AIClientError</code></td><td>可能触发降级、禁用 provider、回滚配置</td></tr>
+          <tr><td>日志字段</td><td>attempt/status/error_code</td><td>追加 request id、provider response id、schema version</td></tr>
+          <tr><td>安全</td><td>不记录响应体全文</td><td>脱敏、合规、敏感字段屏蔽</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>13. 记忆练习</h2>
-      <details>
-        <summary>1. fail fast 和 retry exhausted 的本质区别是什么？</summary>
-        <p class="answer">fail fast 是错误分类上不该重试；retry exhausted 是错误可重试，但所有 attempt 已经用完。</p>
-      </details>
-      <details>
-        <summary>2. 为什么 400 不应该记录为 retry exhausted？</summary>
-        <p class="answer">因为 400 通常表示请求本身有问题，继续发送同样请求没有恢复意义，不属于 retry budget 用完。</p>
-      </details>
-      <details>
-        <summary>3. 非法响应体记录 status_code=200 有什么价值？</summary>
-        <p class="answer">它说明 provider 已经返回了成功状态码，但 body 没通过内部契约校验，排查方向应该转向响应格式或模型映射。</p>
-      </details>
-      <details>
-        <summary>4. 为什么测试要断言 exhausted_records 为空？</summary>
-        <p class="answer">因为本节要保护日志语义，证明快速失败不会被误标成重试耗尽。</p>
-      </details>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details><summary>1. fail fast 和 retry exhausted 的本质区别是什么？</summary><p class="answer">fail fast 是错误分类上不应重试；retry exhausted 是错误可重试但 attempt 预算已经用完。</p></details>
+      <details><summary>2. 为什么 HTTP 400 不应重试？</summary><p class="answer">它通常表示请求本身或认证权限有问题，同一请求重复发送无法自动修复。</p></details>
+      <details><summary>3. 为什么 invalid response 记录 status_code=200 有价值？</summary><p class="answer">它说明 provider 有响应且 HTTP 层成功，但响应体不符合内部业务契约。</p></details>
+      <details><summary>4. 为什么测试要断言 <code>exhausted_records == []</code>？</summary><p class="answer">为了保护日志语义，证明 fail-fast 路径没有被误标为 retry exhausted。</p></details>
     </section>
 
     <section>
-      <h2>14. 本节总结</h2>
-      <p>本节给 provider prediction adapter 补上了 fail-fast 可观测性。现在，不可重试 HTTP 状态和非法 provider 响应都会记录 <code>provider_prediction_fail_fast</code>，同时保留稳定的 <code>AIClientError</code> 映射。测试证明它们只尝试一次，并且不会混入 retry exhausted 日志。</p>
-      <p>下一课建议学习：Provider Error Taxonomy。我们可以把 timeout、request error、HTTP 状态错误、非法响应、retry scheduled、retry exhausted、fail fast 这些概念整理成更完整的错误分类表，为后续指标、告警或更清晰的服务层错误传播做准备。</p>
-      <p>推荐主资源：<a href="https://docs.python.org/3/library/logging.html">Python logging</a>、<a href="https://docs.pytest.org/en/stable/how-to/logging.html">pytest logging/caplog</a>、<a href="https://www.python-httpx.org/exceptions/">HTTPX exceptions</a>、<a href="https://docs.pydantic.dev/latest/concepts/models/">Pydantic models</a>。</p>
-      <p class="small">如果你想继续追问，可以问我：“怎么判断一个 provider 错误到底该不该重试？”这个问题会把我们带到错误分类和幂等性的核心。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <p><strong>题 1：哪些 provider 错误应该 fail fast？</strong> 答：非重试 HTTP 状态码，如 400/401/403/404，以及 provider 返回的非法 JSON 或不符合 schema 的响应体。</p>
+      <p><strong>题 2：为什么 fail fast 也需要 observability？</strong> 答：它解释系统为什么没有继续重试，避免排查人员误以为 retry 逻辑漏执行。</p>
+      <p><strong>题 3：如何验证 fail-fast 行为？</strong> 答：构造 400 或 invalid response，断言 attempts 为 1，存在 fail_fast 日志，并且不存在 retry_exhausted 日志。</p>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

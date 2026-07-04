@@ -1,5 +1,151 @@
 # Course Progress
 
+# 2026-07-04 Run: Refactor Batch 11 Lessons 0061-0062
+
+## Completed
+
+- Rebuilt Lessons 0061-0062 into the required "Final Review + CSDN Deep Dive" structure.
+- Covered provider metrics documentation indexing and runbook checklist design: docs-as-contract, HTMLParser-based document contract tests, operational metric facts, traceability links, outcome-based troubleshooting, and the teaching-vs-production alert boundary.
+- Kept the lessons tied to current project artifacts: `reference/provider-metrics-index.html`, `reference/provider-metrics-runbook.html`, `/provider/metrics`, `/provider/metrics/prometheus`, `provider_prediction_total`, `get_provider_prediction_metric_contract()`, and the provider metrics documentation contract tests.
+- Updated `tests/test_course_docs_contract.py` so the documentation contract now protects Lessons 0001-0062.
+- Updated `NOTES.md` to record the final refactor batch for the first 62 lessons.
+
+## Files touched
+
+- `lessons/0061-provider-metrics-documentation-index.html`
+- `lessons/0062-provider-metrics-runbook-checklist.html`
+- `tests/test_course_docs_contract.py`
+- `NOTES.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+First 62-lesson review pass is complete. Await user quality review or next course direction.
+
+## Blockers
+
+- No project blocker found.
+
+# 2026-07-04 Run: Refactor Batch 10 Lessons 0055-0060
+
+## Completed
+
+- Rebuilt Lessons 0055-0060 into the required "Final Review + CSDN Deep Dive" structure.
+- Covered provider metrics export and governance topics: Prometheus text-style export shape, export contract tests, snapshot boundary isolation, production-vs-teaching metrics boundaries, stable metric naming contracts, and safe naming refactor boundaries.
+- Kept the lessons tied to current project code: `render_provider_metrics_prometheus_text()`, `escape_prometheus_label_value()`, `get_provider_metrics_prometheus_text()`, `GET /provider/metrics/prometheus`, `ProviderMetricsCounter.snapshot()`, `PROVIDER_PREDICTION_METRIC_NAME`, `PROVIDER_PREDICTION_METRIC_LABEL_NAMES`, and `get_provider_prediction_metric_contract()`.
+- Updated `tests/test_course_docs_contract.py` so the documentation contract now protects Lessons 0001-0060.
+- Updated `NOTES.md` to record the tenth refactor batch.
+
+## Files touched
+
+- `lessons/0055-provider-metrics-export-shape.html`
+- `lessons/0056-provider-metrics-export-tests.html`
+- `lessons/0057-provider-metrics-snapshot-boundary.html`
+- `lessons/0058-provider-metrics-production-boundary.html`
+- `lessons/0059-provider-metrics-naming-contract.html`
+- `lessons/0060-provider-metrics-naming-refactor-boundary.html`
+- `tests/test_course_docs_contract.py`
+- `NOTES.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Continue the same refactor standard with Lessons 0061-0062 after user review, then the first 62-lesson review pass will be complete.
+
+## Blockers
+
+- No project blocker found.
+
+# 2026-07-04 Run: Refactor Batch 9 Lessons 0049-0054
+
+## Completed
+
+- Rebuilt Lessons 0049-0054 into the required "Final Review + CSDN Deep Dive" structure.
+- Covered provider metrics foundations: provider error taxonomy, low-cardinality provider metric labels, teaching-only counters, read-only metrics endpoint design, failure outcome samples, and metrics test isolation.
+- Kept the lessons tied to current project code: `classify_provider_http_status()`, `ProviderMetricLabels`, `build_provider_metric_labels()`, `ProviderMetricsCounter`, `record_provider_metric()`, `get_provider_metrics_snapshot()`, `GET /provider/metrics`, `reset_provider_metrics()`, and the autouse metrics reset fixture.
+- Updated `tests/test_course_docs_contract.py` so the documentation contract now protects Lessons 0001-0054.
+- Updated `NOTES.md` to record the ninth refactor batch.
+
+## Files touched
+
+- `lessons/0049-provider-error-taxonomy.html`
+- `lessons/0050-provider-metrics-basics.html`
+- `lessons/0051-provider-metrics-counters.html`
+- `lessons/0052-provider-metrics-endpoint.html`
+- `lessons/0053-provider-metrics-failure-outcomes.html`
+- `lessons/0054-provider-metrics-test-isolation.html`
+- `tests/test_course_docs_contract.py`
+- `NOTES.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Continue the same refactor standard with Lessons 0055-0060 after user review.
+
+## Blockers
+
+- No project blocker found.
+
+# 2026-07-04 Run: Refactor Batch 8 Lessons 0043-0048
+
+## Completed
+
+- Rebuilt Lessons 0043-0048 into the required "Final Review + CSDN Deep Dive" structure.
+- Covered provider retry reliability and observability topics: backoff before retry, honoring Retry-After, retry jitter, retry scheduled observability, retry exhaustion, and fail-fast observability.
+- Kept the lessons tied to current project code: `parse_retry_after_delay()`, `build_retry_delay_plan()`, `RetryDelayPlan`, `calculate_retry_jitter()`, `wait_before_retry()`, `provider_prediction_retry_scheduled`, `provider_prediction_retry_exhausted`, and `provider_prediction_fail_fast`.
+- Updated `tests/test_course_docs_contract.py` so the documentation contract now protects Lessons 0001-0048.
+- Updated `NOTES.md` to record the eighth refactor batch.
+
+## Files touched
+
+- `lessons/0043-backoff-before-retry.html`
+- `lessons/0044-honor-retry-after.html`
+- `lessons/0045-retry-jitter.html`
+- `lessons/0046-retry-observability.html`
+- `lessons/0047-retry-exhaustion.html`
+- `lessons/0048-fail-fast-observability.html`
+- `tests/test_course_docs_contract.py`
+- `NOTES.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Continue the same refactor standard with Lessons 0049-0054 after user review.
+
+## Blockers
+
+- No project blocker found.
+
+# 2026-07-04 Run: Refactor Batch 7 Lessons 0037-0042
+
+## Completed
+
+- Rebuilt Lessons 0037-0042 into the required "Final Review + CSDN Deep Dive" structure.
+- Covered provider prediction adapters, provider predict endpoint wiring, prediction backend switching, prediction observability, prediction service orchestration, and provider retry policy.
+- Kept the lessons tied to current project code: `ProviderPredictionPayload`, `ProviderPredictionBody`, `request_provider_prediction()`, `POST /provider/predict`, `FIRST_API_AI_PREDICTION_BACKEND`, `X-Prediction-*` headers, `run_prediction()`, and retry classification for provider failures.
+- Updated `tests/test_course_docs_contract.py` so the documentation contract now protects Lessons 0001-0042.
+- Updated `NOTES.md` to record the seventh refactor batch.
+
+## Files touched
+
+- `lessons/0037-provider-prediction-adapter.html`
+- `lessons/0038-provider-predict-endpoint.html`
+- `lessons/0039-prediction-backend-switch.html`
+- `lessons/0040-prediction-observability.html`
+- `lessons/0041-prediction-service-orchestration.html`
+- `lessons/0042-provider-retry-policy.html`
+- `tests/test_course_docs_contract.py`
+- `NOTES.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Continue the same refactor standard with Lessons 0043-0048 after user review.
+
+## Blockers
+
+- No project blocker found.
+
 ## 2026-07-04 Run: Lesson 0048 Fail-fast Observability
 
 ### Completed

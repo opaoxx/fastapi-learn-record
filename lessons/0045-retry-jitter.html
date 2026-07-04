@@ -19,206 +19,133 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0045</p>
-      <h1>Retry Jitter：给重试等待加一点随机扰动</h1>
-      <p class="lead">Backoff 让客户端失败后慢一点再试，但如果所有客户端都用同一套公式，它们仍然可能在同一秒整齐重试。本节给本地 backoff 加入可配置 jitter，让 provider 重试时间分散开。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0045 Retry Jitter：给本地退避加入可控随机抖动</h1>
+      <p class="lead">指数退避能推迟重试，但如果所有客户端都按同一公式等待，它们仍会在同一时间点重试。jitter 的作用是打散重试峰值；本项目采用 additive jitter，并把随机函数注入 adapter，使随机策略可测试。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解为什么只有 exponential backoff 仍然可能出现重试峰值。</li>
-        <li>理解 jitter 的作用：打散多个客户端的重试时间。</li>
-        <li>掌握本项目采用的简单 additive jitter 公式。</li>
-        <li>学会把随机数生成器注入测试，避免测试不可重复。</li>
-        <li>理解为什么 <code>Retry-After</code> 不额外加 jitter。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Retry Jitter
+├─ 问题：相同 backoff 公式会造成同步重试
+├─ 策略：jitter = retry_jitter_seconds * random_fraction()
+├─ 本地 delay：min(exponential_delay + jitter, max_delay)
+├─ 随机源：RetryRandom = Callable[[], float]
+├─ 测试控制：random_fraction=lambda: 0.4
+└─ 边界：Retry-After 不额外加 jitter</code></pre>
+      <p>核心结论：jitter 不是“让代码随机一点”，而是分布式系统中降低重试同步峰值的可靠性手段。</p>
     </section>
 
     <section>
-      <h2>1. 背景：指数退避仍然可能“排队齐步走”</h2>
-      <p>第 43 课引入了指数退避：第一次失败等 0.1 秒，第二次失败等 0.2 秒，第三次失败等 0.4 秒。它能减少立即重试带来的冲击。</p>
-      <p>但如果 100 个客户端在同一时刻失败，并且都使用同样的 base delay 和 max delay，那么它们仍然会在 0.1 秒后一起重试，在 0.2 秒后一起重试，在 0.4 秒后一起重试。峰值被推迟了，但没有真正被打散。</p>
-      <p>AWS Architecture Blog 对这个问题有一个经典解释：capped exponential backoff 能让请求变少，但仍会产生请求簇；加入 jitter 的目的，是把这些峰值打散成更平滑的请求流。Google Cloud 的 retry 指南也建议使用带 jitter 的截断指数退避，避免客户端同步重试。</p>
-    </section>
-
-    <section class="callout">
-      <h2>2. 核心概念：jitter 是可控的随机扰动</h2>
-      <p><strong>Jitter</strong> 指在计算出的 backoff 等待时间上加入一个小的随机量。它不是为了“让代码玄学”，而是为了让多个客户端不要在同一时间点重试。</p>
-      <pre><code>without jitter:
-client A: wait 1.0s
-client B: wait 1.0s
-client C: wait 1.0s
-
-with jitter:
-client A: wait 1.08s
-client B: wait 1.31s
-client C: wait 1.47s</code></pre>
-      <p>本项目采用初学者更容易理解的 additive jitter：</p>
-      <pre><code>delay = min(exponential_delay + random_fraction * jitter_seconds, max_delay)</code></pre>
-      <p>其中 <code>random_fraction</code> 在 0 到 1 之间，<code>jitter_seconds</code> 是最大随机扰动范围。</p>
+      <h2>② 核心概念底层原理</h2>
+      <p>如果 100 个请求在同一时刻失败，且都等待 1 秒后重试，峰值只是被推迟到 1 秒后。jitter 在等待时间上加入小范围随机量，让请求分布到不同时间点。</p>
+      <table>
+        <thead><tr><th>策略</th><th>示例</th><th>效果</th></tr></thead>
+        <tbody>
+          <tr><td>无 jitter</td><td>1.0s, 1.0s, 1.0s</td><td>重试仍同步</td></tr>
+          <tr><td>additive jitter</td><td>1.1s, 1.3s, 1.4s</td><td>峰值被打散</td></tr>
+          <tr><td>full jitter</td><td>0 到 cap 内随机</td><td>更强打散，策略更复杂</td></tr>
+        </tbody>
+      </table>
+      <p>课程采用 additive jitter，是为了保持公式可读：先算指数退避，再加一个小随机扰动，最后用最大等待截断。</p>
     </section>
 
     <section>
-      <h2>3. 为什么不直接上 full jitter</h2>
-      <p>AWS 文章里比较了 full jitter、equal jitter、decorrelated jitter 等策略。真实 SDK 可以做得更完整，但课程项目的目标是先让你理解“为什么要随机化”和“怎么让随机性可测试”。</p>
-      <p>所以本节先实现简单 additive jitter。它保留了上一课的指数退避形状，只在本地 backoff 上加一点可配置的扰动。等你理解这个版本后，再学习 full jitter 会更自然。</p>
-    </section>
-
-    <section>
-      <h2>4. 运行机制：只有本地 backoff 加 jitter</h2>
-      <pre><code>if Retry-After is valid:
-    delay = min(provider_delay, max_delay)
-else:
-    delay = min(exponential_delay + jitter_delay, max_delay)</code></pre>
-      <p>这里有一个重要边界：<code>Retry-After</code> 是 provider 的明确提示，所以不额外加 jitter。否则 provider 说“2 秒后再试”，客户端却随机变成 2.4 秒，就会让测试、排查和协议语义都变得不清楚。</p>
-      <p>jitter 只用于本地估算的 backoff。也就是：provider 没有给明确时间时，客户端用自己的公式估算，并加入少量随机扰动。</p>
-    </section>
-
-    <section>
-      <h2>5. 代码精读一：配置项</h2>
+      <h2>③ 全套代码逐行精读解析</h2>
       <pre><code>class Settings(BaseSettings):
     ai_retry_jitter_seconds: float = Field(default=0.0, ge=0)</code></pre>
-      <p>jitter 也是 provider 调用策略，所以放在 settings 里。默认值是 0，表示不启用随机扰动；在 <code>.env.example</code> 中给出推荐示例：</p>
-      <pre><code>FIRST_API_AI_RETRY_JITTER_SECONDS="0.1"</code></pre>
-      <p>这样课程项目默认行为保持可预测，但读者可以清楚看到真实项目里应该如何打开它。</p>
-    </section>
-
-    <section>
-      <h2>6. 代码精读二：随机扰动计算</h2>
-      <pre><code>RetryRandom = Callable[[], float]
-
-def calculate_retry_jitter(
+      <p>jitter 默认关闭，保证教学行为确定；生产环境可通过 <code>FIRST_API_AI_RETRY_JITTER_SECONDS</code> 开启。</p>
+      <pre><code>RetryRandom = Callable[[], float]</code></pre>
+      <p>随机源被抽象成无参函数，返回一个浮点比例。这样生产用 <code>random.random</code>，测试用固定 lambda。</p>
+      <pre><code>def calculate_retry_jitter(
     config: AIClientConfig,
     random_fraction: RetryRandom = random.random,
 ) -&gt; float:
     jitter_seconds = max(config.retry_jitter_seconds, 0.0)
     if jitter_seconds == 0:
-        return 0.0
-
-    fraction = min(max(random_fraction(), 0.0), 1.0)
-    return jitter_seconds * fraction</code></pre>
-      <p><code>random.random()</code> 来自 Python 标准库，会生成 0 到 1 之间的伪随机浮点数。这里把它包装成 <code>random_fraction</code> 参数，是为了测试可以传入固定函数，例如 <code>lambda: 0.4</code>。</p>
-      <p>我们还把随机值限制在 0 到 1。生产代码里的 <code>random.random()</code> 本来就在这个范围，但测试或未来调用者可能传入别的函数；边界保护能让策略更稳。</p>
-    </section>
-
-    <section>
-      <h2>7. 代码精读三：jitter 加到本地 backoff</h2>
+        return 0.0</code></pre>
+      <p>负值保护与零值短路。未启用 jitter 时不调用随机函数，避免无意义随机依赖。</p>
+      <pre><code>fraction = min(max(random_fraction(), 0.0), 1.0)
+return jitter_seconds * fraction</code></pre>
+      <p>即使测试或未来调用方传入异常随机函数，也把比例夹在 0 到 1。若 <code>jitter_seconds=0.5</code> 且比例为 0.4，则 jitter 为 0.2 秒。</p>
       <pre><code>exponential_delay = base_delay * (2 ** (attempt - 1))
 jitter_delay = calculate_retry_jitter(config, random_fraction=random_fraction)
-return min(exponential_delay + jitter_delay, max_delay)</code></pre>
-      <p>例子：<code>base=1.0</code>，第 2 次失败的指数退避是 2.0；<code>jitter_seconds=0.5</code>，随机比例是 0.4，那么 jitter 是 0.2，最终等待就是 2.2 秒。</p>
-      <p>最后仍然用 <code>max_delay</code> 截断，因为 jitter 不应该突破客户端自己的最大等待边界。</p>
+return RetryDelayPlan(
+    delay_seconds=min(exponential_delay + jitter_delay, max_delay),
+    source="local_backoff",
+)</code></pre>
+      <p>jitter 只加入本地 backoff 分支。加完后仍用 <code>max_delay</code> 截断，避免抖动突破服务边界。</p>
+      <pre><code>if provider_delay is not None:
+    return RetryDelayPlan(
+        delay_seconds=min(provider_delay, max_delay),
+        source="retry_after",
+    )</code></pre>
+      <p>合法 <code>Retry-After</code> 不额外加 jitter，因为那是 provider 的明确协议提示，随意扰动会弱化语义。</p>
     </section>
 
     <section>
-      <h2>8. 代码精读四：把随机函数传到 retry 分支</h2>
-      <pre><code>async def request_provider_prediction(
-    ...,
-    random_fraction: RetryRandom = random.random,
-) -&gt; PredictionResult:</code></pre>
-      <p>和上一节的 fake sleep 一样，随机数也要可注入。生产代码不传参数，就使用 <code>random.random</code>；测试代码传 <code>lambda: 0.4</code>，就能准确断言最终 sleep 时间。</p>
-      <p>这就是测试随机逻辑的关键：不要让测试依赖真正随机数，而是把随机源变成依赖。</p>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>retryable failure
+  → build_retry_delay_plan()
+      ├─ valid Retry-After：delay = provider hint capped
+      └─ no valid Retry-After：
+          → exponential_delay = base * 2 ** (attempt - 1)
+          → jitter = jitter_seconds * random_fraction()
+          → delay = min(exponential_delay + jitter, max_delay)
+  → log/sleep
+  → next attempt</code></pre>
+      <p>随机性从 <code>request_provider_prediction(..., random_fraction=...)</code> 传入，再一路传给 <code>wait_before_retry()</code>、<code>build_retry_delay_plan()</code>、<code>calculate_retry_jitter()</code>。这条调用链让随机行为可控、可测、可替换。</p>
     </section>
 
     <section>
-      <h2>9. 测试精读一：直接测试 jitter 数学</h2>
-      <pre><code>def test_calculate_retry_jitter_uses_bounded_random_fraction():
-    config = AIClientConfig(retry_jitter_seconds=0.5)
-
-    jitter = calculate_retry_jitter(config, random_fraction=lambda: 0.4)
-
-    assert jitter == 0.2</code></pre>
-      <p>这条测试保护最小数学规则：最大扰动 0.5 秒，随机比例 0.4，所以 jitter 是 0.2 秒。</p>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>正确理解</th><th>隐患</th></tr></thead>
+        <tbody>
+          <tr><td>jitter vs backoff</td><td>backoff 推迟，jitter 打散</td><td>只有 backoff 仍可能同步重试</td></tr>
+          <tr><td>随机测试</td><td>注入固定随机函数</td><td>真实随机会导致偶发失败</td></tr>
+          <tr><td>Retry-After 加 jitter</td><td>不加</td><td>破坏 provider 明确提示</td></tr>
+          <tr><td>安全随机数</td><td>这里不是安全用途</td><td>不要用普通 random 生成密钥</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>10. 测试精读二：真实 retry 分支里的 jitter</h2>
-      <pre><code>result = run_async_prediction(
-    client,
-    max_attempts=2,
-    retry_base_delay_seconds=1.0,
-    retry_max_delay_seconds=3.0,
-    retry_jitter_seconds=0.5,
-    sleep=fake_sleep,
-    random_fraction=lambda: 0.4,
-)
-
-assert sleep_calls == [1.2]</code></pre>
-      <p>这里第一次 provider 返回 503。第 1 次失败的指数退避是 1.0，jitter 是 0.2，所以 fake sleep 记录 <code>1.2</code>。这证明随机扰动真正进入了 adapter 的 retry 等待流程。</p>
-    </section>
-
-    <section class="practice">
-      <h2>11. 课堂实验</h2>
-      <p>先运行 provider adapter 测试：</p>
-      <pre><code>.\.venv\Scripts\python.exe -m pytest tests/test_provider_http.py -q</code></pre>
-      <p>预期看到：</p>
-      <pre><code>22 passed</code></pre>
-      <p>再运行全量测试：</p>
-      <pre><code>.\.venv\Scripts\python.exe -m pytest -q</code></pre>
-      <p>观察重点：</p>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
       <ul>
-        <li>测试没有真正依赖随机数，因为传入了固定 <code>random_fraction</code>。</li>
-        <li><code>Retry-After</code> 仍然优先，不额外加 jitter。</li>
-        <li>jitter 加完以后仍然受 <code>retry_max_delay_seconds</code> 截断。</li>
+        <li><strong>测试结果偶发变化</strong>：直接调用真实 <code>random.random()</code>。解决：测试传 <code>lambda: 0.4</code>。</li>
+        <li><strong>jitter 后 delay 超过最大等待</strong>：先 cap 再加 jitter。解决：加完 jitter 后再 <code>min(..., max_delay)</code>。</li>
+        <li><strong>Retry-After 被随机扰动</strong>：把 provider hint 和 local backoff 混在一起。解决：provider_delay 可用时直接返回 retry_after source。</li>
+        <li><strong>jitter 配置过大</strong>：等待波动过大。解决：根据 API 总超时和 SLA 设置小范围扰动。</li>
       </ul>
     </section>
 
     <section>
-      <h2>12. 常见错误与诊断</h2>
-      <div class="two-col">
-        <div class="callout">
-          <h3>错误一：测试使用真实随机数</h3>
-          <p>测试会偶发失败。把随机函数注入进去，用固定返回值验证计算。</p>
-        </div>
-        <div class="callout">
-          <h3>错误二：jitter 突破最大等待</h3>
-          <p>jitter 后仍然要 cap。最大等待是客户端自己的服务边界。</p>
-        </div>
-        <div class="callout">
-          <h3>错误三：给 Retry-After 再加 jitter</h3>
-          <p>provider 已经给了明确提示，额外随机化会让协议语义变模糊。</p>
-        </div>
-        <div class="callout">
-          <h3>错误四：把 jitter 当安全随机数</h3>
-          <p>Python <code>random</code> 适合普通扰动，不适合密码学或安全令牌。</p>
-        </div>
-      </div>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>jitter 公式</td><td>additive jitter，便于理解</td><td>可能使用 full/equal/decorrelated jitter</td></tr>
+          <tr><td>默认值</td><td>0，结果确定</td><td>通常启用抖动避免峰值</td></tr>
+          <tr><td>随机源</td><td>可注入 lambda 测试</td><td>普通伪随机足够，非安全用途</td></tr>
+          <tr><td>观测</td><td>断言 sleep_calls</td><td>记录 delay_source、delay_seconds、attempt</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>13. 面试视角：怎么解释 jitter</h2>
-      <blockquote>
-        <p>指数退避能减少立即重试，但多个客户端用同一公式时仍可能同步重试。jitter 的作用是给本地 backoff 加入小的随机扰动，打散请求峰值。我会把 jitter 做成配置，并把随机数生成函数注入 adapter，这样生产环境使用 <code>random.random</code>，测试环境使用固定函数，保证随机逻辑可测试。</p>
-      </blockquote>
-    </section>
-
-    <section class="checkpoint">
-      <h2>14. 小测：先回忆，再展开</h2>
-      <details>
-        <summary>1. 为什么 exponential backoff 还需要 jitter？</summary>
-        <p class="answer">因为多个客户端如果同时失败并使用同一公式，仍会在相同时间点重试，形成请求峰值。</p>
-      </details>
-      <details>
-        <summary>2. <code>jitter_seconds=0.5</code>，随机比例 <code>0.4</code>，jitter 是多少？</summary>
-        <p class="answer">是 0.2 秒，也就是 <code>0.5 * 0.4</code>。</p>
-      </details>
-      <details>
-        <summary>3. 为什么测试里要注入 <code>random_fraction</code>？</summary>
-        <p class="answer">这样测试可以固定随机结果，避免因为真实随机数导致偶发失败。</p>
-      </details>
-      <details>
-        <summary>4. 为什么 <code>Retry-After</code> 不额外加 jitter？</summary>
-        <p class="answer">因为它是 provider 的明确重试时间提示，额外随机化会削弱协议语义和可排查性。</p>
-      </details>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details><summary>1. 为什么有指数退避还需要 jitter？</summary><p class="answer">多个客户端可能同时失败并按同一公式等待，仍会同步重试；jitter 用随机扰动打散峰值。</p></details>
+      <details><summary>2. <code>jitter_seconds=0.5</code>、随机比例 0.4 时 jitter 是多少？</summary><p class="answer">0.2 秒。</p></details>
+      <details><summary>3. 为什么测试要注入 <code>random_fraction</code>？</summary><p class="answer">固定随机结果，避免测试因真实随机数偶发失败。</p></details>
+      <details><summary>4. 为什么 <code>Retry-After</code> 不额外加 jitter？</summary><p class="answer">它是 provider 明确给出的重试提示，额外随机化会削弱协议语义和可排查性。</p></details>
     </section>
 
     <section>
-      <h2>15. 本节总结</h2>
-      <p>本节把 provider retry 从“有等待”升级成“等待时间能打散”。现在本地指数退避会根据 <code>retry_jitter_seconds</code> 加入随机扰动，并且仍受最大等待上限保护。测试通过注入固定随机函数，验证了随机逻辑不必让测试变得随机。</p>
-      <p>下一课学习：<a href="./0046-retry-observability.html">Retry Observability</a>。我们会把 attempt 次数、是否使用 Retry-After、最终等待时间等信息写进结构化日志，方便排查 provider 可靠性问题。</p>
-      <p>推荐主资源：<a href="https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/">AWS Exponential Backoff and Jitter</a>、<a href="https://docs.cloud.google.com/iam/docs/retry-strategy">Google Cloud Retry Strategy</a>、<a href="https://docs.python.org/3/library/random.html">Python random</a>。</p>
-      <p class="small">如果你想继续追问，可以问我：“full jitter 和 additive jitter 有什么区别？”这个问题会把我们带到更真实的 SDK retry 策略。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <p><strong>题 1：jitter 解决什么问题？</strong> 答：解决多个客户端按同一 backoff 公式同步重试造成的请求峰值问题。</p>
+      <p><strong>题 2：如何让随机重试策略可测试？</strong> 答：把随机数生成器作为依赖注入，生产用真实随机函数，测试用固定返回值函数。</p>
+      <p><strong>题 3：additive jitter 有什么局限？</strong> 答：它简单可读，但打散能力不如 full jitter。大规模生产 SDK 常会采用更成熟的 jitter 变体。</p>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

@@ -19,301 +19,143 @@
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0037</p>
-      <h1>Provider Prediction Adapter：把外部 JSON 翻译成内部预测结果</h1>
-      <p class="lead">第 36 课我们把 provider health check 接进了 FastAPI。本节先不急着改 <code>/predict</code> 的公共行为，而是在 service 层实现一个真正的 provider prediction adapter：向外部 provider 发送 JSON，请求预测结果，再把外部 JSON 校验并转换成本项目内部稳定的 <code>PredictionResult</code>。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0037 Provider Prediction Adapter：把外部 AI JSON 收敛成内部稳定类型</h1>
+      <p class="lead">本节目标不是“会发 HTTP 请求”，而是掌握外部 provider 接入的工程边界：请求出站前要有本项目定义的 payload，响应入站后要经过 Pydantic 二次校验，所有传输异常、HTTP 异常、契约异常统一收敛为 <code>AIClientError</code>，上层永远只依赖 <code>PredictionResult</code>。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解 provider adapter 为什么要负责“本项目契约”和“外部 provider 契约”的转换。</li>
-        <li>学会用 <code>httpx.AsyncClient.post(..., json=...)</code> 发送 provider 请求 payload。</li>
-        <li>理解外部响应必须再次校验，不能因为 provider 返回 200 就直接相信 JSON 内容。</li>
-        <li>学会用 Pydantic 模型校验 provider 返回体。</li>
-        <li>学会为成功、上游 HTTP 错误、上游无效 JSON 写 adapter 测试。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Provider Prediction Adapter
+├─ 出站契约：ProviderPredictionPayload(text, mode)
+├─ 入站契约：ProviderPredictionBody(label, score)
+├─ 传输层：httpx.AsyncClient.post(url, json=...)
+├─ HTTP 校验：response.raise_for_status()
+├─ 业务校验：ProviderPredictionBody.model_validate(response.json())
+├─ 内部模型：PredictionResult(label, score, source)
+└─ 异常收敛：Timeout / HTTPStatus / Request / Validation → AIClientError</code></pre>
+      <p>核心结论：adapter 是外部系统与内部领域模型之间的防腐层。它不把 provider 原始 JSON 继续向上传播，而是把不可信的外部数据转换为项目内部可测试、可替换、可演进的稳定类型。</p>
     </section>
 
     <section>
-      <h2>1. 背景：为什么 health check 之后不能直接“上真 AI”</h2>
-      <p>health check 只回答一个问题：provider 能不能访问。真正的预测调用要复杂得多，因为它至少涉及两次翻译：</p>
-      <ul>
-        <li>把本项目的 <code>PredictionRequest</code> 思路翻译成 provider 接受的请求 JSON。</li>
-        <li>把 provider 返回的 JSON 翻译成本项目内部的 <code>PredictionResult</code>。</li>
-      </ul>
-      <p>如果把这些翻译逻辑直接写进 <code>/predict</code> 路由，路由会很快变胖：它既要处理 HTTP 请求体，又要懂 provider 字段，又要懂异常映射，还要懂本项目的响应模型。真实项目里这会让代码难测、难换 provider、难解释。</p>
-      <p>所以本节把 provider prediction 调用放在 <code>services/provider_http.py</code>。它暂时不改变 <code>/predict</code> 的外部行为，只先把“外部预测调用”这块砖烧结实。</p>
-    </section>
-
-    <section class="callout">
-      <h2>2. 核心概念：两个契约之间需要 adapter</h2>
-      <p>这里有两个契约：</p>
-      <div class="two-col">
-        <div>
-          <h3>内部契约</h3>
-          <p>项目自己的 Python 类型，例如 <code>PredictionResult(label, score, source)</code>。这是 router、tests、任务系统可以依赖的稳定结果。</p>
-        </div>
-        <div>
-          <h3>外部契约</h3>
-          <p>provider 的 HTTP JSON 格式，例如本节约定 provider 返回 <code>{"label": "positive", "score": 0.876}</code>。</p>
-        </div>
-      </div>
-      <p>adapter 的职责是站在两个契约中间：</p>
-      <pre><code>local text/mode
-  -&gt; ProviderPredictionPayload
-  -&gt; HTTP POST JSON
-  -&gt; provider JSON response
-  -&gt; ProviderPredictionBody validation
-  -&gt; PredictionResult</code></pre>
-      <p>这就是“适配器”的含义：不是把外部对象原样搬进项目，而是把外部形状转换成内部稳定形状。</p>
+      <h2>② 核心概念底层原理</h2>
+      <p><strong>Adapter</strong> 的本质是契约翻译。HTTP 200 只表示传输层请求完成，不表示业务 JSON 正确；provider 返回 <code>{"label":"confused","score":1.5}</code> 时，HTTP 层可以成功，但项目业务层必须拒绝。</p>
+      <table>
+        <thead><tr><th>层次</th><th>负责内容</th><th>失败表现</th></tr></thead>
+        <tbody>
+          <tr><td>传输层</td><td>DNS、TCP/TLS、超时、连接、HTTP 状态码</td><td><code>TimeoutException</code>、<code>RequestError</code>、<code>HTTPStatusError</code></td></tr>
+          <tr><td>数据层</td><td>响应是否为合法 JSON</td><td><code>ValueError</code></td></tr>
+          <tr><td>业务契约层</td><td><code>label</code> 是否在枚举内，<code>score</code> 是否在 0 到 1</td><td><code>ValidationError</code></td></tr>
+          <tr><td>内部领域层</td><td>统一输出 <code>PredictionResult</code></td><td>上层不感知 provider 私有字段</td></tr>
+        </tbody>
+      </table>
+      <p>与 DTO、schema、client 的区别：DTO 偏数据形状，schema 偏校验规则，client 偏调用能力；adapter 同时承担“构造出站数据、调用外部服务、校验入站数据、转换内部结果、映射异常”的边界职责。</p>
     </section>
 
     <section>
-      <h2>3. 为什么 provider 返回 200 也不能直接相信</h2>
-      <p>初学者常犯一个错误：只要 <code>response.status_code == 200</code>，就认为结果一定正确。实际上，200 只说明 HTTP 层请求成功，不说明业务 JSON 一定符合你的期待。</p>
-      <p>provider 可能返回：</p>
-      <ul>
-        <li><code>{"label": "positive", "score": 0.87}</code>：这是我们想要的。</li>
-        <li><code>{"label": "confused", "score": 1.5}</code>：HTTP 成功，但业务字段非法。</li>
-        <li><code>{"result": "positive"}</code>：字段名和我们约定不一致。</li>
-        <li><code>"temporarily unavailable"</code>：返回体根本不是对象。</li>
-      </ul>
-      <p>所以本节专门创建 <code>ProviderPredictionBody</code>，用 Pydantic 对 provider 返回 JSON 再做一次边界校验。</p>
-    </section>
-
-    <section>
-      <h2>4. 本节项目改动概览</h2>
-      <ul>
-        <li>在 <code>services/provider_http.py</code> 中新增 <code>ProviderPredictionPayload</code>。</li>
-        <li>新增 <code>ProviderPredictionBody</code>，校验 provider 返回的 <code>label</code> 和 <code>score</code>。</li>
-        <li>新增 <code>request_provider_prediction()</code> 异步函数。</li>
-        <li>新增 adapter 测试：成功路径、非法 provider JSON、provider HTTP 503。</li>
-      </ul>
-      <p>本节没有修改 <code>/predict</code>。这是有意的：先学清楚 provider adapter 的边界，下一课再讨论如何把 async provider adapter 接进现有预测路由。</p>
-    </section>
-
-    <section>
-      <h2>5. 代码精读一：provider 请求 payload</h2>
+      <h2>③ 全套代码逐行精读解析</h2>
       <pre><code>class ProviderPredictionPayload(BaseModel):
     text: str
     mode: str</code></pre>
-      <p>这个模型表达“我们打算发给 provider 的 JSON 长什么样”。本节保持简单，只发送 <code>text</code> 和 <code>mode</code>：</p>
-      <pre><code>{
-  "text": "FastAPI is great and pleasant.",
-  "mode": "careful"
-}</code></pre>
-      <p>为什么不直接手写字典？手写字典当然能跑，但模型有两个优点：第一，字段结构有名字；第二，未来 provider payload 变复杂时，可以把字段约束、默认值、嵌套结构集中放在模型里。</p>
-    </section>
-
-    <section>
-      <h2>6. 代码精读二：provider 响应体校验</h2>
+      <p><code>BaseModel</code> 让出站 JSON 结构显式化。若直接手写字典，字段拼写错误只能在 provider 侧暴露；使用模型后，payload 的业务语义集中在一个类型中。</p>
       <pre><code>class ProviderPredictionBody(BaseModel):
     label: PredictionLabel
     score: float = Field(ge=0, le=1)</code></pre>
-      <p>这段模型是本节最重要的防线。</p>
-      <ul>
-        <li><code>label: PredictionLabel</code> 表示 label 只能是项目允许的标签，例如 <code>positive</code> 或 <code>neutral</code>。</li>
-        <li><code>score: float = Field(ge=0, le=1)</code> 表示置信度必须在 0 到 1 之间。</li>
-      </ul>
-      <p>如果 provider 返回 <code>{"label": "confused", "score": 1.5}</code>，HTTP 层可能仍然是 200，但 Pydantic 会拒绝这个业务结果。这样错误会被我们转换成稳定的 <code>AIClientError(error_code="ai_provider_invalid_response")</code>。</p>
-    </section>
-
-    <section>
-      <h2>7. 代码精读三：发送 POST 并映射成功结果</h2>
+      <p><code>PredictionLabel</code> 将 provider 标签限制在项目允许集合内；<code>Field(ge=0, le=1)</code> 把置信度约束下沉到模型层。不写这层校验，非法分数会污染 <code>PredictionResponse</code>，前端和测试只能事后补救。</p>
       <pre><code>async def request_provider_prediction(
     url: str,
     text: str,
     mode: str,
     config: AIClientConfig,
     client: httpx.AsyncClient | None = None,
-) -&gt; PredictionResult:
-    owns_client = client is None
-    active_client = client or httpx.AsyncClient(
-        timeout=config.timeout_seconds,
-        trust_env=False,
-    )
+    sleep: RetrySleep = asyncio.sleep,
+    random_fraction: RetryRandom = random.random,
+) -&gt; PredictionResult:</code></pre>
+      <p><code>async def</code> 表示外部 HTTP I/O 不阻塞事件循环；<code>client</code> 可选是为了兼容生产复用 lifespan client 与单元测试注入 <code>MockTransport</code>；<code>sleep/random_fraction</code> 是后续 retry/backoff 可测试性的扩展点。</p>
+      <pre><code>owns_client = client is None
+active_client = client or httpx.AsyncClient(
+    timeout=config.timeout_seconds,
+    trust_env=False,
+)</code></pre>
+      <p><code>owns_client</code> 贯彻“谁创建谁关闭”。<code>trust_env=False</code> 避免本机代理环境变量影响教学与测试结果；生产环境是否信任代理应由部署策略显式决定。</p>
+      <pre><code>response = await active_client.post(
+    url,
+    json=ProviderPredictionPayload(text=text, mode=mode).model_dump(),
+)
+response.raise_for_status()
+body = ProviderPredictionBody.model_validate(response.json())</code></pre>
+      <p><code>json=</code> 让 HTTPX 自动设置 JSON 请求体；<code>raise_for_status()</code> 把 4xx/5xx 推入异常分支；<code>model_validate()</code> 对 provider 响应做第二道边界校验。不写最后一步，HTTP 200 下的坏数据会被当成真结果。</p>
+      <pre><code>return PredictionResult(
+    label=body.label,
+    score=round(body.score, 2),
+    source=f"{config.provider}-provider",
+)</code></pre>
+      <p>返回内部结果而非 provider 原始 JSON。<code>round</code> 固定对外分数粒度；<code>source</code> 保留来源证据，便于后续 headers、日志和测试断言。</p>
+    </section>
 
-    try:
-        response = await active_client.post(
-            url,
-            json=ProviderPredictionPayload(text=text, mode=mode).model_dump(),
-        )
-        response.raise_for_status()
-        body = ProviderPredictionBody.model_validate(response.json())
-    finally:
-        if owns_client:
-            await active_client.aclose()
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>调用方
+  → request_provider_prediction(text, mode, config, client)
+  → ProviderPredictionPayload.model_dump()
+  → HTTP POST provider prediction URL
+  → response.raise_for_status()
+  → response.json()
+  → ProviderPredictionBody.model_validate(...)
+  → PredictionResult
+  → 上层 router/service</code></pre>
+      <p>异常流与成功流同等重要：超时映射为 <code>ai_provider_timeout</code>；HTTP 4xx/5xx 映射为 <code>ai_provider_http_error</code>；连接、DNS、协议等请求错误映射为 <code>ai_provider_request_error</code>；非 JSON 或 schema 不合法映射为 <code>ai_provider_invalid_response</code>。</p>
+    </section>
 
-    return PredictionResult(
-        label=body.label,
-        score=round(body.score, 2),
-        source=f"{config.provider}-provider",
-    )</code></pre>
-      <p>这段代码有几个关键点：</p>
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>正确理解</th><th>错误后果</th></tr></thead>
+        <tbody>
+          <tr><td>HTTP 200 vs 业务成功</td><td>200 只代表 HTTP 层完成，业务字段仍需校验</td><td>坏 label、坏 score 进入内部模型</td></tr>
+          <tr><td>adapter vs router</td><td>adapter 管 provider 细节，router 管 HTTP API 翻译</td><td>路由膨胀且难测</td></tr>
+          <tr><td>provider JSON vs <code>PredictionResult</code></td><td>前者不可信，后者是内部稳定契约</td><td>provider 字段变化会震动公共 API</td></tr>
+          <tr><td>创建 client vs 复用 client</td><td>测试可临时创建，应用运行期应复用 lifespan client</td><td>连接池失效、性能差、资源泄漏</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
       <ul>
-        <li><code>client</code> 可传可不传：测试或未来 FastAPI 路由可以传入 lifespan-managed client。</li>
-        <li><code>owns_client</code> 继续遵守“谁创建，谁关闭”的资源生命周期原则。</li>
-        <li><code>json=...</code> 让 HTTPX 发送 JSON 请求体，而不是表单或纯字符串。</li>
-        <li><code>raise_for_status()</code> 把 4xx/5xx 上游响应提升为错误路径。</li>
-        <li><code>ProviderPredictionBody.model_validate(...)</code> 把外部 JSON 收紧成本项目认可的字段。</li>
-        <li>返回的是内部 <code>PredictionResult</code>，不是 provider 原始 JSON。</li>
+        <li><strong><code>coroutine was never awaited</code></strong>：调用 <code>request_provider_prediction()</code> 时忘记 <code>await</code>。解决：从 async endpoint 或 async service 中调用。</li>
+        <li><strong><code>ValidationError</code> 泄漏到 API</strong>：未捕获 provider 响应校验异常。解决：在 adapter 内统一转为 <code>AIClientError(error_code="ai_provider_invalid_response")</code>。</li>
+        <li><strong>测试访问真实外网</strong>：未注入 <code>httpx.MockTransport</code>。解决：测试传入自定义 <code>AsyncClient</code>，只验证本项目行为。</li>
+        <li><strong>请求体字段错位</strong>：手写 dict 使用 <code>message</code> 而 provider 期望 <code>text</code>。解决：统一通过 <code>ProviderPredictionPayload</code> 生成。</li>
       </ul>
     </section>
 
     <section>
-      <h2>8. 代码精读四：错误映射</h2>
-      <pre><code>except httpx.TimeoutException as exc:
-    raise AIClientError(
-        message="The AI provider prediction request timed out.",
-        error_code="ai_provider_timeout",
-    ) from exc
-except httpx.HTTPStatusError as exc:
-    raise AIClientError(
-        message=f"The AI provider returned HTTP {exc.response.status_code}.",
-        error_code="ai_provider_http_error",
-    ) from exc
-except httpx.RequestError as exc:
-    raise AIClientError(
-        message="The AI provider could not be reached.",
-        error_code="ai_provider_request_error",
-    ) from exc
-except (ValueError, ValidationError) as exc:
-    raise AIClientError(
-        message="The AI provider returned an invalid prediction response.",
-        error_code="ai_provider_invalid_response",
-    ) from exc</code></pre>
-      <p>这里把四类失败都收束成 <code>AIClientError</code>：</p>
-      <ul>
-        <li>超时：provider 太慢。</li>
-        <li>HTTP 错误：provider 返回 4xx/5xx。</li>
-        <li>请求错误：网络连接、DNS、协议等问题。</li>
-        <li>响应体错误：provider 返回的 JSON 不符合本项目期待。</li>
-      </ul>
-      <p>这就是“内部错误语言统一”。上层 router 不需要知道 HTTPX 的所有异常类型，只需要捕获 <code>AIClientError</code>。</p>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>provider</td><td>MockTransport 或 example URL</td><td>真实供应商、内网网关或模型服务</td></tr>
+          <tr><td>client 生命周期</td><td>可在函数内临时创建便于演示</td><td>应用启动时创建，连接池复用，关闭时释放</td></tr>
+          <tr><td>安全</td><td>重点讲清边界</td><td>鉴权、限流、审计、密钥轮换、SSRF 防护</td></tr>
+          <tr><td>可观测</td><td>断言 error_code 与 source</td><td>日志、trace、metrics、provider request id</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>9. 测试精读一：检查真的发出了正确 JSON</h2>
-      <pre><code>def test_request_provider_prediction_sends_payload_and_maps_response() -&gt; None:
-    captured_request_body = {}
-
-    def handler(request: httpx.Request) -&gt; httpx.Response:
-        nonlocal captured_request_body
-        captured_request_body = json.loads(request.content)
-        return httpx.Response(
-            status_code=200,
-            json={"label": "positive", "score": 0.876},
-            request=request,
-        )
-
-    transport = httpx.MockTransport(handler)
-    client = httpx.AsyncClient(transport=transport)
-    result = run_async_prediction(client)
-
-    assert captured_request_body == {
-        "text": "FastAPI is great and pleasant.",
-        "mode": "careful",
-    }
-    assert result.label == "positive"
-    assert result.score == 0.88
-    assert result.source == "demo-provider"</code></pre>
-      <p>这个测试不仅检查返回值，还检查 adapter 发出去的请求体。原因是 provider adapter 的一半职责就是构造外部请求 payload。如果只测返回值，可能漏掉“请求 JSON 发错字段名”的问题。</p>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details><summary>1. 为什么 provider 返回 200 后仍然要用 Pydantic 校验？</summary><p class="answer">因为 200 只证明 HTTP 请求成功，不证明业务字段合法。label 枚举、score 范围、JSON 结构都必须在项目边界重新校验。</p></details>
+      <details><summary>2. <code>ProviderPredictionPayload</code> 和 <code>ProviderPredictionBody</code> 分别解决什么问题？</summary><p class="answer">前者定义发给 provider 的请求 JSON，后者定义从 provider 收到并必须校验的响应 JSON。</p></details>
+      <details><summary>3. 为什么 adapter 返回 <code>PredictionResult</code> 而不是原始 dict？</summary><p class="answer">内部上层代码应依赖项目稳定模型，而不是依赖外部 provider 的字段形状。</p></details>
+      <details><summary>4. <code>owns_client</code> 的工程意义是什么？</summary><p class="answer">避免关闭由调用方管理的共享 client，同时确保函数自己创建的临时 client 不泄漏连接资源。</p></details>
     </section>
 
     <section>
-      <h2>10. 测试精读二：200 但 JSON 不合法</h2>
-      <pre><code>def test_request_provider_prediction_maps_invalid_json_to_ai_client_error() -&gt; None:
-    def handler(request: httpx.Request) -&gt; httpx.Response:
-        return httpx.Response(
-            status_code=200,
-            json={"label": "confused", "score": 1.5},
-            request=request,
-        )
-
-    transport = httpx.MockTransport(handler)
-    client = httpx.AsyncClient(transport=transport)
-
-    try:
-        run_async_prediction(client)
-    except AIClientError as exc:
-        error = exc
-
-    assert error.error_code == "ai_provider_invalid_response"</code></pre>
-      <p>这条测试体现了一个非常重要的工程判断：外部服务即使返回 200，也只是通过了 HTTP 层检查；业务字段还必须通过我们的模型校验。</p>
-    </section>
-
-    <section class="practice">
-      <h2>11. 课堂实验</h2>
-      <p>运行 provider adapter 测试：</p>
-      <pre><code>.\.venv\Scripts\python.exe -m pytest tests/test_provider_http.py -q</code></pre>
-      <p>预期看到：</p>
-      <pre><code>6 passed</code></pre>
-      <p>再运行全量测试：</p>
-      <pre><code>.\.venv\Scripts\python.exe -m pytest -q</code></pre>
-      <p>观察点：</p>
-      <ul>
-        <li>成功路径里，provider 返回 <code>0.876</code>，内部结果变成 <code>0.88</code>。</li>
-        <li>非法 provider label 或 score 会变成 <code>ai_provider_invalid_response</code>。</li>
-        <li>provider HTTP 503 会变成 <code>ai_provider_http_error</code>。</li>
-      </ul>
-    </section>
-
-    <section>
-      <h2>12. 常见错误与诊断</h2>
-      <div class="two-col">
-        <div class="callout">
-          <h3>错误一：直接把 provider JSON 返回给前端</h3>
-          <p>这会让前端依赖 provider 的字段形状。provider 一变，自己的公共 API 也跟着震动。</p>
-        </div>
-        <div class="callout">
-          <h3>错误二：只检查状态码，不校验响应体</h3>
-          <p>HTTP 200 不等于业务 JSON 合法。外部响应进入项目边界时要再次校验。</p>
-        </div>
-        <div class="callout">
-          <h3>错误三：adapter 里吞掉错误</h3>
-          <p>失败不能悄悄变成默认中性结果，否则排查 provider 问题会非常痛苦。</p>
-        </div>
-        <div class="callout">
-          <h3>错误四：测试只测 happy path</h3>
-          <p>provider adapter 的价值在边界失败处理。至少要测 HTTP 错误和非法响应体。</p>
-        </div>
-      </div>
-    </section>
-
-    <section>
-      <h2>13. 面试视角：怎样解释 provider adapter</h2>
-      <blockquote>
-        <p>我不会让路由直接依赖外部 provider 的 JSON 形状，而是会写一个 provider adapter。它负责构造 provider 请求 payload，发送 HTTP 请求，校验 provider 响应体，并把结果转换成项目内部稳定的 PredictionResult。所有 timeout、HTTP 错误、请求错误和响应体校验失败都会映射成统一的 AIClientError，上层 API 只需要处理这个稳定错误类型。</p>
-      </blockquote>
-    </section>
-
-    <section class="checkpoint">
-      <h2>14. 小测：先回忆，再展开</h2>
-      <details>
-        <summary>1. 为什么本节没有直接改 <code>/predict</code>？</summary>
-        <p class="answer">因为真实 provider 调用涉及 async、外部 JSON 契约和错误映射。先把 adapter 边界讲清楚，下一步再接路由更稳。</p>
-      </details>
-      <details>
-        <summary>2. 为什么 provider 返回 200 后还要用 Pydantic 校验？</summary>
-        <p class="answer">因为 200 只说明 HTTP 请求成功，不保证业务字段符合本项目的标签、分数范围和响应结构要求。</p>
-      </details>
-      <details>
-        <summary>3. <code>ProviderPredictionPayload</code> 和 <code>ProviderPredictionBody</code> 分别代表什么？</summary>
-        <p class="answer">前者代表发给 provider 的请求 JSON，后者代表从 provider 收到并需要校验的响应 JSON。</p>
-      </details>
-      <details>
-        <summary>4. 为什么 adapter 返回 <code>PredictionResult</code> 而不是原始 JSON？</summary>
-        <p class="answer">因为上层代码应该依赖项目内部稳定类型，而不是直接依赖某个外部 provider 的字段形状。</p>
-      </details>
-    </section>
-
-    <section>
-      <h2>15. 本节总结</h2>
-      <p>本节完成了 provider prediction adapter 的第一版：它能发送 JSON payload，解析并校验 provider 返回 JSON，把成功结果转换成 <code>PredictionResult</code>，并把外部失败统一转换成 <code>AIClientError</code>。这让真实 provider 调用不再是散落在路由里的临时代码，而是一个可测试、可替换、可解释的边界模块。</p>
-      <p>下一课建议学习：把这个 async provider prediction adapter 接进 FastAPI 路由。我们会讨论一个关键问题：现有 <code>/predict</code> 是同步 DemoAIClient 风格，而真实 provider 调用是异步 HTTP，如何升级接口而不把项目改乱。</p>
-      <p>推荐主资源：<a href="https://fastapi.tiangolo.com/tutorial/body/">FastAPI Request Body</a>、<a href="https://fastapi.tiangolo.com/tutorial/response-model/">FastAPI Response Model</a>、<a href="https://pydantic.dev/docs/validation/latest/concepts/models/">Pydantic Models</a>、<a href="https://www.python-httpx.org/quickstart/">HTTPX QuickStart</a>、<a href="https://www.python-httpx.org/exceptions/">HTTPX Exceptions</a>。</p>
-      <p class="small">如果这里还有点绕，可以问我：“为什么 provider adapter 要有自己的请求模型和响应模型？”这就是从能跑的代码走向可维护代码的关键一步。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <p><strong>题 1：如何设计一个第三方 AI provider adapter？</strong> 答：定义出站 payload 与入站 body；使用可复用 HTTP client 发起请求；对状态码、JSON 和业务字段分层校验；把成功结果转换为内部领域类型；把底层异常收敛为稳定业务错误码。</p>
+      <p><strong>题 2：为什么不能让 controller/router 直接解析第三方 JSON？</strong> 答：router 会同时承担协议翻译、provider 契约、异常映射和响应组装，导致职责混乱。provider 变化时公共 API 层被迫变更，测试也更难隔离。</p>
+      <p><strong>题 3：如果 provider schema 发生变化，应该改哪里？</strong> 答：优先改 adapter 的 provider 请求/响应模型和映射逻辑；只要内部 <code>PredictionResult</code> 不变，上层 service/router 和外部 API 可以保持稳定。</p>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">

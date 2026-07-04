@@ -13,162 +13,217 @@
       <span class="nav-links">
         <a href="../index.html">课程目录</a>
         <a href="./0050-provider-metrics-basics.html">上一课</a>
-        <a href="../reference/0051-provider-metrics-counters-cheatsheet.html">本课速查</a>
         <a href="./0052-provider-metrics-endpoint.html">下一课</a>
+        <a href="../reference/0051-provider-metrics-counters-cheatsheet.html">速查</a>
       </span>
     </nav>
 
     <header>
-      <p class="eyebrow">Lesson 0051</p>
-      <h1>Provider Metrics Counters：用计数器理解 provider 结果分布</h1>
-      <p class="lead">上一课我们设计了低基数 metrics label。本节继续补上最基础的 counter 心智模型：相同 label set 的事件会累加成一个计数。我们实现一个教学用的进程内计数器，用它观察 success、fail_fast 等 provider prediction outcome 如何聚合。</p>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0051 Provider Metrics Counters：按 Label Set 聚合事件次数</h1>
+      <p class="lead">本节实现教学版 <code>ProviderMetricsCounter</code>。它不是生产监控系统，而是用最小代码解释 counter 的本质：同一指标名 + 同一组 labels 对应一条计数序列，事件发生一次就递增一次，快照只暴露可序列化样本，不暴露内部状态。</p>
     </header>
 
     <section>
-      <h2>0. 本节学习目标</h2>
-      <ul>
-        <li>理解 counter 是只能递增的指标类型。</li>
-        <li>理解 label set 相同的事件会累加到同一条时间序列。</li>
-        <li>掌握教学用 <code>ProviderMetricsCounter</code> 的结构。</li>
-        <li>知道为什么进程内计数器不是生产级多进程 metrics 方案。</li>
-        <li>学会用测试验证计数累计和非法增量保护。</li>
-      </ul>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>ProviderMetricsCounter
+├─ Counter 语义
+│  ├─ 只递增，不递减
+│  ├─ 统计事件发生次数
+│  └─ 不保存单次事件明细
+├─ 聚合键
+│  ├─ key = ProviderMetricLabels
+│  ├─ frozen dataclass 可哈希
+│  └─ 相同 label set 累加到同一 count
+├─ 核心方法
+│  ├─ increment(labels, amount=1)
+│  ├─ snapshot()
+│  └─ reset()
+└─ 测试重点
+   ├─ 相同 labels 累加
+   ├─ 非正增量拒绝
+   ├─ snapshot 输出排序稳定
+   └─ snapshot 与内部 Counter 隔离</code></pre>
     </section>
 
     <section>
-      <h2>1. 背景：有 label 之后，还要知道怎么数</h2>
-      <p>上一课我们没有直接接入 Prometheus 或 OpenTelemetry，而是先把 provider prediction 的 label 形状设计清楚。现在可以继续问一个更具体的问题：如果每次 provider prediction 完成后都产生一组 label，系统应该如何把它们统计起来？</p>
-      <p>最基础的答案是 counter。Counter 适合记录“发生了多少次”。例如 success 发生 120 次，fail_fast 发生 8 次，retry_exhausted 发生 2 次。它不负责解释某一次请求细节，那仍然是日志的工作。</p>
-    </section>
+      <h2>② 核心概念底层原理</h2>
+      <p><strong>Counter</strong> 是单调递增的累计型指标，适合记录“发生过多少次”。provider prediction 的 success、retry_scheduled、retry_exhausted、fail_fast 都是事件，天然适合用 counter。</p>
+      <p>一条指标样本由 metric name 与 label set 唯一确定。本课程暂时把 metric name 固定为 provider prediction 计数，重点观察 label set 如何决定聚合维度。</p>
+      <pre><code>同一 label set：
+  outcome=success, failure_category=none, error_code=none, status_code=none
+  第一次事件 → count=1
+  第二次事件 → count=2
 
-    <section class="callout">
-      <h2>2. 核心概念：同一组 Labels 对应同一条计数</h2>
-      <p>在 metrics 里，指标名加上一组 label 会形成一条可统计的序列。你可以把它理解成一张表里的复合 key：</p>
-      <pre><code>metric: provider_prediction_total
-labels:
-  operation="prediction"
-  outcome="success"
-  failure_category="none"
-  error_code="none"
-  status_code="none"
-count: 2</code></pre>
-      <p>如果下一次 provider prediction 还是同一组 label，那么 count 继续加 1。如果 label 不同，例如 <code>outcome="fail_fast"</code>，就进入另一条计数。</p>
+不同 label set：
+  outcome=fail_fast, failure_category=non_retryable_http_status, status_code=400
+  独立样本 → count=1</code></pre>
+      <p>Counter 与 Gauge 必须区分。Counter 只表达累计次数；Gauge 表达当前值，可上升也可下降，例如队列长度、连接数、内存占用。把 counter 设计成可递减会破坏监控查询语义。</p>
     </section>
 
     <section>
-      <h2>3. 教学边界：这是进程内 Counter，不是生产监控系统</h2>
-      <p>本节实现的 <code>ProviderMetricsCounter</code> 是为了讲清楚 counter 与 label set 的关系。它存在 Python 进程内存中，测试结束或进程重启后就会消失。</p>
-      <p>真实生产环境还要考虑多进程、多实例、抓取端点、聚合窗口、重启后数据、权限和存储成本。因此本节不要把它当成最终监控方案，而是把它当成理解 metrics backend 之前的最小模型。</p>
-    </section>
-
-    <section>
-      <h2>4. 代码精读一：用 Counter 存储 label set</h2>
-      <p>实现代码很短：</p>
+      <h2>③ 全套代码逐行精读解析</h2>
       <pre><code>@dataclass
 class ProviderMetricsCounter:
-    _counts: Counter[ProviderMetricLabels] = field(default_factory=Counter)</code></pre>
-      <p><code>ProviderMetricLabels</code> 是 frozen dataclass，因此可以作为 <code>Counter</code> 的 key。相同 label set 会命中同一个 key，计数自然累加。</p>
+    _counts: Counter[ProviderMetricLabels] = field(default_factory=Counter)
+
+    def increment(self, labels: ProviderMetricLabels, amount: int = 1) -> None:
+        if amount &lt; 1:
+            raise ValueError("Metric increment amount must be positive.")
+        self._counts[labels] += amount
+
+    def snapshot(self) -> list[dict[str, object]]:
+        samples = sorted(
+            self._counts.items(),
+            key=lambda item: (
+                item[0].operation,
+                item[0].outcome,
+                item[0].failure_category,
+                item[0].error_code,
+                item[0].status_code,
+            ),
+        )
+        return [
+            {
+                "labels": labels.as_dict(),
+                "count": count,
+            }
+            for labels, count in samples
+        ]
+
+    def reset(self) -> None:
+        self._counts.clear()</code></pre>
+      <table>
+        <thead>
+          <tr><th>代码</th><th>作用</th><th>为什么这样写</th><th>不这样写的风险</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>@dataclass</code></td><td>生成轻量状态对象</td><td>教学场景无需复杂类样板代码</td><td>手写初始化会增加噪声</td></tr>
+          <tr><td><code>field(default_factory=Counter)</code></td><td>为每个实例创建独立 Counter</td><td>避免多个 counter 实例共享同一个可变默认值</td><td>用 <code>Counter()</code> 直接作为默认值会产生共享状态风险</td></tr>
+          <tr><td><code>Counter[ProviderMetricLabels]</code></td><td>以 label set 为聚合 key</td><td><code>ProviderMetricLabels</code> frozen 后可哈希</td><td>如果 labels 可变，聚合 key 可能不可用或被修改后失效</td></tr>
+          <tr><td><code>amount &lt; 1</code></td><td>拒绝 0 和负数</td><td>保持 counter 单调递增语义</td><td>0 会隐藏无效调用，负数会把 counter 伪装成 gauge</td></tr>
+          <tr><td><code>self._counts[labels] += amount</code></td><td>相同 labels 自动累加</td><td>复用标准库 Counter 的计数语义</td><td>手写 dict 容易漏初始化或写错 key</td></tr>
+          <tr><td><code>sorted(...)</code></td><td>稳定快照顺序</td><td>测试、文档、导出输出可预测</td><td>无序输出会导致快照测试脆弱</td></tr>
+          <tr><td><code>labels.as_dict()</code></td><td>返回普通 dict labels</td><td>让 router、JSON、Prometheus text 不依赖 dataclass 内部</td><td>直接返回对象不利于序列化和隔离</td></tr>
+          <tr><td><code>reset()</code></td><td>清空进程内计数</td><td>服务测试隔离与演示重置</td><td>测试之间会互相污染</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>5. 代码精读二：increment 只允许正数</h2>
-      <p>Counter 的核心动作是递增：</p>
-      <pre><code>def increment(self, labels: ProviderMetricLabels, amount: int = 1) -> None:
-    if amount &lt; 1:
-        raise ValueError("Metric increment amount must be positive.")
-    self._counts[labels] += amount</code></pre>
-      <p>这里拒绝 0 和负数，是为了保持 counter 的语义清楚。Counter 不是 gauge，不用来表达“当前值可以上下变化”。如果以后要记录队列长度或当前连接数，那会是另一类指标。</p>
-    </section>
-
-    <section>
-      <h2>6. 代码精读三：snapshot 输出可读形状</h2>
-      <p>测试和教学材料不应该直接暴露内部 <code>Counter</code>，所以提供 <code>snapshot()</code>：</p>
-      <pre><code>def snapshot(self) -> list[dict[str, object]]:
-    return [
-        {
-            "labels": labels.as_dict(),
-            "count": count,
-        }
-        for labels, count in samples
-    ]</code></pre>
-      <p>输出形状接近真实 metrics 样本：一组 labels 加一个 count。课程里用 list/dict 展示，比引入外部监控格式更容易理解。</p>
-    </section>
-
-    <section>
-      <h2>7. 运行示例：两次成功，一次快速失败</h2>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>build_provider_metric_labels(outcome="success")
+  → ProviderMetricLabels(...)
+  → counter.increment(labels)
+  → Counter 使用 labels.__hash__ 定位 key
+  → 已存在：count += 1
+  → 不存在：初始化 count=0 后 += 1
+  → snapshot()
+       ├─ 按 operation/outcome/failure_category/error_code/status_code 排序
+       ├─ labels.as_dict()
+       └─ 返回 [{"labels": ..., "count": ...}]</code></pre>
+      <p>测试中的三次递增：</p>
       <pre><code>counter.increment(success_labels)
 counter.increment(success_labels)
 counter.increment(fail_fast_labels)</code></pre>
-      <p>得到的 snapshot 是两条样本：</p>
+      <p>会形成两条样本，而不是三条事件明细：</p>
       <pre><code>[
   {"labels": fail_fast_labels.as_dict(), "count": 1},
-  {"labels": success_labels.as_dict(), "count": 2},
+  {"labels": success_labels.as_dict(), "count": 2}
 ]</code></pre>
-      <p>这就是 counter 的核心：不是记录三行事件明细，而是把相同标签的事件聚合起来。</p>
-    </section>
-
-    <section class="practice">
-      <h2>8. 动手实验：运行 provider HTTP 测试</h2>
-      <p>在项目根目录运行：</p>
-      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q</code></pre>
-      <p>重点看两个测试：</p>
-      <ul>
-        <li>重复 increment 同一组 success labels 后，count 变成 2。</li>
-        <li>使用 <code>amount=0</code> 会抛出 <code>ValueError</code>，防止 counter 语义变脏。</li>
-      </ul>
+      <p>这正是 metrics 与 logs 的边界：metrics 聚合，不负责保存事件流水；单次请求细节交给结构化日志。</p>
     </section>
 
     <section>
-      <h2>9. 常见错误</h2>
-      <ul>
-        <li>把 counter 当 gauge 用：counter 应该递增，不适合表达上下变化的当前值。</li>
-        <li>把进程内 counter 当生产方案：多进程、多实例下会丢失全局视角。</li>
-        <li>每次请求都生成新 label：会导致计数无法聚合。</li>
-        <li>把 request id 放进 label：每次都不同，等于制造高基数序列。</li>
-        <li>snapshot 顺序不稳定：测试容易变脆，所以代码里做了排序。</li>
-      </ul>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead>
+          <tr><th>概念</th><th>Counter</th><th>Gauge</th><th>本项目选择</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>语义</td><td>累计发生次数</td><td>当前状态值</td><td>provider outcome 是事件，使用 Counter</td></tr>
+          <tr><td>变化方向</td><td>只增加</td><td>可增可减</td><td><code>increment()</code> 拒绝非正数</td></tr>
+          <tr><td>例子</td><td>请求总数、失败总数</td><td>队列长度、当前连接数</td><td><code>provider_prediction_total</code></td></tr>
+          <tr><td>查询</td><td>常用 rate/increase</td><td>直接看当前值或趋势</td><td>后续 Prometheus 文本导出使用 <code>_total</code> 命名</td></tr>
+        </tbody>
+      </table>
+      <p>另一个易混点是“snapshot 是否等于内部状态”。本项目快照是用于展示和序列化的副本形状；调用方修改 snapshot 不应反向改变 counter 内部数据。</p>
     </section>
 
     <section>
-      <h2>10. 面试视角：如何解释 counter</h2>
-      <blockquote>
-        <p>Counter 用来记录事件发生次数，只递增不递减。对于 provider prediction，我会用低基数 labels 区分 success、retry_exhausted、fail_fast 等 outcome，相同 label set 的事件累加到同一条序列。单次请求细节仍然放日志里，counter 只负责趋势和数量。</p>
-      </blockquote>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead>
+          <tr><th>问题</th><th>原因</th><th>解决方案</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>TypeError: unhashable type</code></td><td>把可变 dict/list 作为 Counter key</td><td>使用 <code>frozen=True</code> dataclass 或 tuple 作为 key</td></tr>
+          <tr><td>不同事件没有聚合</td><td>label 中混入 request_id、用户文本等每次变化字段</td><td>只保留低基数分类字段</td></tr>
+          <tr><td>counter 出现负数或被扣减</td><td>把 counter 当成 gauge 使用</td><td>拒绝 <code>amount &lt; 1</code>，需要当前值时新增 gauge</td></tr>
+          <tr><td>测试输出顺序不稳定</td><td>直接遍历内部 dict/Counter</td><td>在 <code>snapshot()</code> 中统一排序</td></tr>
+          <tr><td>测试之间计数串台</td><td>模块级全局 counter 未 reset</td><td>使用 <code>reset_provider_metrics()</code> 或 pytest fixture</td></tr>
+          <tr><td>外部修改 snapshot 影响内部计数</td><td>直接返回内部结构引用</td><td>返回新 list 和新 dict，测试保护快照隔离</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
-      <h2>11. 记忆练习</h2>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead>
+          <tr><th>维度</th><th>教学 Counter</th><th>生产指标系统</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>生命周期</td><td>Python 进程内，重启即丢</td><td>由 exporter、collector、TSDB 持续采集</td></tr>
+          <tr><td>多进程</td><td>每个进程各自计数</td><td>需要跨进程、跨实例聚合</td></tr>
+          <tr><td>并发安全</td><td>课程未重点处理锁和原子性</td><td>需要线程/协程安全或使用成熟 metrics client</td></tr>
+          <tr><td>数据查询</td><td>返回当前快照</td><td>支持 rate、increase、histogram_quantile、长周期查询</td></tr>
+          <tr><td>可观测生态</td><td>帮助理解模型</td><td>对接仪表盘、告警、SLO、事故响应</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
       <details>
-        <summary>1. Counter 和日志有什么区别？</summary>
-        <p class="answer">Counter 聚合事件次数，日志保留单次事件上下文。</p>
+        <summary>1. 为什么 <code>ProviderMetricLabels</code> 必须可哈希？</summary>
+        <p class="answer">因为它被用作 <code>Counter</code> 的 key。只有可哈希对象才能稳定定位同一组 label set，从而把相同标签的事件累加到同一计数。</p>
       </details>
       <details>
-        <summary>2. 为什么 increment 不允许负数？</summary>
-        <p class="answer">因为 counter 语义是单调递增；会上下变化的值应该用 gauge 等其他指标类型。</p>
+        <summary>2. 为什么 <code>increment()</code> 不允许 <code>amount=0</code>？</summary>
+        <p class="answer">0 增量没有事件含义，允许它会掩盖无效调用。Counter 应表达事件发生，事件发生至少加 1。</p>
       </details>
       <details>
-        <summary>3. 为什么进程内 counter 不是生产级方案？</summary>
-        <p class="answer">它无法自动跨进程、跨实例聚合，进程重启后数据也会丢失。</p>
+        <summary>3. 为什么 snapshot 要排序？</summary>
+        <p class="answer">排序让测试断言、文档展示和后续文本导出可预测。否则同样的计数可能因遍历顺序不同导致快照测试不稳定。</p>
       </details>
       <details>
-        <summary>4. 相同 label set 为什么重要？</summary>
-        <p class="answer">相同 label set 才能聚合到同一条计数；如果 label 每次都变，就无法得到有意义的趋势。</p>
+        <summary>4. 进程内 Counter 为什么不能直接当生产方案？</summary>
+        <p class="answer">它无法自动跨进程、跨实例聚合，进程重启会丢失状态，也缺少成熟监控系统的采集、存储、查询和告警能力。</p>
       </details>
     </section>
 
     <section>
-      <h2>12. 本节总结</h2>
-      <p>本节用一个教学用 <code>ProviderMetricsCounter</code> 解释 counter 的核心语义：相同 labels 的事件会累加，counter 只允许正向递增，snapshot 输出 labels 和 count。它不是生产监控系统，但能帮助你理解后续接入 Prometheus 或 OpenTelemetry 时发生了什么。</p>
-      <p>下一课建议学习：Provider Metrics Endpoint。可以把当前教学 counter 或 metrics snapshot 通过一个只读 endpoint 暴露出来，进一步理解 FastAPI 如何服务内部观测数据。</p>
-      <p>推荐主资源：<a href="https://prometheus.io/docs/concepts/metric_types/">Prometheus metric types</a>、<a href="https://opentelemetry.io/docs/concepts/signals/metrics/">OpenTelemetry Metrics</a>、<a href="https://docs.python.org/3/library/collections.html#collections.Counter">Python Counter</a>。</p>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open>
+        <summary>面试题 1：Counter 的核心语义是什么？</summary>
+        <p class="answer">Counter 表示累计发生次数，只能递增，常用于请求总数、错误总数、重试次数等事件型信号。若需要表示当前队列长度或连接数，应使用 Gauge，而不是让 Counter 递减。</p>
+      </details>
+      <details>
+        <summary>面试题 2：如何用 label set 做聚合？</summary>
+        <p class="answer">metric name 加 label set 唯一确定一条序列。同一 label set 的事件累加到同一 count，不同 label set 形成不同样本。标签必须低基数，否则会产生过多时间序列。</p>
+      </details>
+      <details>
+        <summary>面试题 3：为什么快照函数不直接返回内部 Counter？</summary>
+        <p class="answer">直接返回内部 Counter 会泄漏实现细节，并允许调用方修改内部状态。快照应返回序列化友好的副本形状，如 labels dict 加 count，保护模块边界。</p>
+      </details>
     </section>
 
     <nav class="course-nav bottom" aria-label="课程底部导航">
       <span class="nav-title">继续学习</span>
       <span class="nav-links">
-        <a href="../index.html">回到课程目录</a>
+        <a href="../index.html">课程目录</a>
         <a href="./0050-provider-metrics-basics.html">上一课：Provider Metrics Basics</a>
-        <a href="../reference/0051-provider-metrics-counters-cheatsheet.html">查看本课速查</a>
         <a href="./0052-provider-metrics-endpoint.html">下一课：Provider Metrics Endpoint</a>
       </span>
     </nav>
