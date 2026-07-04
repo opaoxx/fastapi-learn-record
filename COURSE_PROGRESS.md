@@ -1,5 +1,36 @@
 # Course Progress
 
+# 2026-07-05 Run: Quality Audit Lessons 0065-0070
+
+## Completed
+
+- Paused forward lesson production per user request.
+- Re-audited Lessons 0065-0070 against the required "Final Review + CSDN Deep Dive" standard.
+- Lightly refactored each lesson with explicit review reinforcement blocks:
+  - Lesson 0065 now emphasizes renderer purity, field-contract failure behavior, stable ordering, and Markdown injection boundaries.
+  - Lesson 0066 now separates visible prompt facts from hidden grading anchors and explains why prompt leakage destroys training value.
+  - Lesson 0067 now treats the answer key as the training baseline, not an optional appendix, and documents empty-input behavior.
+  - Lesson 0068 now clarifies deterministic anchor grading, explainable failure fields, and extensible pass-condition design.
+  - Lesson 0069 now hardens summary formulas, failed/unanswered semantics, and extra-response handling.
+  - Lesson 0070 now clarifies Markdown as a projection of summary data, not a replacement machine-readable source.
+- Added a documentation contract test requiring the audited lessons to keep both "复核补强" and "逐行精读补充" content.
+
+## Files touched
+
+- `lessons/0065-provider-metrics-findings-markdown-report.html`
+- `lessons/0066-provider-metrics-runbook-exercise-cards.html`
+- `lessons/0067-provider-metrics-exercise-answer-key.html`
+- `lessons/0068-provider-metrics-exercise-grading-anchors.html`
+- `lessons/0069-provider-metrics-grading-summary.html`
+- `lessons/0070-provider-metrics-grading-summary-markdown.html`
+- `tests/test_course_docs_contract.py`
+- `NOTES.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Wait for user review. If approved, either continue auditing the next requested batch or resume forward lesson production from Lesson 0077.
+
 # 2026-07-05 Run: Lesson 0076 GitHub Development Workflow
 
 ## Completed

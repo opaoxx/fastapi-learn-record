@@ -59,6 +59,16 @@
           <tr><td>复盘</td><td>answer key</td><td>统一标准答案</td></tr>
         </tbody>
       </table>
+      <p>复核补强：答案键不是“附录”，而是训练闭环的判定基准。没有答案键，题卡只能激发讨论；有答案键，学习者才能把自己的自由表达映射回统一的 severity、finding 和 next_action。</p>
+      <table>
+        <thead><tr><th>答案键内容</th><th>为什么必须存在</th><th>缺失后果</th></tr></thead>
+        <tbody>
+          <tr><td><code>card['id']</code></td><td>定位题目，支持引用和复盘</td><td>多题材料中无法快速对应错误题。</td></tr>
+          <tr><td><code>card['prompt']</code></td><td>让答案键自包含</td><td>读者必须跳回题卡页面才能理解答案。</td></tr>
+          <tr><td><code>expected_severity</code></td><td>显式暴露优先级判断</td><td>复盘只看动作，会漏掉事故响应优先级训练。</td></tr>
+          <tr><td><code>answer</code></td><td>给出完整标准表达</td><td>学习者不知道应如何组织“原因 + 动作”。</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
@@ -78,6 +88,8 @@ lines.append("")</code></pre>
       <p>每张题卡渲染为一个二级标题块。空行用于保证 Markdown 段落清晰。答案键保留 prompt，便于复盘时不用跳回题目源数据。</p>
       <pre><code>return "\n".join(lines)</code></pre>
       <p>输出是单个 Markdown 文本块，可直接写入学习记录、issue 或课程参考页。测试会保护其中关键字符串。</p>
+      <p>逐行精读补充：函数返回值没有额外拼接 <code>+ "\n"</code>，因为每张 card 的末尾已经追加空行；非空输入会自然以换行结束，空输入则返回空字符串。这个差异体现了“空题卡不伪造标题”的设计：调用方决定是否展示空状态，而 renderer 不替业务层编造内容。</p>
+      <p>本函数用 <code>card['...']</code> 读取字段，与前两节保持一致：题卡结构坏了就应立即失败。教学项目通过异常暴露契约破坏；生产平台则应在题卡入库或发布前做 schema 校验，把错误报告给内容维护者。</p>
       <table>
         <thead><tr><th>代码点</th><th>作用</th><th>不这样写的隐患</th></tr></thead>
         <tbody>

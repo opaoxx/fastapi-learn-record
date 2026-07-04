@@ -63,6 +63,16 @@
           <tr><td>失败解释</td><td>列出缺失锚点</td><td>给出扣分项、证据、复核流程</td></tr>
         </tbody>
       </table>
+      <p>复核补强：本节必须把“可解释评分”放在“智能评分”之前。教学项目最怕评分器看似高级却不可复现；锚点评分虽然朴素，但每个扣分项都能直接追溯到题卡字段，适合初学者理解评分系统的最小闭环。</p>
+      <table>
+        <thead><tr><th>评分设计</th><th>收益</th><th>代价</th></tr></thead>
+        <tbody>
+          <tr><td>严格包含 <code>expected_severity</code></td><td>保证优先级判断被考核</td><td>同义表达不会自动通过。</td></tr>
+          <tr><td>严格包含 <code>expected_next_action</code></td><td>保证下一步动作可核对</td><td>回答必须贴近标准动作文本。</td></tr>
+          <tr><td>返回 <code>missing</code></td><td>失败原因透明</td><td>需要维护字段名作为反馈契约。</td></tr>
+          <tr><td>不保存原始 response</td><td>降低隐私和噪声传播</td><td>后续深度复盘需要另建受控存储。</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
@@ -99,6 +109,8 @@ passed = not missing</code></pre>
     ),
 }</code></pre>
       <p>返回值不是裸布尔，而是完整评分报告。<code>card_id</code> 让评分结果可追溯到题卡；两个 <code>*_matched</code> 字段支持细粒度断言；<code>feedback</code> 给出人类可读反馈。若只返回 <code>True/False</code>，后续页面、测试和学习记录都无法解释失败原因。</p>
+      <p>逐行精读补充：<code>str(card["expected_severity"])</code> 不是为了容忍坏类型，而是把结构化字段统一转换为可比较文本。真正的字段存在性仍由索引读取保证；如果字段缺失，函数会抛出异常，阻止错误题卡继续参与评分。</p>
+      <p><code>passed = not missing</code> 把通过条件绑定到缺失列表，而不是重复写成 <code>severity_matched and next_action_matched</code>。这样后续如果增加第三个锚点，只需维护 <code>missing</code> 生成逻辑，通过判断仍保持一致。</p>
     </section>
 
     <section>

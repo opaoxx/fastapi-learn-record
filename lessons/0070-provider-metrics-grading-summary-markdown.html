@@ -62,6 +62,16 @@
           <tr><td>渲染层</td><td>summary</td><td>Markdown</td><td>展示复盘报告</td></tr>
         </tbody>
       </table>
+      <p>复核补强：本节的重点是“报告是 summary 的投影，不是 summary 的替代品”。Markdown 适合人读和 GitHub diff，但不适合作为后续程序输入；后续如果要做统计、筛选或图表，应继续消费结构化 summary，而不是反解析 Markdown。</p>
+      <table>
+        <thead><tr><th>边界</th><th>正确做法</th><th>错误做法</th></tr></thead>
+        <tbody>
+          <tr><td>事实源</td><td>summary 是唯一统计事实源</td><td>renderer 重新计算 passed/failed。</td></tr>
+          <tr><td>隐私</td><td>报告只展示评分结果和反馈</td><td>把原始 response 全量写入 Markdown。</td></tr>
+          <tr><td>容错</td><td>对 <code>grades</code> 和 <code>missing</code> 做最低限度类型校验</td><td>坏结构继续渲染成难以诊断的文本。</td></tr>
+          <tr><td>扩展</td><td>新增字段先扩展 summary，再扩展 renderer</td><td>只在 Markdown 里拼临时文案，导致机器层不可见。</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
@@ -112,6 +122,8 @@ if not isinstance(grades, list):
 )
 return "\n".join(lines) + "\n"</code></pre>
       <p>每个 grade 渲染成一行。<code>missing</code> 为空时显示 <code>-</code>，避免空单元格难以扫描。最后追加末尾换行，方便写入 Markdown 文件或拼接到其他文档。</p>
+      <p>逐行精读补充：这里校验 <code>grades</code> 与 <code>missing</code> 的类型，但没有完整校验 summary 的计数一致性。原因是完整校验已经在 0071 抽成独立函数；0070 只承担“渲染前最低防呆”，不把验证层职责提前塞进 renderer。</p>
+      <p><code>feedback</code> 直接写入表格，是因为教学样本完全受控。生产环境中 <code>feedback</code>、<code>card_id</code> 甚至布尔字段都可能来自外部系统或用户输入，必须统一做 Markdown 转义和长度限制。</p>
     </section>
 
     <section>

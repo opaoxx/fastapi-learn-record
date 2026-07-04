@@ -63,6 +63,16 @@
           <tr><td><code>unanswered</code></td><td>没有 response 的题目数</td><td>定位漏答或数据缺口</td></tr>
         </tbody>
       </table>
+      <p>复核补强：summary 的工程价值在于把逐题结果转换成可做决策的聚合事实。教学场景里，<code>failed</code> 包含未作答题，<code>unanswered</code> 是其中一个子集；这让报告既能回答“有多少题没通过”，也能回答“没通过里有多少是根本没交”。</p>
+      <table>
+        <thead><tr><th>公式</th><th>课程语义</th><th>为什么这样定义</th></tr></thead>
+        <tbody>
+          <tr><td><code>total = len(cards)</code></td><td>题卡总分母</td><td>不能用 responses 数量当分母，否则漏答会被隐藏。</td></tr>
+          <tr><td><code>passed = count(grade.passed)</code></td><td>真正通过题数</td><td>通过标准由单题评分函数唯一决定。</td></tr>
+          <tr><td><code>failed = total - passed</code></td><td>所有未通过题</td><td>把漏答纳入未通过，符合训练考核语义。</td></tr>
+          <tr><td><code>unanswered = total - answered</code></td><td>未提交题数</td><td>独立暴露完成度，不与知识错误混为一谈。</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
@@ -98,6 +108,8 @@ return {
     "grades": grades,
 }</code></pre>
       <p><code>passed</code> 从每题结果计算，避免重复实现通过逻辑。<code>failed = total - passed</code> 表示未通过总数，包含未作答；<code>unanswered</code> 单独暴露漏答数量，避免复盘时误读失败原因。</p>
+      <p>逐行精读补充：本函数没有把 <code>responses_by_card_id</code> 中多余的 key 计入 answered。原因是 summary 只以当前 cards 为权威题目集合；多余作答可能来自旧题卡、前端缓存或恶意提交，不能扩大统计分母。</p>
+      <p>每张 card 都生成 grade，即使未作答也不跳过。跳过未作答会让 <code>grades</code> 数量小于 <code>total</code>，后续 Markdown 明细无法解释哪些题缺失，训练报告也会虚高完成度。</p>
     </section>
 
     <section>

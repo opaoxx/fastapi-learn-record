@@ -59,6 +59,17 @@
           <tr><td>Answer</td><td>给出标准作答</td><td>如果不测试会与 next_action 不一致</td></tr>
         </tbody>
       </table>
+      <p>复核补强：题卡的本质是把“系统观察事实”压缩成“可考核输入”。因此 <code>prompt</code> 只能暴露 outcome 和 count，不能泄露 severity、finding 或 next_action；否则学生不是在推理排障路径，而是在复述题干。</p>
+      <table>
+        <thead><tr><th>字段</th><th>是否给学习者</th><th>设计理由</th></tr></thead>
+        <tbody>
+          <tr><td><code>id</code></td><td>可见</td><td>用于引用、提交答案、生成答案键和后续评分汇总。</td></tr>
+          <tr><td><code>prompt</code></td><td>可见</td><td>只包含观察事实，构成题目的输入条件。</td></tr>
+          <tr><td><code>expected_severity</code></td><td>不可作为题干泄露</td><td>它是评分锚点，考核学生能否判断优先级。</td></tr>
+          <tr><td><code>expected_next_action</code></td><td>不可作为题干泄露</td><td>它是下一步动作标准答案，泄露后题卡失效。</td></tr>
+          <tr><td><code>answer</code></td><td>复盘阶段可见</td><td>用于自测和标准答案，不属于作答输入。</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
@@ -91,6 +102,8 @@
       <p><code>prompt</code> 只暴露 outcome 和 count，避免把答案泄露给学生；<code>expected_severity</code> 和 <code>expected_next_action</code> 是评分锚点；<code>answer</code> 把 finding 与 action 拼接成完整标准答案。</p>
       <pre><code>return cards</code></pre>
       <p>返回结构化列表而不是直接渲染文本，是为了让后续答案键、网页、测试都能复用同一份题卡数据。</p>
+      <p>逐行精读补充：<code>id</code> 使用顺序号是教学场景的最低复杂度方案，优点是可读、可预测、易测；缺点是题目插入会改变后续编号。因此生产题库必须引入稳定 slug 或数据库主键，而不是沿用本节的顺序 ID 策略。</p>
+      <p><code>answer</code> 同时包含 <code>finding</code> 和 <code>next_action</code>，是为了训练“依据 + 动作”的完整排障表达。面试中只说“检查重试次数”不够，必须说明为什么这个 outcome/count 会导向该检查动作。</p>
       <table>
         <thead><tr><th>代码点</th><th>作用</th><th>不这样写的隐患</th></tr></thead>
         <tbody>

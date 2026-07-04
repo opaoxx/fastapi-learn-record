@@ -201,6 +201,23 @@ def test_provider_metrics_runbook_links_docs_lessons_and_tests() -> None:
     assert "../tests/test_course_docs_contract.py" in parser.links
 
 
+def test_provider_metrics_training_lessons_include_quality_audit_reinforcement() -> None:
+    lesson_paths = [
+        Path("lessons/0065-provider-metrics-findings-markdown-report.html"),
+        Path("lessons/0066-provider-metrics-runbook-exercise-cards.html"),
+        Path("lessons/0067-provider-metrics-exercise-answer-key.html"),
+        Path("lessons/0068-provider-metrics-exercise-grading-anchors.html"),
+        Path("lessons/0069-provider-metrics-grading-summary.html"),
+        Path("lessons/0070-provider-metrics-grading-summary-markdown.html"),
+    ]
+
+    for lesson_path in lesson_paths:
+        parser = parse_html(lesson_path)
+
+        assert "复核补强" in parser.text
+        assert "逐行精读补充" in parser.text
+
+
 def test_root_readme_guides_github_learners_to_course_and_runbook() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
 

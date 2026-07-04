@@ -61,6 +61,16 @@
           <tr><td>Markdown report</td><td>文本表格</td><td>课程读者、PR reviewer、复盘记录</td></tr>
         </tbody>
       </table>
+      <p>复核补强：本节的关键不是“会拼 Markdown”，而是理解展示层如何承接上游事实而不制造第二套事实源。<code>render_provider_metrics_runbook_findings_markdown()</code> 必须是只读、确定性、无副作用函数：同一组 findings 永远得到同一份表格，测试才能把格式、字段和顺序锁住。</p>
+      <table>
+        <thead><tr><th>审计项</th><th>必须保持的性质</th><th>工程原因</th></tr></thead>
+        <tbody>
+          <tr><td>字段读取</td><td>用索引读取必需字段</td><td>缺字段代表上游契约损坏，应尽早失败，而不是输出含 <code>None</code> 的假报告。</td></tr>
+          <tr><td>顺序策略</td><td>保留 findings 输入顺序</td><td>findings 的顺序来自 runbook 分支顺序，变更顺序会增加 PR diff 和复盘定位成本。</td></tr>
+          <tr><td>格式职责</td><td>只负责 Markdown 语法</td><td>severity、finding、next_action 的语义已经在 0064 生成，展示层不应重新判断。</td></tr>
+          <tr><td>安全边界</td><td>教学样本受控，生产必须转义</td><td>字段中若含 <code>|</code>、换行或 HTML 片段，未转义会破坏表格或引入展示风险。</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
@@ -86,6 +96,8 @@
     )
 return "\n".join(lines) + "\n"</code></pre>
       <p>每个 finding 对应一行，保留原顺序，保证 report 与输入样本可一一追溯。最后补换行，便于写入文件或拼接到 Markdown 文档。</p>
+      <p>逐行精读补充：这里没有调用 <code>build_provider_metrics_runbook_findings()</code>，说明 renderer 不拥有“如何解释 metric”的知识。它只消费已经解释好的结果。若 renderer 反向调用 findings helper，会让测试无法单独定位“解释错了”还是“展示错了”。</p>
+      <p>本函数没有把 <code>lines</code> 初始化为空后再在循环中判断是否追加表头，原因是空 findings 仍然应返回合法空表。空表在 GitHub PR 中比空字符串更可诊断：读者能知道报告结构存在，只是当前没有明细行。</p>
       <table>
         <thead><tr><th>代码点</th><th>作用</th><th>不这样写的隐患</th></tr></thead>
         <tbody>
