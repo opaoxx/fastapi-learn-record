@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0064 - Provider Metrics Runbook Findings</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0064</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0063-provider-metrics-scenario-fixtures.html">上一课</a>
+        <a href="../reference/0064-provider-metrics-runbook-findings-cheatsheet.html">速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0064 Provider Metrics Runbook Findings：把指标样本翻译成排障结论</h1>
+      <p class="lead">上一节提供了稳定 metrics scenario samples。本节继续向前一步：新增 <code>build_provider_metrics_runbook_findings()</code>，把样本中的 <code>outcome</code>、<code>failure_category</code>、<code>status_code</code> 转换成 <code>severity</code>、<code>finding</code> 和 <code>next_action</code>。目标不是让程序自动代替人排障，而是训练初学者把观测事实转换成工程判断。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Provider Metrics Runbook Findings
+├─ 输入
+│  └─ provider metric samples: [{labels, count}, ...]
+├─ 核心字段
+│  ├─ outcome：分支入口
+│  ├─ count：样本数量
+│  ├─ failure_category：失败分类
+│  └─ status_code：HTTP 状态码或 none
+├─ 输出
+│  ├─ severity：教学级判断级别
+│  ├─ finding：观测事实的人类解释
+│  └─ next_action：下一步排障动作
+├─ 四个稳定分支
+│  ├─ success → baseline
+│  ├─ retry_scheduled → investigate
+│  ├─ retry_exhausted → action_required
+│  └─ fail_fast → contract_check
+├─ 防御分支
+│  ├─ unknown outcome → unknown
+│  ├─ labels 非 dict → ValueError
+│  └─ count 非 int → ValueError
+└─ 工程边界
+   ├─ 纯转换函数
+   ├─ 不读取全局 counter
+   ├─ 不发出告警
+   └─ 不替代生产 runbook/incident workflow</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>监控排障的关键不是“看到一个数字”，而是把数字放回语义上下文。<code>provider_prediction_total</code> 的 <code>count</code> 只是事实；<code>outcome="retry_exhausted"</code> 才把事实推向“可重试失败已经耗尽尝试次数”的判断；<code>next_action</code> 则把判断进一步落到可执行动作。</p>
+      <p>本节新增的 findings helper 是一个<strong>解释层</strong>。它位于 raw metrics 与 runbook 之间：raw metrics 保持机器可读、低基数、稳定；runbook findings 把机器字段转成人类排障语言。两者不能混为一谈。metrics 不应该存长句子，findings 也不应该伪装成真实监控数据。</p>
+      <table>
+        <thead><tr><th>层级</th><th>代表字段</th><th>职责</th></tr></thead>
+        <tbody>
+          <tr><td>观测事实</td><td><code>labels</code>、<code>count</code></td><td>记录发生过什么，保持机器可处理。</td></tr>
+          <tr><td>分类判断</td><td><code>outcome</code>、<code>failure_category</code></td><td>决定进入哪个 runbook 分支。</td></tr>
+          <tr><td>人类解释</td><td><code>finding</code></td><td>把 label 组合翻译成一句明确判断。</td></tr>
+          <tr><td>行动建议</td><td><code>next_action</code></td><td>提示下一步查什么，不直接自动修复。</td></tr>
+          <tr><td>治理边界</td><td><code>severity</code></td><td>教学级优先级，不等于生产告警级别。</td></tr>
+        </tbody>
+      </table>
+      <p>面试里经常考“可观测性数据如何变成行动”。标准答案不是把所有逻辑塞进告警规则，而是分层：采集层保持低基数事实，解释层形成可读结论，runbook 层规定动作，生产告警层再结合 SLO、阈值、持续时间和升级策略。</p>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>def build_provider_metrics_runbook_findings(
+    samples: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    findings = []
+    for sample in samples:
+        labels = sample.get("labels")
+        count = sample.get("count")
+        if not isinstance(labels, dict):
+            raise ValueError("Metric sample labels must be a dictionary.")
+        if not isinstance(count, int):
+            raise ValueError("Metric sample count must be an integer.")</code></pre>
+      <table>
+        <thead><tr><th>代码行</th><th>作用</th><th>为什么这样写 / 不这样写的隐患</th></tr></thead>
+        <tbody>
+          <tr><td><code>samples</code></td><td>接收 metrics snapshot-like 数据</td><td>复用上一节 fixture 和真实 endpoint snapshot shape。</td></tr>
+          <tr><td><code>findings = []</code></td><td>准备输出列表</td><td>一个 sample 对应一个 finding，保留逐样本可追溯性。</td></tr>
+          <tr><td><code>sample.get("labels")</code></td><td>读取 label 字典</td><td>label 是所有 runbook 分支判断的入口。</td></tr>
+          <tr><td><code>sample.get("count")</code></td><td>读取样本数量</td><td>finding 需要保留观测规模，不能只给结论。</td></tr>
+          <tr><td><code>isinstance(labels, dict)</code></td><td>校验 labels shape</td><td>没有 dict 就无法读取 outcome；继续执行会产生含糊异常。</td></tr>
+          <tr><td><code>isinstance(count, int)</code></td><td>校验 count shape</td><td>count 不是整数时无法表示 counter 样本。</td></tr>
+        </tbody>
+      </table>
+
+      <pre><code>outcome = labels.get("outcome")
+failure_category = str(labels.get("failure_category", "none"))
+status_code = str(labels.get("status_code", "none"))</code></pre>
+      <p><code>outcome</code> 决定主分支；<code>failure_category</code> 和 <code>status_code</code> 被保留到输出中，方便读者把 finding 追溯回原始 label。这里对缺省值使用 <code>none</code>，与前面 metrics label contract 保持一致。</p>
+
+      <pre><code>if outcome == "success":
+    finding = "Provider prediction requests are succeeding."
+    next_action = (
+        "Compare the success count with expected request volume before "
+        "treating failure samples as system-wide."
+    )
+    severity = "baseline"</code></pre>
+      <p><code>success</code> 不代表“无问题”，而是建立基线：当失败样本存在时，成功样本可以帮助判断故障是否系统性。若不保留 success 分支，学习者容易看到失败样本就直接下全局故障结论。</p>
+
+      <pre><code>elif outcome == "retry_scheduled":
+    finding = "Retryable provider failures were observed and retry was scheduled."
+    next_action = (
+        "Check failure_category, status_code, retry delay logs, and whether "
+        "retry_exhausted also appears."
+    )
+    severity = "investigate"</code></pre>
+      <p><code>retry_scheduled</code> 的重点是“需要调查”，不是“已经失败”。下一步必须继续查 <code>retry_exhausted</code>，否则会把一次可恢复抖动误判成最终失败。</p>
+
+      <pre><code>elif outcome == "retry_exhausted":
+    finding = "Retryable provider failures exhausted the configured attempts."
+    next_action = (
+        "Check max_attempts, provider availability, and the last retryable "
+        "failure before changing retry policy."
+    )
+    severity = "action_required"</code></pre>
+      <p><code>retry_exhausted</code> 比 scheduled 更接近真实影响，但仍然不能自动等同“应该增加重试次数”。正确动作是先检查最大尝试次数、provider 可用性和最后一次错误类别。</p>
+
+      <pre><code>elif outcome == "fail_fast":
+    finding = "A non-retryable provider failure or invalid response was recorded."
+    next_action = (
+        "Do not increase retries first; inspect the request or response "
+        "contract and the status_code."
+    )
+    severity = "contract_check"</code></pre>
+      <p><code>fail_fast</code> 的关键词是“契约检查”。它可能来自 4xx 或 invalid response。盲目重试只会放大错误，应该先检查请求参数、provider 响应结构和状态码语义。</p>
+
+      <pre><code>else:
+    finding = "The metric sample uses an outcome without a runbook branch."
+    next_action = (
+        "Add an explicit runbook branch before treating this metric as "
+        "operationally actionable."
+    )
+    severity = "unknown"</code></pre>
+      <p>未知 outcome 不能静默忽略。可观测性字段一旦新增，就必须同步 runbook，否则团队会看到新信号却不知道如何行动。</p>
+
+      <pre><code>findings.append(
+    {
+        "outcome": str(outcome),
+        "count": count,
+        "failure_category": failure_category,
+        "status_code": status_code,
+        "severity": severity,
+        "finding": finding,
+        "next_action": next_action,
+    }
+)</code></pre>
+      <p>输出同时保留原始分类字段和解释字段。这样页面、测试或后续练习既能展示人类可读结论，也能追溯到机器 label。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>scenario samples
+  → build_provider_metrics_runbook_findings(samples)
+    → 校验 labels 是 dict
+    → 校验 count 是 int
+    → 读取 outcome/failure_category/status_code
+    → outcome 分支匹配
+      ├─ success → baseline finding
+      ├─ retry_scheduled → investigate finding
+      ├─ retry_exhausted → action_required finding
+      ├─ fail_fast → contract_check finding
+      └─ unknown → unknown finding
+    → 输出 [{outcome,count,severity,finding,next_action}, ...]
+  → 学习者对照 runbook
+    → 从 finding 理解事实
+    → 从 next_action 确定下一步检查</code></pre>
+      <p>数据流上，<code>build_provider_metrics_runbook_scenario_samples()</code> 负责“造观测样本”，<code>build_provider_metrics_runbook_findings()</code> 负责“解释观测样本”。这两个函数都不读取真实全局 counter，因此它们是教学练习工具，不是运行时监控入口。</p>
+      <table>
+        <thead><tr><th>输入 outcome</th><th>severity</th><th>核心判断</th><th>下一步</th></tr></thead>
+        <tbody>
+          <tr><td><code>success</code></td><td><code>baseline</code></td><td>成功请求仍存在</td><td>对比预期请求量，避免过度扩大失败影响。</td></tr>
+          <tr><td><code>retry_scheduled</code></td><td><code>investigate</code></td><td>发生过可重试失败</td><td>查失败分类、状态码、retry delay log 和 exhausted 样本。</td></tr>
+          <tr><td><code>retry_exhausted</code></td><td><code>action_required</code></td><td>重试预算耗尽</td><td>查 provider 可用性、max_attempts、最后一次错误。</td></tr>
+          <tr><td><code>fail_fast</code></td><td><code>contract_check</code></td><td>非重试失败或响应无效</td><td>先查契约，不先增加重试。</td></tr>
+          <tr><td>未知 outcome</td><td><code>unknown</code></td><td>runbook 没有分支</td><td>先补 runbook 分支，再把信号用于行动。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>finding vs metric</td><td>finding 可以直接写进 metric label</td><td>metric label 必须低基数；finding 是人类解释，应在解释层生成。</td></tr>
+          <tr><td>severity vs alert severity</td><td><code>action_required</code> 就是生产 P1</td><td>这里是教学级分类，不等于生产告警等级。</td></tr>
+          <tr><td>next_action vs 自动修复</td><td>函数应该自动改 retry 策略</td><td>next_action 只提示检查路径，不自动修改系统行为。</td></tr>
+          <tr><td>unknown outcome</td><td>忽略未知字段即可</td><td>未知 outcome 表示 runbook 不完整，应补分支。</td></tr>
+          <tr><td>count</td><td>只要有失败 count 就说明全局故障</td><td>必须结合 success、outcome、failure_category 和时间窗口判断。</td></tr>
+          <tr><td>纯函数</td><td>没有副作用就没价值</td><td>纯函数适合训练、测试和文档生成，稳定且可复用。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>表现</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>labels 不是 dict</td><td>读取 <code>outcome</code> 报错或产生奇怪输出</td><td>入口处显式抛出 <code>ValueError</code>。</td></tr>
+          <tr><td>count 缺失</td><td>finding 无法保留样本规模</td><td>要求 <code>count</code> 必须是整数。</td></tr>
+          <tr><td>把 finding 写入 metrics label</td><td>label 高基数且难以查询</td><td>metrics 只存稳定分类；长文本放解释层。</td></tr>
+          <tr><td>未知 outcome 静默跳过</td><td>新信号无法排障</td><td>输出 <code>severity="unknown"</code> 并提示补 runbook 分支。</td></tr>
+          <tr><td>把 <code>retry_scheduled</code> 标成 action_required</td><td>可恢复抖动被误判为最终失败</td><td>scheduled 只给 investigate，继续查 exhausted。</td></tr>
+          <tr><td>把 <code>fail_fast</code> 建议改成加重试</td><td>放大契约错误</td><td>fail-fast 的 next_action 应先查请求/响应契约。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>finding 来源</td><td>固定样本 + 纯函数解释</td><td>实时 metrics、日志、trace、事件和历史基线综合判断</td></tr>
+          <tr><td>severity</td><td>教学分类：baseline/investigate/action_required</td><td>告警等级：P1/P2/P3、SLO burn、业务影响</td></tr>
+          <tr><td>动作范围</td><td>提示下一步查什么</td><td>包含回滚、降级、扩容、熔断、升级、沟通</td></tr>
+          <tr><td>自动化程度</td><td>人工阅读训练</td><td>可能接入告警平台、工单、ChatOps、事故系统</td></tr>
+          <tr><td>风险控制</td><td>不修改运行状态</td><td>任何自动化修复都需要审批、限流和回滚策略</td></tr>
+          <tr><td>知识治理</td><td>测试保护输出文案</td><td>runbook owner、演练、事故复盘和定期审查</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open>
+        <summary>1. 为什么不能把 finding 文本直接放进 metrics label？</summary>
+        <p class="answer">metrics label 需要低基数、稳定、便于聚合查询。finding 是人类解释文本，容易变长和变化，应该在解释层生成。</p>
+      </details>
+      <details>
+        <summary>2. <code>retry_scheduled</code> 对应的 severity 为什么是 <code>investigate</code>？</summary>
+        <p class="answer">因为它只表示安排过重试，不代表最终失败。必须继续查 <code>retry_exhausted</code>、成功样本和日志。</p>
+      </details>
+      <details>
+        <summary>3. <code>fail_fast</code> 的 next_action 为什么强调先查契约？</summary>
+        <p class="answer">fail-fast 通常来自非重试型 HTTP 错误或无效响应。盲目重试会放大错误，正确动作是先检查请求/响应契约和状态码语义。</p>
+      </details>
+      <details>
+        <summary>4. 为什么未知 outcome 不应该静默忽略？</summary>
+        <p class="answer">未知 outcome 表示 metrics contract 已出现新信号，但 runbook 没有解释分支。静默忽略会让团队错过需要治理的新状态。</p>
+      </details>
+      <details>
+        <summary>5. 本节 helper 为什么不读取全局 counter？</summary>
+        <p class="answer">它的目标是解释传入样本，服务课程练习和测试；读取全局 counter 会把解释函数变成运行时状态读取函数，增加副作用和测试不确定性。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open>
+        <summary>面试题 1：可观测性数据如何转化为可执行行动？</summary>
+        <p class="answer">先保持采集层低基数、稳定；再用解释层把 label 组合映射成 finding；再由 runbook 定义 next_action；生产环境还要结合 SLO、时间窗口、阈值、影响范围和升级策略，不能只靠单个 count 下结论。</p>
+      </details>
+      <details>
+        <summary>面试题 2：为什么解释层应与 metrics 采集层分离？</summary>
+        <p class="answer">采集层服务机器聚合查询，必须稳定、低基数；解释层服务人类理解，可以包含长文本和行动建议。混在一起会导致指标不可控、查询困难、文案变更影响监控契约。</p>
+      </details>
+      <details>
+        <summary>面试题 3：看到新的 outcome，你会怎么处理？</summary>
+        <p class="answer">先确认它是否属于稳定 metrics contract；然后补充 label builder、测试、runbook finding、文档入口和排障流程。上线前确保未知 outcome 不会被误当成已治理信号。</p>
+      </details>
+      <details>
+        <summary>面试题 4：教学 severity 与生产告警 severity 有什么区别？</summary>
+        <p class="answer">教学 severity 用来训练判断分支，例如 baseline、investigate、action_required；生产告警 severity 要结合业务影响、SLO、持续时间、用户范围、升级路径和值班规则，不能由单个教学函数直接决定。</p>
+      </details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0063-provider-metrics-scenario-fixtures.html">上一课：Provider Metrics Scenario Fixtures</a>
+        <a href="../reference/0064-provider-metrics-runbook-findings-cheatsheet.html">查看速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

@@ -12,6 +12,8 @@ from first_api.services.provider_http import (
     PROVIDER_PREDICTION_METRIC_HELP,
     PROVIDER_PREDICTION_METRIC_NAME,
     ProviderMetricsCounter,
+    build_provider_metrics_runbook_findings,
+    build_provider_metrics_runbook_scenario_samples,
     build_provider_metric_labels,
     calculate_retry_jitter,
     calculate_retry_delay,
@@ -180,6 +182,189 @@ def test_provider_metric_contract_collects_rename_sensitive_fields() -> None:
         "error_code",
         "status_code",
     ]
+
+
+def test_provider_metrics_runbook_scenario_samples_cover_core_outcomes() -> None:
+    samples = build_provider_metrics_runbook_scenario_samples()
+
+    assert samples == [
+        {
+            "labels": build_provider_metric_labels(outcome="success").as_dict(),
+            "count": 3,
+        },
+        {
+            "labels": build_provider_metric_labels(
+                outcome="retry_scheduled",
+                failure_category="retryable_http_status",
+                error_code="ai_provider_http_error",
+                status_code=503,
+            ).as_dict(),
+            "count": 2,
+        },
+        {
+            "labels": build_provider_metric_labels(
+                outcome="retry_exhausted",
+                failure_category="retryable_http_status",
+                error_code="ai_provider_http_error",
+                status_code=503,
+            ).as_dict(),
+            "count": 1,
+        },
+        {
+            "labels": build_provider_metric_labels(
+                outcome="fail_fast",
+                failure_category="non_retryable_http_status",
+                error_code="ai_provider_http_error",
+                status_code=400,
+            ).as_dict(),
+            "count": 1,
+        },
+    ]
+    assert {sample["labels"]["outcome"] for sample in samples} == {
+        "success",
+        "retry_scheduled",
+        "retry_exhausted",
+        "fail_fast",
+    }
+
+
+def test_provider_metrics_runbook_scenario_samples_render_as_text() -> None:
+    text = render_provider_metrics_prometheus_text(
+        build_provider_metrics_runbook_scenario_samples()
+    )
+
+    assert text == (
+        "# HELP provider_prediction_total Provider prediction outcomes recorded by "
+        "the teaching metrics counter.\n"
+        "# TYPE provider_prediction_total counter\n"
+        'provider_prediction_total{error_code="none",failure_category="none",'
+        'operation="prediction",outcome="success",status_code="none"} 3\n'
+        'provider_prediction_total{error_code="ai_provider_http_error",'
+        'failure_category="retryable_http_status",operation="prediction",'
+        'outcome="retry_scheduled",status_code="503"} 2\n'
+        'provider_prediction_total{error_code="ai_provider_http_error",'
+        'failure_category="retryable_http_status",operation="prediction",'
+        'outcome="retry_exhausted",status_code="503"} 1\n'
+        'provider_prediction_total{error_code="ai_provider_http_error",'
+        'failure_category="non_retryable_http_status",operation="prediction",'
+        'outcome="fail_fast",status_code="400"} 1\n'
+    )
+
+
+def test_provider_metrics_runbook_findings_explain_core_scenario_samples() -> None:
+    findings = build_provider_metrics_runbook_findings(
+        build_provider_metrics_runbook_scenario_samples()
+    )
+
+    assert findings == [
+        {
+            "outcome": "success",
+            "count": 3,
+            "failure_category": "none",
+            "status_code": "none",
+            "severity": "baseline",
+            "finding": "Provider prediction requests are succeeding.",
+            "next_action": (
+                "Compare the success count with expected request volume before "
+                "treating failure samples as system-wide."
+            ),
+        },
+        {
+            "outcome": "retry_scheduled",
+            "count": 2,
+            "failure_category": "retryable_http_status",
+            "status_code": "503",
+            "severity": "investigate",
+            "finding": (
+                "Retryable provider failures were observed and retry was scheduled."
+            ),
+            "next_action": (
+                "Check failure_category, status_code, retry delay logs, and whether "
+                "retry_exhausted also appears."
+            ),
+        },
+        {
+            "outcome": "retry_exhausted",
+            "count": 1,
+            "failure_category": "retryable_http_status",
+            "status_code": "503",
+            "severity": "action_required",
+            "finding": (
+                "Retryable provider failures exhausted the configured attempts."
+            ),
+            "next_action": (
+                "Check max_attempts, provider availability, and the last retryable "
+                "failure before changing retry policy."
+            ),
+        },
+        {
+            "outcome": "fail_fast",
+            "count": 1,
+            "failure_category": "non_retryable_http_status",
+            "status_code": "400",
+            "severity": "contract_check",
+            "finding": (
+                "A non-retryable provider failure or invalid response was recorded."
+            ),
+            "next_action": (
+                "Do not increase retries first; inspect the request or response "
+                "contract and the status_code."
+            ),
+        },
+    ]
+
+
+def test_provider_metrics_runbook_findings_explain_unknown_outcomes() -> None:
+    findings = build_provider_metrics_runbook_findings(
+        [
+            {
+                "labels": {
+                    "operation": "prediction",
+                    "outcome": "circuit_open",
+                    "failure_category": "none",
+                    "error_code": "none",
+                    "status_code": "none",
+                },
+                "count": 1,
+            }
+        ]
+    )
+
+    assert findings == [
+        {
+            "outcome": "circuit_open",
+            "count": 1,
+            "failure_category": "none",
+            "status_code": "none",
+            "severity": "unknown",
+            "finding": "The metric sample uses an outcome without a runbook branch.",
+            "next_action": (
+                "Add an explicit runbook branch before treating this metric as "
+                "operationally actionable."
+            ),
+        }
+    ]
+
+
+def test_provider_metrics_runbook_findings_reject_malformed_samples() -> None:
+    try:
+        build_provider_metrics_runbook_findings([{"labels": [], "count": 1}])
+    except ValueError as exc:
+        label_error = exc
+    else:
+        raise AssertionError("Expected ValueError")
+
+    try:
+        build_provider_metrics_runbook_findings(
+            [{"labels": build_provider_metric_labels(outcome="success").as_dict()}]
+        )
+    except ValueError as exc:
+        count_error = exc
+    else:
+        raise AssertionError("Expected ValueError")
+
+    assert str(label_error) == "Metric sample labels must be a dictionary."
+    assert str(count_error) == "Metric sample count must be an integer."
 
 
 def test_provider_metrics_counter_accumulates_samples_by_label_set() -> None:

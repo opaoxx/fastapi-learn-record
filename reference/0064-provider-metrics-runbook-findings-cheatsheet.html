@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Provider Metrics Runbook Findings Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0064</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0064-provider-metrics-runbook-findings.html">回到第 64 课</a>
+        <a href="./0063-provider-metrics-scenario-fixtures-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0064</p>
+      <h1>Provider Metrics Runbook Findings 速查</h1>
+      <p class="lead">把 metrics samples 翻译成 finding 和 next_action，但不替代生产告警。</p>
+    </header>
+
+    <h2>一句话模型</h2>
+    <blockquote>
+      <p>metrics 是事实，finding 是解释，next_action 是下一步排障动作。</p>
+    </blockquote>
+
+    <h2>核心函数</h2>
+    <pre><code>build_provider_metrics_runbook_findings(samples)</code></pre>
+
+    <h2>分支映射</h2>
+    <table>
+      <thead><tr><th>outcome</th><th>severity</th><th>含义</th><th>下一步</th></tr></thead>
+      <tbody>
+        <tr><td><code>success</code></td><td><code>baseline</code></td><td>成功请求存在。</td><td>对比预期请求量。</td></tr>
+        <tr><td><code>retry_scheduled</code></td><td><code>investigate</code></td><td>发生过可重试失败并安排重试。</td><td>查 failure labels、retry delay log、exhausted 样本。</td></tr>
+        <tr><td><code>retry_exhausted</code></td><td><code>action_required</code></td><td>重试预算耗尽。</td><td>查 max_attempts、provider 可用性、最后错误。</td></tr>
+        <tr><td><code>fail_fast</code></td><td><code>contract_check</code></td><td>非重试失败或无效响应。</td><td>先查请求/响应契约。</td></tr>
+        <tr><td>unknown</td><td><code>unknown</code></td><td>runbook 没有解释分支。</td><td>先补 runbook 分支。</td></tr>
+      </tbody>
+    </table>
+
+    <h2>不要混淆</h2>
+    <ul>
+      <li><code>severity</code> 是教学判断级别，不是生产 P1/P2。</li>
+      <li><code>finding</code> 不应写进 metric label。</li>
+      <li><code>next_action</code> 是排查建议，不是自动修复指令。</li>
+      <li>未知 outcome 不能静默忽略。</li>
+    </ul>
+
+    <h2>测试命令</h2>
+    <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q
+.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q</code></pre>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0064-provider-metrics-runbook-findings.html">回到第 64 课</a>
+        <a href="./0063-provider-metrics-scenario-fixtures-cheatsheet.html">上一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

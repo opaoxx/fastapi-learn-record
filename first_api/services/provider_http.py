@@ -167,6 +167,108 @@ def get_provider_prediction_metric_contract() -> dict[str, object]:
     }
 
 
+def build_provider_metrics_runbook_scenario_samples() -> list[dict[str, object]]:
+    return [
+        {
+            "labels": build_provider_metric_labels(outcome="success").as_dict(),
+            "count": 3,
+        },
+        {
+            "labels": build_provider_metric_labels(
+                outcome="retry_scheduled",
+                failure_category="retryable_http_status",
+                error_code="ai_provider_http_error",
+                status_code=503,
+            ).as_dict(),
+            "count": 2,
+        },
+        {
+            "labels": build_provider_metric_labels(
+                outcome="retry_exhausted",
+                failure_category="retryable_http_status",
+                error_code="ai_provider_http_error",
+                status_code=503,
+            ).as_dict(),
+            "count": 1,
+        },
+        {
+            "labels": build_provider_metric_labels(
+                outcome="fail_fast",
+                failure_category="non_retryable_http_status",
+                error_code="ai_provider_http_error",
+                status_code=400,
+            ).as_dict(),
+            "count": 1,
+        },
+    ]
+
+
+def build_provider_metrics_runbook_findings(
+    samples: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    findings = []
+    for sample in samples:
+        labels = sample.get("labels")
+        count = sample.get("count")
+        if not isinstance(labels, dict):
+            raise ValueError("Metric sample labels must be a dictionary.")
+        if not isinstance(count, int):
+            raise ValueError("Metric sample count must be an integer.")
+
+        outcome = labels.get("outcome")
+        failure_category = str(labels.get("failure_category", "none"))
+        status_code = str(labels.get("status_code", "none"))
+
+        if outcome == "success":
+            finding = "Provider prediction requests are succeeding."
+            next_action = (
+                "Compare the success count with expected request volume before "
+                "treating failure samples as system-wide."
+            )
+            severity = "baseline"
+        elif outcome == "retry_scheduled":
+            finding = "Retryable provider failures were observed and retry was scheduled."
+            next_action = (
+                "Check failure_category, status_code, retry delay logs, and whether "
+                "retry_exhausted also appears."
+            )
+            severity = "investigate"
+        elif outcome == "retry_exhausted":
+            finding = "Retryable provider failures exhausted the configured attempts."
+            next_action = (
+                "Check max_attempts, provider availability, and the last retryable "
+                "failure before changing retry policy."
+            )
+            severity = "action_required"
+        elif outcome == "fail_fast":
+            finding = "A non-retryable provider failure or invalid response was recorded."
+            next_action = (
+                "Do not increase retries first; inspect the request or response "
+                "contract and the status_code."
+            )
+            severity = "contract_check"
+        else:
+            finding = "The metric sample uses an outcome without a runbook branch."
+            next_action = (
+                "Add an explicit runbook branch before treating this metric as "
+                "operationally actionable."
+            )
+            severity = "unknown"
+
+        findings.append(
+            {
+                "outcome": str(outcome),
+                "count": count,
+                "failure_category": failure_category,
+                "status_code": status_code,
+                "severity": severity,
+                "finding": finding,
+                "next_action": next_action,
+            }
+        )
+    return findings
+
+
 def escape_prometheus_label_value(value: object) -> str:
     return str(value).replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
 

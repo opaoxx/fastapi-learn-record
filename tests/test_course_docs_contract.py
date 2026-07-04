@@ -99,6 +99,8 @@ def test_rebuilt_foundation_lessons_use_exam_review_structure() -> None:
         Path("lessons/0060-provider-metrics-naming-refactor-boundary.html"),
         Path("lessons/0061-provider-metrics-documentation-index.html"),
         Path("lessons/0062-provider-metrics-runbook-checklist.html"),
+        Path("lessons/0063-provider-metrics-scenario-fixtures.html"),
+        Path("lessons/0064-provider-metrics-runbook-findings.html"),
     ]
     required_sections = [
         "① 本节核心知识框架",
@@ -141,6 +143,9 @@ def test_provider_metrics_documentation_index_links_learning_and_tests() -> None
     assert "../lessons/0059-provider-metrics-naming-contract.html" in parser.links
     assert "../lessons/0060-provider-metrics-naming-refactor-boundary.html" in parser.links
     assert "../lessons/0061-provider-metrics-documentation-index.html" in parser.links
+    assert "../lessons/0062-provider-metrics-runbook-checklist.html" in parser.links
+    assert "../lessons/0063-provider-metrics-scenario-fixtures.html" in parser.links
+    assert "../lessons/0064-provider-metrics-runbook-findings.html" in parser.links
     assert "../tests/test_provider_http.py" in parser.links
     assert "../tests/test_openapi_contract.py" in parser.links
 
@@ -167,6 +172,8 @@ def test_provider_metrics_runbook_links_docs_lessons_and_tests() -> None:
 
     assert "./provider-metrics-index.html" in parser.links
     assert "../lessons/0062-provider-metrics-runbook-checklist.html" in parser.links
+    assert "../lessons/0063-provider-metrics-scenario-fixtures.html" in parser.links
+    assert "../lessons/0064-provider-metrics-runbook-findings.html" in parser.links
     assert "../tests/test_provider_http.py" in parser.links
     assert "../tests/test_ai_client_dependency.py" in parser.links
     assert "../tests/test_course_docs_contract.py" in parser.links

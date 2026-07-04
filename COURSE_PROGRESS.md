@@ -1,5 +1,75 @@
 # Course Progress
 
+# 2026-07-04 Run: Lesson 0064 Provider Metrics Runbook Findings
+
+## Completed
+
+- Completed Lesson 0064: Provider Metrics Runbook Findings.
+- Added `build_provider_metrics_runbook_findings()` as a pure explanation helper that translates metric samples into teaching-level `severity`, `finding`, and `next_action` fields.
+- Added tests for core scenario findings, unknown outcome handling, and malformed sample validation.
+- Added Reference 0064 and updated Lesson 0063, Reference 0063, the provider metrics index, the provider metrics runbook, the main course index, and the documentation contract test.
+- Updated `NOTES.md` and added `learning-records/0055-provider-metrics-runbook-findings.md`.
+
+## Files touched
+
+- `first_api/services/provider_http.py`
+- `tests/test_provider_http.py`
+- `tests/test_course_docs_contract.py`
+- `lessons/0063-provider-metrics-scenario-fixtures.html`
+- `lessons/0064-provider-metrics-runbook-findings.html`
+- `reference/0063-provider-metrics-scenario-fixtures-cheatsheet.html`
+- `reference/0064-provider-metrics-runbook-findings-cheatsheet.html`
+- `reference/provider-metrics-index.html`
+- `reference/provider-metrics-runbook.html`
+- `index.html`
+- `NOTES.md`
+- `learning-records/0055-provider-metrics-runbook-findings.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Continue with Lesson 0065 after user review. A natural next topic is provider metrics finding presentation or scenario-driven exercises, while keeping metrics labels and human explanations separated.
+
+## Blockers
+
+- No project blocker found.
+
+# 2026-07-04 Run: Lesson 0063 Provider Metrics Scenario Fixtures
+
+## Completed
+
+- Resumed forward course production after completing the first 62-lesson review pass.
+- Completed Lesson 0063: Provider Metrics Scenario Fixtures.
+- Added `build_provider_metrics_runbook_scenario_samples()` as a pure helper that returns stable provider metrics practice samples without mutating the in-process metrics counter.
+- Added provider HTTP tests proving the scenario samples cover `success`, `retry_scheduled`, `retry_exhausted`, and `fail_fast`, and render correctly through the Prometheus text-style export helper.
+- Added Reference 0063 and updated Lesson 0062, Reference 0062, the provider metrics index, the provider metrics runbook, and the main course index for navigation.
+- Updated `tests/test_course_docs_contract.py` so Lesson 0063 is protected by the same nine-section review structure contract.
+- Updated `NOTES.md` and added `learning-records/0054-provider-metrics-scenario-fixtures.md`.
+
+## Files touched
+
+- `first_api/services/provider_http.py`
+- `tests/test_provider_http.py`
+- `tests/test_course_docs_contract.py`
+- `lessons/0062-provider-metrics-runbook-checklist.html`
+- `lessons/0063-provider-metrics-scenario-fixtures.html`
+- `reference/0062-provider-metrics-runbook-checklist-cheatsheet.html`
+- `reference/0063-provider-metrics-scenario-fixtures-cheatsheet.html`
+- `reference/provider-metrics-index.html`
+- `reference/provider-metrics-runbook.html`
+- `index.html`
+- `NOTES.md`
+- `learning-records/0054-provider-metrics-scenario-fixtures.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Continue with Lesson 0064 after user review. A natural next topic is provider metrics scenario rendering or scenario-driven runbook exercises, keeping the same high-density standard.
+
+## Blockers
+
+- No project blocker found.
+
 # 2026-07-04 Run: Refactor Batch 11 Lessons 0061-0062
 
 ## Completed

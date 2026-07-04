@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0063 - Provider Metrics Scenario Fixtures</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0063</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0062-provider-metrics-runbook-checklist.html">上一课</a>
+        <a href="../reference/0063-provider-metrics-scenario-fixtures-cheatsheet.html">速查</a>
+        <a href="./0064-provider-metrics-runbook-findings.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0063 Provider Metrics Scenario Fixtures：用固定样本训练监控排障判断</h1>
+      <p class="lead">上一节已经把 provider metrics 整理成 runbook。本节继续补齐“可练习数据”：新增 <code>build_provider_metrics_runbook_scenario_samples()</code>，用一个无副作用纯函数生成四类核心 outcome 样本，使学习者不用真的打出 503、400、重试耗尽等路径，也能对照 runbook 训练排障判断。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Provider Metrics Scenario Fixtures
+├─ 问题背景
+│  ├─ runbook 有步骤，但初学者缺少稳定样本练习
+│  ├─ 真实触发 retry/fail-fast 路径需要 MockTransport 或外部 provider 状态
+│  └─ 固定 scenario fixtures 可以把排障训练从运行偶然性中解耦
+├─ 新增代码
+│  └─ build_provider_metrics_runbook_scenario_samples()
+├─ 样本覆盖
+│  ├─ success count=3
+│  ├─ retry_scheduled 503 count=2
+│  ├─ retry_exhausted 503 count=1
+│  └─ fail_fast 400 count=1
+├─ 设计边界
+│  ├─ 纯函数：不写全局 counter
+│  ├─ 固定样本：便于课程、测试、文档对齐
+│  ├─ 低基数 label：沿用真实 metrics contract
+│  └─ 非生产模拟器：不伪装成监控回放系统
+└─ 验证方式
+   ├─ 测试 JSON-like samples shape
+   ├─ 测试 outcome 覆盖集合
+   └─ 测试 Prometheus text-style rendering</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p><strong>fixture</strong> 是测试或练习中使用的稳定输入数据。它的价值不在于模拟世界全部复杂性，而在于把某个知识点所需的最小状态固定下来。对于 metrics runbook，最小状态不是一个随机数字，而是一组带有稳定 label 的样本：成功、安排重试、重试耗尽、快速失败。</p>
+      <p><strong>scenario fixture</strong> 与普通 mock 不同。mock 常用于替换外部依赖行为，例如让 provider 返回 503；scenario fixture 则直接提供已经形成的观测样本，重点训练“看到这些 label 后如何判断”。因此本节不新增 endpoint，也不污染全局 counter，只新增一个纯函数。</p>
+      <table>
+        <thead><tr><th>概念</th><th>目的</th><th>本节选择</th></tr></thead>
+        <tbody>
+          <tr><td>MockTransport</td><td>模拟 provider HTTP 响应</td><td>适合验证运行链路，不适合每次手动练 runbook</td></tr>
+          <tr><td>全局 counter</td><td>记录真实请求过程产生的指标</td><td>用于运行时，不应被练习样本污染</td></tr>
+          <tr><td>Scenario Fixture</td><td>提供可重复、可解释的观测样本</td><td>本节新增纯函数生成固定样本</td></tr>
+          <tr><td>Snapshot</td><td>某一时刻指标读数</td><td>fixture 输出保持与 snapshot 相同 shape</td></tr>
+          <tr><td>Runbook</td><td>把观测样本映射为排障动作</td><td>fixture 是 runbook 的练习数据</td></tr>
+        </tbody>
+      </table>
+      <p>底层设计原则是<strong>观测 shape 复用、状态来源隔离</strong>。fixture 使用真实的 <code>build_provider_metric_labels()</code> 构造 label，确保与生产代码的 label contract 一致；但 fixture 不调用 <code>record_provider_metric()</code>，避免把教学练习样本混入真实 counter。</p>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>def build_provider_metrics_runbook_scenario_samples() -> list[dict[str, object]]:
+    return [
+        {
+            "labels": build_provider_metric_labels(outcome="success").as_dict(),
+            "count": 3,
+        },
+        {
+            "labels": build_provider_metric_labels(
+                outcome="retry_scheduled",
+                failure_category="retryable_http_status",
+                error_code="ai_provider_http_error",
+                status_code=503,
+            ).as_dict(),
+            "count": 2,
+        },
+        {
+            "labels": build_provider_metric_labels(
+                outcome="retry_exhausted",
+                failure_category="retryable_http_status",
+                error_code="ai_provider_http_error",
+                status_code=503,
+            ).as_dict(),
+            "count": 1,
+        },
+        {
+            "labels": build_provider_metric_labels(
+                outcome="fail_fast",
+                failure_category="non_retryable_http_status",
+                error_code="ai_provider_http_error",
+                status_code=400,
+            ).as_dict(),
+            "count": 1,
+        },
+    ]</code></pre>
+      <table>
+        <thead><tr><th>代码行</th><th>作用</th><th>为什么这样写 / 不这样写的隐患</th></tr></thead>
+        <tbody>
+          <tr><td><code>def build_provider_metrics_runbook_scenario_samples()</code></td><td>声明场景样本构造函数</td><td>用 build 前缀表达“生成数据”，不是读取当前运行状态。</td></tr>
+          <tr><td><code>list[dict[str, object]]</code></td><td>返回与 metrics snapshot 兼容的样本列表</td><td>保持 lesson、测试、text renderer 能复用同一 shape。</td></tr>
+          <tr><td><code>return [...]</code></td><td>直接返回新列表</td><td>每次调用生成独立对象，避免调用方修改样本后影响后续练习。</td></tr>
+          <tr><td><code>build_provider_metric_labels(...)</code></td><td>复用真实 label builder</td><td>如果手写 label dict，容易漏字段或写错低基数契约。</td></tr>
+          <tr><td><code>.as_dict()</code></td><td>转成 endpoint snapshot 使用的字典形状</td><td>保持与 <code>/provider/metrics</code> 返回结构一致。</td></tr>
+          <tr><td><code>count=3</code></td><td>构造成功基线</td><td>成功样本比失败样本多，方便练习“失败存在但系统仍可能有成功请求”的判断。</td></tr>
+          <tr><td><code>retry_scheduled 503</code></td><td>构造可重试失败已安排重试</td><td>用于训练“retry_scheduled 不等于最终失败”。</td></tr>
+          <tr><td><code>retry_exhausted 503</code></td><td>构造同一状态码的重试耗尽</td><td>用于比较 scheduled 与 exhausted 的语义差异。</td></tr>
+          <tr><td><code>fail_fast 400</code></td><td>构造非重试型客户端错误</td><td>用于训练“不应靠增加重试次数解决 fail_fast”。</td></tr>
+        </tbody>
+      </table>
+
+      <pre><code>def test_provider_metrics_runbook_scenario_samples_cover_core_outcomes() -> None:
+    samples = build_provider_metrics_runbook_scenario_samples()
+
+    assert {sample["labels"]["outcome"] for sample in samples} == {
+        "success",
+        "retry_scheduled",
+        "retry_exhausted",
+        "fail_fast",
+    }</code></pre>
+      <p>这个测试保护样本覆盖范围。若未来有人删掉 <code>retry_exhausted</code> 或 <code>fail_fast</code>，runbook 练习数据就会丢失关键分支，测试会立即失败。</p>
+
+      <pre><code>def test_provider_metrics_runbook_scenario_samples_render_as_text() -> None:
+    text = render_provider_metrics_prometheus_text(
+        build_provider_metrics_runbook_scenario_samples()
+    )
+
+    assert "provider_prediction_total" in text
+    assert 'outcome="retry_scheduled"' in text
+    assert 'outcome="retry_exhausted"' in text
+    assert 'outcome="fail_fast"' in text</code></pre>
+      <p>实际测试使用完整字符串断言，确保场景样本不仅 JSON shape 正确，也能被现有 Prometheus text renderer 渲染。这样 fixture 与前面课程的 export shape、export tests、runbook 形成闭环。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>学习者想练 runbook
+  → 调用 build_provider_metrics_runbook_scenario_samples()
+    → 函数生成四个固定 sample
+      → 每个 sample 复用 build_provider_metric_labels()
+      → 每个 labels 调用 as_dict()
+      → 每个 sample 包含 labels + count
+  → 学习者按 runbook 读取样本
+    → 先按 outcome 分组
+    → 再读 failure_category/error_code/status_code
+    → 判断 retry_scheduled 与 retry_exhausted 差异
+    → 判断 fail_fast 不应盲目重试
+  → 如需练 text export
+    → render_provider_metrics_prometheus_text(samples)
+    → 得到 provider_prediction_total 文本样本</code></pre>
+      <p>这条流程刻意绕开真实 provider 请求。真实请求链路用于验证代码正确性；scenario fixture 用于训练观察与判断。两者共享 label builder，所以语义一致；两者分离状态来源，所以不会互相污染。</p>
+      <table>
+        <thead><tr><th>阶段</th><th>输入</th><th>处理</th><th>输出</th></tr></thead>
+        <tbody>
+          <tr><td>构造阶段</td><td>固定 outcome 设计</td><td>调用 label builder</td><td>四个 samples</td></tr>
+          <tr><td>阅读阶段</td><td>samples</td><td>按 outcome 分类</td><td>排障分支入口</td></tr>
+          <tr><td>判断阶段</td><td>failure labels</td><td>对照 runbook</td><td>下一步动作</td></tr>
+          <tr><td>导出阶段</td><td>samples</td><td>text renderer</td><td>Prometheus text-style 样本</td></tr>
+          <tr><td>验证阶段</td><td>函数输出</td><td>pytest 断言</td><td>稳定练习数据</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>fixture vs runtime metrics</td><td>fixture 是当前系统真实指标</td><td>fixture 是练习样本，不代表当前运行状态。</td></tr>
+          <tr><td>scenario fixture vs mock</td><td>两者都是假数据，没区别</td><td>mock 模拟依赖行为；scenario fixture 固定观测结果。</td></tr>
+          <tr><td>固定 count</td><td>count 必须模拟真实比例</td><td>count 只服务学习判断，不模拟真实流量分布。</td></tr>
+          <tr><td>复用 label builder</td><td>手写 dict 更简单</td><td>复用 builder 才能与真实 metrics contract 保持一致。</td></tr>
+          <tr><td>返回新列表</td><td>全局常量更省事</td><td>返回新对象可避免调用者修改共享数据导致后续测试污染。</td></tr>
+          <tr><td>不新增 endpoint</td><td>没有 endpoint 就不算功能</td><td>本节目标是练习数据，不是对外 API；过早暴露 endpoint 会扩大契约面。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>表现</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>在 fixture 中调用 <code>record_provider_metric()</code></td><td>练习样本污染全局 counter</td><td>fixture 只返回 samples，不写运行状态。</td></tr>
+          <tr><td>手写 label dict</td><td>字段顺序、字段名或默认值不一致</td><td>统一调用 <code>build_provider_metric_labels()</code>。</td></tr>
+          <tr><td>漏掉 <code>retry_exhausted</code></td><td>无法练“最终失败”判断</td><td>测试锁住四类核心 outcome。</td></tr>
+          <tr><td>把 400 标成 retryable</td><td>fail-fast 语义被破坏</td><td>400 使用 <code>non_retryable_http_status</code>。</td></tr>
+          <tr><td>把 503 只做 exhausted</td><td>看不出 scheduled 与 exhausted 差异</td><td>同一 503 同时给 scheduled 和 exhausted 样本。</td></tr>
+          <tr><td>只测试 JSON shape</td><td>text export 可能不兼容</td><td>补充 <code>render_provider_metrics_prometheus_text()</code> 测试。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>样本来源</td><td>固定函数返回练习样本</td><td>真实时序库、日志、trace、事件系统</td></tr>
+          <tr><td>样本目的</td><td>训练 label 阅读和 runbook 分支判断</td><td>支撑事故排查、容量分析、SLO 评估</td></tr>
+          <tr><td>状态影响</td><td>纯函数，无副作用</td><td>真实采集链路写入监控平台</td></tr>
+          <tr><td>覆盖范围</td><td>四类核心 outcome</td><td>更多维度：provider、region、model、tenant、安全边界</td></tr>
+          <tr><td>告警用途</td><td>不能用于 paging alert</td><td>可与阈值、burn rate、抑制规则和值班策略绑定</td></tr>
+          <tr><td>数据真实性</td><td>人为构造，便于理解</td><td>真实流量，存在噪声、缺失、延迟和采样问题</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open>
+        <summary>1. 为什么本节使用纯函数生成 scenario samples？</summary>
+        <p class="answer">纯函数没有副作用，不会污染全局 metrics counter；每次调用都得到稳定练习数据，适合课程、测试和 runbook 对照。</p>
+      </details>
+      <details>
+        <summary>2. 为什么 fixture 要复用 <code>build_provider_metric_labels()</code>？</summary>
+        <p class="answer">这样可以复用真实 metrics label contract，避免手写 dict 导致字段缺失、默认值不一致或低基数约束被破坏。</p>
+      </details>
+      <details>
+        <summary>3. 为什么样本同时包含 <code>retry_scheduled</code> 和 <code>retry_exhausted</code>？</summary>
+        <p class="answer">两者语义不同：scheduled 表示安排重试，不等于最终失败；exhausted 表示最大尝试次数用完。放在同一练习集中可以训练对比判断。</p>
+      </details>
+      <details>
+        <summary>4. 为什么本节不新增 <code>/provider/metrics/scenarios</code> endpoint？</summary>
+        <p class="answer">因为场景样本是课程练习数据，不是运行时公共 API。过早暴露 endpoint 会扩大外部契约面，并可能让读者误以为它是生产监控数据。</p>
+      </details>
+      <details>
+        <summary>5. 如何验证 scenario samples 与文本导出兼容？</summary>
+        <p class="answer">把 fixture 输出传入 <code>render_provider_metrics_prometheus_text()</code>，断言输出包含稳定 HELP/TYPE 行和四类 outcome 的文本样本。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open>
+        <summary>面试题 1：测试 fixture 的设计原则是什么？</summary>
+        <p class="answer">fixture 应稳定、最小、语义明确、与真实契约复用、无不必要副作用。它不追求模拟全部真实世界，而是固定某个测试或学习目标所需的关键状态。</p>
+      </details>
+      <details>
+        <summary>面试题 2：为什么练习样本不应该写入全局 metrics counter？</summary>
+        <p class="answer">全局 counter 表示运行过程中真实发生的事件。练习样本若写入 counter，会污染 endpoint 返回值，使测试顺序相关，也会混淆教学数据和运行数据。</p>
+      </details>
+      <details>
+        <summary>面试题 3：如何让 fixture 与生产代码契约保持一致？</summary>
+        <p class="answer">复用生产代码中的 builder、dataclass 或 schema，而不是复制字段字符串；同时用测试锁定输出 shape 和关键语义。如果契约变更，fixture 测试会引导同步更新。</p>
+      </details>
+      <details>
+        <summary>面试题 4：scenario fixture 与端到端测试分别适合验证什么？</summary>
+        <p class="answer">scenario fixture 适合验证固定观测样本的解释、渲染和文档训练；端到端测试适合验证真实请求经过 router、adapter、retry、counter 到 endpoint 的完整链路。两者互补，不应互相替代。</p>
+      </details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0062-provider-metrics-runbook-checklist.html">上一课：Provider Metrics Runbook Checklist</a>
+        <a href="../reference/0063-provider-metrics-scenario-fixtures-cheatsheet.html">查看速查</a>
+        <a href="./0064-provider-metrics-runbook-findings.html">下一课：Provider Metrics Runbook Findings</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

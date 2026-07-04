@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Provider Metrics Scenario Fixtures Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0063</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0063-provider-metrics-scenario-fixtures.html">回到第 63 课</a>
+        <a href="./0062-provider-metrics-runbook-checklist-cheatsheet.html">上一张速查</a>
+        <a href="./0064-provider-metrics-runbook-findings-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0063</p>
+      <h1>Provider Metrics Scenario Fixtures 速查</h1>
+      <p class="lead">固定样本用于练 runbook 判断，不代表当前运行时指标。</p>
+    </header>
+
+    <h2>一句话模型</h2>
+    <blockquote>
+      <p>scenario fixture 固定“看到什么”，runbook 训练“下一步查什么”。</p>
+    </blockquote>
+
+    <h2>核心函数</h2>
+    <pre><code>build_provider_metrics_runbook_scenario_samples()</code></pre>
+    <ul>
+      <li>返回 <code>list[dict[str, object]]</code>，shape 与 metrics snapshot 兼容。</li>
+      <li>复用 <code>build_provider_metric_labels()</code>，避免手写 label contract。</li>
+      <li>不调用 <code>record_provider_metric()</code>，不会污染全局 counter。</li>
+    </ul>
+
+    <h2>四类样本</h2>
+    <table>
+      <thead>
+        <tr><th>outcome</th><th>failure_category</th><th>status_code</th><th>count</th><th>判断重点</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>success</code></td><td><code>none</code></td><td><code>none</code></td><td>3</td><td>成功基线仍存在。</td></tr>
+        <tr><td><code>retry_scheduled</code></td><td><code>retryable_http_status</code></td><td><code>503</code></td><td>2</td><td>安排过重试，不等于最终失败。</td></tr>
+        <tr><td><code>retry_exhausted</code></td><td><code>retryable_http_status</code></td><td><code>503</code></td><td>1</td><td>最大尝试次数已耗尽。</td></tr>
+        <tr><td><code>fail_fast</code></td><td><code>non_retryable_http_status</code></td><td><code>400</code></td><td>1</td><td>不要盲目增加重试次数。</td></tr>
+      </tbody>
+    </table>
+
+    <h2>测试命令</h2>
+    <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q
+.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q</code></pre>
+
+    <h2>记忆要点</h2>
+    <ul>
+      <li>fixture 是练习数据，不是运行数据。</li>
+      <li>固定样本必须覆盖 <code>success</code>、<code>retry_scheduled</code>、<code>retry_exhausted</code>、<code>fail_fast</code>。</li>
+      <li>样本可以传给 <code>render_provider_metrics_prometheus_text()</code> 练习 text export。</li>
+      <li>教学 fixture 不能直接升级成生产监控模拟器。</li>
+    </ul>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0063-provider-metrics-scenario-fixtures.html">回到第 63 课</a>
+        <a href="./0062-provider-metrics-runbook-checklist-cheatsheet.html">上一张速查</a>
+        <a href="./0064-provider-metrics-runbook-findings-cheatsheet.html">下一张速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>
