@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0074 - Provider Metrics Practice Release Checklist</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0074</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0073-provider-metrics-practice-session-markdown.html">上一课</a>
+        <a href="../reference/0074-provider-metrics-practice-release-checklist-cheatsheet.html">速查</a>
+        <a href="./0075-github-readme-learning-entry.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0074 Provider Metrics Practice Release Checklist：GitHub 发布前检查完整训练包</h1>
+      <p class="lead">本节新增 <code>build_provider_metrics_runbook_practice_release_checklist()</code>，用于检查完整 runbook practice package 是否具备 GitHub 发布条件。它不生成材料，只检查 findings、题卡、答案键、评分校验、评分报告和 Markdown 章节是否齐全。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Practice Release Checklist
+├─ 输入
+│  ├─ session
+│  └─ package_markdown
+├─ 检查项
+│  ├─ findings_markdown_present
+│  ├─ exercise_cards_present
+│  ├─ answer_key_present
+│  ├─ grading_summary_valid
+│  ├─ grading_report_present
+│  └─ package_sections_present
+├─ 输出
+│  ├─ ready
+│  └─ checks
+│     ├─ id
+│     ├─ passed
+│     └─ evidence
+└─ 边界
+   ├─ 不重新构建 session
+   ├─ 不重新渲染 Markdown
+   ├─ 不修复缺失材料
+   └─ 不替代生产发布流水线</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>发布检查清单不是业务逻辑，也不是文档渲染器。它属于质量门禁：在材料进入 GitHub、PR 或学习记录之前，检查关键产物是否齐全。</p>
+      <p>本节选择返回结构化 <code>checks</code>，而不是只返回一个布尔值。布尔值只能说明“能不能发布”，不能解释“为什么不能发布”。发布前检查必须能定位缺失项，否则新手只能反复猜。</p>
+      <p><code>ready</code> 是所有检查项的合取结果：只有每一项 <code>passed=True</code>，完整包才被视为可发布。这个设计比“只要报告存在就发布”更严格，因为 GitHub 教程需要可学习、可复盘、可验证。</p>
+      <table>
+        <thead><tr><th>检查对象</th><th>为什么需要</th><th>缺失后果</th></tr></thead>
+        <tbody>
+          <tr><td>Findings</td><td>解释指标事实</td><td>读者不知道题目来源</td></tr>
+          <tr><td>Exercise Cards</td><td>提供训练入口</td><td>无法自测</td></tr>
+          <tr><td>Answer Key</td><td>提供标准答案</td><td>无法复盘对错</td></tr>
+          <tr><td>Grading Report</td><td>展示本次作答结果</td><td>无法衡量训练效果</td></tr>
+          <tr><td>Markdown Sections</td><td>保证发布结构</td><td>GitHub 页面难以阅读</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>def build_provider_metrics_runbook_practice_release_checklist(
+    session: dict[str, object],
+    package_markdown: str,
+) -> dict[str, object]:
+    checks = [</code></pre>
+      <p>函数接收已生成的 session 和 package Markdown。它不主动生成材料，说明它位于导出之后、发布之前，是一个独立质量检查层。</p>
+      <pre><code>{
+    "id": "findings_markdown_present",
+    "passed": bool(str(session.get("findings_markdown", "")).strip()),
+    "evidence": "Findings Markdown is present.",
+},</code></pre>
+      <p>第一项检查 findings 报告是否存在。使用 <code>get()</code> 是因为本函数目标是检查缺失，而不是在第一个缺字段处抛异常。</p>
+      <pre><code>{
+    "id": "exercise_cards_present",
+    "passed": bool(session.get("cards")),
+    "evidence": "Exercise cards are present.",
+},</code></pre>
+      <p>题卡必须存在，否则完整包只有解释和答案，没有练习入口。<code>bool([])</code> 为 <code>False</code>，能自然识别空题卡。</p>
+      <pre><code>{
+    "id": "answer_key_present",
+    "passed": "## provider-metrics-runbook-" in str(session.get("answer_key", "")),
+    "evidence": "Answer key contains runbook card sections.",
+},</code></pre>
+      <p>答案键不是只检查非空，而是检查是否包含题卡标题模式。这样可以避免随便一段文本被误认为标准答案。</p>
+      <pre><code>{
+    "id": "grading_summary_valid",
+    "passed": session.get("validation") == {"valid": True, "errors": []},
+    "evidence": "Grading summary validation passed.",
+},</code></pre>
+      <p>发布前必须确认 summary 校验通过。若 validation 失败，即使 Markdown 看起来完整，也不能把它作为可信复盘材料发布。</p>
+      <pre><code>{
+    "id": "package_sections_present",
+    "passed": all(
+        section in package_markdown
+        for section in [
+            "## Findings",
+            "## Exercise Cards",
+            "## Answer Key",
+            "## Grading Report",
+        ]
+    ),
+    "evidence": "Practice package contains all required sections.",
+},</code></pre>
+      <p>完整包必须包含四个固定章节。这里使用 <code>all()</code> 表示任意章节缺失都会导致发布检查失败。</p>
+      <pre><code>return {
+    "ready": all(check["passed"] for check in checks),
+    "checks": checks,
+}</code></pre>
+      <p><code>ready</code> 汇总所有检查项，<code>checks</code> 保留逐项证据。生产中这类结构可直接进入 CI 报告、PR comment 或发布审批页面。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>session
+  → render_provider_metrics_runbook_practice_session_markdown(session)
+  → package_markdown
+  → build_provider_metrics_runbook_practice_release_checklist(session, package_markdown)
+  → ready/checks
+  → GitHub publish decision</code></pre>
+      <p>这条链路把“生成材料”和“检查材料”分开。生成层负责产物，检查层负责门禁，发布层再根据 <code>ready</code> 决定是否进入 GitHub。</p>
+      <table>
+        <thead><tr><th>阶段</th><th>产物</th><th>职责</th><th>失败处理</th></tr></thead>
+        <tbody>
+          <tr><td>会话生成</td><td>session</td><td>组织训练数据</td><td>检查函数链路</td></tr>
+          <tr><td>文档导出</td><td>package_markdown</td><td>生成可读材料</td><td>检查章节和格式</td></tr>
+          <tr><td>发布检查</td><td>checklist</td><td>判断是否可发布</td><td>定位失败检查项</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>release checklist</td><td>等于测试用例</td><td>它是发布前材料完整性检查，测试负责代码行为。</td></tr>
+          <tr><td><code>ready</code></td><td>只看 Markdown 是否存在</td><td>必须所有检查项都通过。</td></tr>
+          <tr><td><code>evidence</code></td><td>可有可无</td><td>它让失败项可解释，适合 PR 和教学反馈。</td></tr>
+          <tr><td>发布检查</td><td>可以修复缺失材料</td><td>检查层只报告，不自动修改产物。</td></tr>
+          <tr><td>生产 CI</td><td>和教学 checklist 完全一样</td><td>生产 CI 还要检查权限、安全、构建、链接和审计。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>后果</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>只检查 package 非空</td><td>缺章节也会误判可发布</td><td>检查四个必备章节。</td></tr>
+          <tr><td>answer key 只检查非空</td><td>普通文本被误当答案键</td><td>检查 runbook card 标题模式。</td></tr>
+          <tr><td>validation 失败仍 ready</td><td>错误统计进入 GitHub</td><td>ready 必须依赖 validation 通过。</td></tr>
+          <tr><td>返回裸布尔</td><td>不知道哪项失败</td><td>返回逐项 checks。</td></tr>
+          <tr><td>检查层自动补文档</td><td>隐藏上游导出错误</td><td>只报告缺失项，让上游修复。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>检查范围</td><td>材料完整性</td><td>构建、测试、安全、链接、权限、合规</td></tr>
+          <tr><td>执行方式</td><td>纯函数调用</td><td>CI pipeline、PR check、发布审批</td></tr>
+          <tr><td>错误输出</td><td>id/passed/evidence</td><td>错误码、日志、负责人、阻塞策略</td></tr>
+          <tr><td>治理</td><td>课程发布前自查</td><td>强制门禁、审计记录、回滚机制</td></tr>
+          <tr><td>安全</td><td>检查章节存在</td><td>扫描敏感信息、依赖漏洞、权限泄露</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. 为什么 release checklist 不自动生成缺失材料？</summary><p class="answer">检查层只负责报告问题，自动生成会掩盖上游导出或会话构建错误。</p></details>
+      <details><summary>2. 为什么 <code>ready</code> 必须依赖所有检查项？</summary><p class="answer">发布材料面向他人学习，任何关键章节缺失都会破坏复盘闭环，因此必须全项通过。</p></details>
+      <details><summary>3. 为什么 answer key 要检查标题模式？</summary><p class="answer">非空文本不一定是答案键，题卡标题模式能更准确确认包含标准答案章节。</p></details>
+      <details><summary>4. 为什么检查结果要保留 <code>evidence</code>？</summary><p class="answer">evidence 让检查结果可解释，方便在 PR、学习记录或 CI 输出中定位问题。</p></details>
+      <details><summary>5. 生产 CI 比本节 checklist 多什么？</summary><p class="answer">生产 CI 还要覆盖自动化测试、安全扫描、链接检查、权限、合规、构建产物和发布审批。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：发布检查清单和单元测试有什么区别？</summary><p class="answer">单元测试验证代码行为是否符合预期；发布检查清单验证待发布材料是否完整、可信、适合交付给读者或用户。</p></details>
+      <details><summary>面试题 2：为什么发布前检查需要结构化结果？</summary><p class="answer">结构化结果可以被 CI、PR comment、页面和日志复用，也能让失败项具备机器可读和人类可解释两种价值。</p></details>
+      <details><summary>面试题 3：为什么 validation 失败必须阻止发布？</summary><p class="answer">validation 失败说明 summary 契约不可信。继续发布会把错误统计包装成正式材料，破坏复盘可信度。</p></details>
+      <details><summary>面试题 4：如何把教学 checklist 升级为生产发布门禁？</summary><p class="answer">需要接入 CI、权限系统、安全扫描、构建产物校验、链接检查、负责人审批和审计留痕。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0073-provider-metrics-practice-session-markdown.html">上一课：Provider Metrics Practice Session Markdown</a>
+        <a href="../reference/0074-provider-metrics-practice-release-checklist-cheatsheet.html">查看速查</a>
+        <a href="./0075-github-readme-learning-entry.html">下一课：GitHub README Learning Entry</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0075 - GitHub README Learning Entry</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0075</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0074-provider-metrics-practice-release-checklist.html">上一课</a>
+        <a href="../reference/0075-github-readme-learning-entry-cheatsheet.html">速查</a>
+        <a href="./0076-github-development-workflow.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0075 GitHub README Learning Entry：把仓库首页改造成新手学习入口</h1>
+      <p class="lead">本节升级根目录 <code>README.md</code>，让 GitHub 访问者能快速找到课程目录、运行方式、测试命令、provider metrics 文档和 runbook 训练包。README 不再只是项目介绍，而是整个课程仓库的第一导航层。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>GitHub README Learning Entry
+├─ README 的职责
+│  ├─ 说明项目定位
+│  ├─ 指向课程总目录
+│  ├─ 指向可运行项目
+│  ├─ 给出运行命令
+│  ├─ 给出测试命令
+│  └─ 指向 runbook 训练包
+├─ 新增关键入口
+│  ├─ index.html
+│  ├─ first_api/README.md
+│  ├─ reference/provider-metrics-index.html
+│  ├─ reference/provider-metrics-runbook.html
+│  ├─ lessons/0072...
+│  ├─ lessons/0073...
+│  └─ lessons/0074...
+├─ 测试保护
+│  └─ test_root_readme_guides_github_learners_to_course_and_runbook
+└─ GitHub 习惯
+   ├─ 根目录 README 是默认首页
+   ├─ HTML 课程建议本地浏览器打开
+   └─ README 链接必须长期稳定</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>GitHub 仓库首页默认渲染根目录 <code>README.md</code>。对课程型项目来说，README 是读者的第一接触点；如果它只写项目简介，不给学习路线和运行路径，新手会迷失在目录树里。</p>
+      <p>README 的核心价值是降低首次进入成本。它应该回答四个问题：这是什么项目、从哪里开始学、如何运行、如何验证没有改坏。对于本课程，还要告诉读者 provider metrics 与 runbook 训练包在哪里。</p>
+      <p>本节给 README 加文档契约测试，是为了避免未来改动把关键入口删掉。README 本质上也是公共接口：它服务人类读者，测试保护的是“可发现性”和“学习路径稳定性”。</p>
+      <table>
+        <thead><tr><th>文档层级</th><th>面向对象</th><th>职责</th></tr></thead>
+        <tbody>
+          <tr><td><code>README.md</code></td><td>第一次打开仓库的人</td><td>总入口、学习路线、运行测试</td></tr>
+          <tr><td><code>index.html</code></td><td>课程学习者</td><td>课程和速查表目录</td></tr>
+          <tr><td><code>first_api/README.md</code></td><td>运行项目的人</td><td>后端项目结构和启动细节</td></tr>
+          <tr><td><code>reference/provider-metrics-index.html</code></td><td>排障训练读者</td><td>provider metrics 文档入口</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>## GitHub 学习入口
+
+如果你是第一次打开这个仓库，建议先按下面顺序阅读：</code></pre>
+      <p>新增章节直接面向第一次访问 GitHub 的读者。它不假设读者熟悉目录结构，而是明确给出第一步。</p>
+      <pre><code>1. 打开 [课程总目录](index.html)，从 Lesson 0001 开始顺序学习。
+2. 每学完一节课，再打开对应的 `reference/` 速查表做复盘。
+3. 需要看真实项目代码时，进入 [first_api/](first_api/)。
+4. 需要运行后端项目时，先读 [first_api/README.md](first_api/README.md)。
+5. 需要理解 provider metrics、runbook、训练题卡和复盘报告时，进入 [Provider Metrics 文档入口](reference/provider-metrics-index.html)。</code></pre>
+      <p>这 5 步建立从课程、速查、源码、运行说明到专题文档的导航链。若没有这段，新手需要自己猜 <code>lessons/</code>、<code>reference/</code> 和 <code>first_api/</code> 的关系。</p>
+      <pre><code>| 阶段 | 课程范围 | 学习重点 |
+| --- | --- | --- |
+| 基础 API | Lesson 0001-0012 | ... |
+| Runbook 训练包 | Lesson 0065-0074 | ... |</code></pre>
+      <p>学习路线表把 74 节课程压缩成可扫描路线。它不是替代课程目录，而是给读者建立全局地图，知道自己现在学到哪一段。</p>
+      <pre><code>当前 runbook 训练包的核心入口：
+
+- [Provider Metrics 文档入口](reference/provider-metrics-index.html)
+- [Provider Metrics 排障清单](reference/provider-metrics-runbook.html)
+- [Lesson 0072 - Practice Session Package](lessons/0072-provider-metrics-practice-session-package.html)
+- [Lesson 0073 - Practice Session Markdown](lessons/0073-provider-metrics-practice-session-markdown.html)
+- [Lesson 0074 - Practice Release Checklist](lessons/0074-provider-metrics-practice-release-checklist.html)</code></pre>
+      <p>这一段把最近完成的 runbook 训练闭环暴露给 GitHub 读者。它让高级专题不再埋在长目录深处。</p>
+      <pre><code>def test_root_readme_guides_github_learners_to_course_and_runbook() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")</code></pre>
+      <p>测试读取根目录 README。因为 Markdown 不是 HTML，不需要 HTMLParser，直接读文本即可。</p>
+      <pre><code>assert "[课程总目录](index.html)" in readme
+assert "[first_api/README.md](first_api/README.md)" in readme
+assert "[Provider Metrics 文档入口](reference/provider-metrics-index.html)" in readme
+assert "fastapi dev first_api/main.py" in readme
+assert "python -m pytest -q" in readme</code></pre>
+      <p>这些断言保护 README 的关键导航和命令。未来如果有人删掉课程入口、运行命令或测试命令，文档契约测试会失败。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>GitHub visitor
+  → README.md
+  → index.html
+  → lessons/reference
+  → first_api source
+  → fastapi dev first_api/main.py
+  → python -m pytest -q
+  → provider metrics runbook package</code></pre>
+      <p>README 的运行机制不是程序调用链，而是读者路径。优秀 README 会把“我该点哪里、跑什么命令、怎么验证”变成明确流程。</p>
+      <table>
+        <thead><tr><th>读者问题</th><th>README 提供的答案</th><th>对应链接或命令</th></tr></thead>
+        <tbody>
+          <tr><td>从哪开始</td><td>课程总目录</td><td><code>index.html</code></td></tr>
+          <tr><td>怎么运行</td><td>安装依赖并启动 FastAPI</td><td><code>fastapi dev first_api/main.py</code></td></tr>
+          <tr><td>怎么验证</td><td>运行 pytest</td><td><code>python -m pytest -q</code></td></tr>
+          <tr><td>高级专题在哪</td><td>Provider Metrics 文档入口</td><td><code>reference/provider-metrics-index.html</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>README</td><td>只是项目宣传页</td><td>它是 GitHub 默认入口和学习路线导航。</td></tr>
+          <tr><td><code>index.html</code></td><td>可以替代 README</td><td>GitHub 默认先展示 README，HTML 目录是课程内部入口。</td></tr>
+          <tr><td>子项目 README</td><td>没必要链接</td><td>运行细节放在 <code>first_api/README.md</code>，根 README 应指向它。</td></tr>
+          <tr><td>文档测试</td><td>只测代码，不测 README</td><td>课程仓库里 README 也是公共契约。</td></tr>
+          <tr><td>学习路线</td><td>越详细越好</td><td>根 README 应给全局地图，细节留给课程页。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>后果</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>README 不链接课程目录</td><td>读者不知道从哪学</td><td>显式链接 <code>index.html</code>。</td></tr>
+          <tr><td>只写运行命令，不写测试命令</td><td>读者无法验证修改</td><td>加入 <code>python -m pytest -q</code>。</td></tr>
+          <tr><td>高级专题埋在目录里</td><td>runbook 训练包不可发现</td><td>在 README 加 provider metrics 入口。</td></tr>
+          <tr><td>README 链接无人保护</td><td>后续重构容易断链</td><td>增加文档契约测试。</td></tr>
+          <tr><td>GitHub 直接点 HTML</td><td>看到源码而不是页面</td><td>README 说明需要本地浏览器打开。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学仓库</th><th>生产仓库</th></tr></thead>
+        <tbody>
+          <tr><td>README 目标</td><td>帮助新手学习和运行</td><td>帮助开发者部署、排障、贡献和发布</td></tr>
+          <tr><td>路线说明</td><td>课程阶段和学习顺序</td><td>架构、模块边界、onboarding 流程</td></tr>
+          <tr><td>命令</td><td>本地运行和 pytest</td><td>开发、构建、部署、迁移、回滚</td></tr>
+          <tr><td>测试保护</td><td>断言关键入口存在</td><td>README、链接、CI badge、版本矩阵、部署文档</td></tr>
+          <tr><td>风险</td><td>读者迷路</td><td>新人误部署、误配置、误操作生产资源</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. 为什么 GitHub 课程仓库必须重视根 README？</summary><p class="answer">GitHub 默认展示根 README，它决定新读者能否快速理解项目定位、学习入口、运行方式和测试方式。</p></details>
+      <details><summary>2. 为什么 README 要链接 <code>first_api/README.md</code>？</summary><p class="answer">根 README 负责总导航，子项目 README 负责具体运行和结构细节，二者职责不同。</p></details>
+      <details><summary>3. 为什么要测试 README 内容？</summary><p class="answer">README 是公共入口，关键链接和命令被删会影响学习者。测试能保护这些文档契约。</p></details>
+      <details><summary>4. 为什么 README 要说明 GitHub HTML 阅读限制？</summary><p class="answer">GitHub 直接打开 HTML 通常显示源码，读者需要克隆到本地后用浏览器打开 <code>index.html</code>。</p></details>
+      <details><summary>5. 根 README 为什么不应写成超长教程？</summary><p class="answer">它应提供全局地图和入口，具体知识细节应留给 lesson 和 reference 页面。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：README 在工程项目中承担什么职责？</summary><p class="answer">README 是项目的默认入口，承担定位说明、快速开始、运行测试、目录导航、贡献或发布入口等职责。</p></details>
+      <details><summary>面试题 2：为什么文档也需要测试？</summary><p class="answer">关键文档是团队协作契约。测试可以防止入口链接、运行命令、API 文档和学习路线在重构中悄悄失效。</p></details>
+      <details><summary>面试题 3：根 README 和模块 README 如何分工？</summary><p class="answer">根 README 负责项目总览和导航，模块 README 负责局部运行方式、模块结构和细节约束。</p></details>
+      <details><summary>面试题 4：如何让 GitHub 教程对新手友好？</summary><p class="answer">提供明确学习路线、最短运行路径、测试命令、常见阅读坑点、核心文档入口和稳定链接。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0074-provider-metrics-practice-release-checklist.html">上一课：Provider Metrics Practice Release Checklist</a>
+        <a href="../reference/0075-github-readme-learning-entry-cheatsheet.html">查看速查</a>
+        <a href="./0076-github-development-workflow.html">下一课：GitHub Development Workflow</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

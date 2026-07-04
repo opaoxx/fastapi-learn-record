@@ -2,12 +2,12 @@
 <html lang="zh-CN">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Provider Metrics Grading Summary Validation Cheat Sheet</title><link rel="stylesheet" href="../assets/course.css"></head>
 <body><main>
-  <nav class="course-nav" aria-label="速查表导航"><span class="nav-title">Reference 0071</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0071-provider-metrics-grading-summary-validation.html">回到第 71 课</a><a href="./0070-provider-metrics-grading-summary-markdown-cheatsheet.html">上一张速查</a></span></nav>
+  <nav class="course-nav" aria-label="速查表导航"><span class="nav-title">Reference 0071</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0071-provider-metrics-grading-summary-validation.html">回到第 71 课</a><a href="./0070-provider-metrics-grading-summary-markdown-cheatsheet.html">上一张速查</a><a href="./0072-provider-metrics-practice-session-package-cheatsheet.html">下一张速查</a></span></nav>
   <header><p class="eyebrow">Reference 0071</p><h1>Provider Metrics Grading Summary Validation 速查</h1><p class="lead">渲染 Markdown 报告前，先检查 summary 的结构和统计一致性。</p></header>
   <h2>核心函数</h2><pre><code>validate_provider_metrics_runbook_grading_summary(summary)</code></pre>
   <h2>校验重点</h2><ul><li><code>total/answered/passed/failed/unanswered</code> 必须存在且是整数。</li><li><code>grades</code> 必须是 list。</li><li>每个 grade 必须有 <code>card_id</code>、<code>answered</code>、<code>passed</code>、<code>missing</code>、<code>feedback</code>。</li><li><code>failed == total - passed</code>。</li><li><code>unanswered == total - answered</code>。</li><li><code>total == len(grades)</code>。</li></ul>
   <h2>返回结构</h2><ul><li><code>valid</code>：是否通过校验。</li><li><code>errors</code>：完整错误列表。</li></ul>
   <h2>边界</h2><ul><li>不修复坏数据。</li><li>不重新评分。</li><li>不渲染 Markdown。</li></ul>
   <h2>测试命令</h2><pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q</code></pre>
-  <nav class="course-nav bottom" aria-label="速查表底部导航"><span class="nav-title">继续学习</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0071-provider-metrics-grading-summary-validation.html">回到第 71 课</a><a href="./0070-provider-metrics-grading-summary-markdown-cheatsheet.html">上一张速查</a></span></nav>
+  <nav class="course-nav bottom" aria-label="速查表底部导航"><span class="nav-title">继续学习</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0071-provider-metrics-grading-summary-validation.html">回到第 71 课</a><a href="./0070-provider-metrics-grading-summary-markdown-cheatsheet.html">上一张速查</a><a href="./0072-provider-metrics-practice-session-package-cheatsheet.html">下一张速查</a></span></nav>
 </main></body></html>

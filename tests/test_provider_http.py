@@ -12,6 +12,8 @@ from first_api.services.provider_http import (
     PROVIDER_PREDICTION_METRIC_HELP,
     PROVIDER_PREDICTION_METRIC_NAME,
     ProviderMetricsCounter,
+    build_provider_metrics_runbook_practice_release_checklist,
+    build_provider_metrics_runbook_practice_session,
     build_provider_metrics_runbook_exercise_cards,
     build_provider_metrics_runbook_findings,
     build_provider_metrics_runbook_scenario_samples,
@@ -27,6 +29,7 @@ from first_api.services.provider_http import (
     render_provider_metrics_runbook_exercise_answer_key,
     render_provider_metrics_runbook_findings_markdown,
     render_provider_metrics_runbook_grading_summary_markdown,
+    render_provider_metrics_runbook_practice_session_markdown,
     render_provider_metrics_prometheus_text,
     request_provider_prediction,
     reset_provider_metrics,
@@ -619,6 +622,110 @@ def test_provider_metrics_runbook_grading_summary_validation_reports_contract_er
             "Summary total must equal the number of grades.",
         ],
     }
+
+
+def test_provider_metrics_runbook_practice_session_builds_end_to_end_artifacts() -> None:
+    session = build_provider_metrics_runbook_practice_session(
+        {
+            "provider-metrics-runbook-1": (
+                "baseline. Compare the success count with expected request volume "
+                "before treating failure samples as system-wide."
+            ),
+            "provider-metrics-runbook-3": (
+                "action_required. Check max_attempts, provider availability, and "
+                "the last retryable failure before changing retry policy."
+            ),
+        }
+    )
+
+    assert len(session["samples"]) == 4
+    assert len(session["findings"]) == 4
+    assert len(session["cards"]) == 4
+    assert session["summary"]["total"] == 4
+    assert session["summary"]["answered"] == 2
+    assert session["summary"]["passed"] == 2
+    assert session["summary"]["failed"] == 2
+    assert session["summary"]["unanswered"] == 2
+    assert session["validation"] == {"valid": True, "errors": []}
+    assert session["findings_markdown"].startswith(
+        "| outcome | count | severity | finding | next_action |\n"
+    )
+    assert "## provider-metrics-runbook-1\n" in session["answer_key"]
+    assert session["report_markdown"].startswith(
+        "## Provider Metrics Runbook Grading Summary\n"
+    )
+
+
+def test_provider_metrics_runbook_practice_session_renders_markdown_package() -> None:
+    session = build_provider_metrics_runbook_practice_session(
+        {
+            "provider-metrics-runbook-1": (
+                "baseline. Compare the success count with expected request volume "
+                "before treating failure samples as system-wide."
+            ),
+        }
+    )
+
+    markdown = render_provider_metrics_runbook_practice_session_markdown(session)
+
+    assert markdown.startswith("# Provider Metrics Runbook Practice Session\n")
+    assert "## Findings\n\n| outcome | count | severity | finding | next_action |\n" in markdown
+    assert (
+        "## Exercise Cards\n\n"
+        "| card_id | prompt | expected_severity |\n"
+        "| --- | --- | --- |\n"
+        "| provider-metrics-runbook-1 | Outcome success has count 3. "
+        "What should you check next? | baseline |\n"
+    ) in markdown
+    assert "## Answer Key\n\n## provider-metrics-runbook-1\n" in markdown
+    assert "## Grading Report\n\n## Provider Metrics Runbook Grading Summary\n" in markdown
+    assert markdown.endswith("\n")
+
+
+def test_provider_metrics_runbook_practice_release_checklist_accepts_complete_package() -> None:
+    session = build_provider_metrics_runbook_practice_session(
+        {
+            "provider-metrics-runbook-1": (
+                "baseline. Compare the success count with expected request volume "
+                "before treating failure samples as system-wide."
+            ),
+        }
+    )
+    package_markdown = render_provider_metrics_runbook_practice_session_markdown(session)
+
+    checklist = build_provider_metrics_runbook_practice_release_checklist(
+        session,
+        package_markdown,
+    )
+
+    assert checklist["ready"] is True
+    assert [check["id"] for check in checklist["checks"]] == [
+        "findings_markdown_present",
+        "exercise_cards_present",
+        "answer_key_present",
+        "grading_summary_valid",
+        "grading_report_present",
+        "package_sections_present",
+    ]
+    assert all(check["passed"] for check in checklist["checks"])
+
+
+def test_provider_metrics_runbook_practice_release_checklist_reports_missing_package_sections() -> None:
+    session = build_provider_metrics_runbook_practice_session({})
+
+    checklist = build_provider_metrics_runbook_practice_release_checklist(
+        {**session, "report_markdown": ""},
+        "# Provider Metrics Runbook Practice Session\n\n## Findings\n",
+    )
+
+    assert checklist["ready"] is False
+    failed_checks = [
+        check["id"] for check in checklist["checks"] if not check["passed"]
+    ]
+    assert failed_checks == [
+        "grading_report_present",
+        "package_sections_present",
+    ]
 
 
 def test_provider_metrics_counter_accumulates_samples_by_label_set() -> None:

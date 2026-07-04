@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Provider Metrics Practice Session Package Cheat Sheet</title><link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+  <nav class="course-nav" aria-label="速查表导航"><span class="nav-title">Reference 0072</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0072-provider-metrics-practice-session-package.html">回到第 72 课</a><a href="./0071-provider-metrics-grading-summary-validation-cheatsheet.html">上一张速查</a><a href="./0073-provider-metrics-practice-session-markdown-cheatsheet.html">下一张速查</a></span></nav>
+  <header><p class="eyebrow">Reference 0072</p><h1>Provider Metrics Practice Session Package 速查</h1><p class="lead">把 runbook 训练从样本到报告打包成完整会话对象。</p></header>
+  <h2>核心函数</h2><pre><code>build_provider_metrics_runbook_practice_session(responses_by_card_id)</code></pre>
+  <h2>输出字段</h2><ul><li><code>samples</code>：固定指标练习样本。</li><li><code>findings</code>：排障解释和动作。</li><li><code>findings_markdown</code>：findings 表格报告。</li><li><code>cards</code>：训练题卡。</li><li><code>answer_key</code>：标准答案键。</li><li><code>summary</code>：评分汇总。</li><li><code>validation</code>：summary 校验结果。</li><li><code>report_markdown</code>：评分复盘报告。</li></ul>
+  <h2>关键原则</h2><ul><li>编排层不复制评分规则。</li><li>validation 通过后才渲染报告。</li><li>不读取 provider、counter 或数据库。</li></ul>
+  <h2>测试命令</h2><pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q</code></pre>
+  <nav class="course-nav bottom" aria-label="速查表底部导航"><span class="nav-title">继续学习</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0072-provider-metrics-practice-session-package.html">回到第 72 课</a><a href="./0071-provider-metrics-grading-summary-validation-cheatsheet.html">上一张速查</a><a href="./0073-provider-metrics-practice-session-markdown-cheatsheet.html">下一张速查</a></span></nav>
+</main></body></html>

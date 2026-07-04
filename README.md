@@ -6,6 +6,20 @@
 
 - 可运行的 FastAPI 示例项目：位于 `first_api/`
 - 配套 HTML 课程和速查表：位于 `lessons/` 与 `reference/`
+- 面向贡献和课程维护的开发流程：见 [DEVELOPMENT.md](DEVELOPMENT.md)
+
+## GitHub 学习入口
+
+如果你是第一次打开这个仓库，建议先按下面顺序阅读：
+
+1. 打开 [课程总目录](index.html)，从 Lesson 0001 开始顺序学习。
+2. 每学完一节课，再打开对应的 `reference/` 速查表做复盘。
+3. 需要看真实项目代码时，进入 [first_api/](first_api/)。
+4. 需要运行后端项目时，先读 [first_api/README.md](first_api/README.md)。
+5. 需要理解 provider metrics、runbook、训练题卡和复盘报告时，进入 [Provider Metrics 文档入口](reference/provider-metrics-index.html)。
+6. 需要修改课程或代码时，先读 [开发工作流](DEVELOPMENT.md)。
+
+GitHub 网页直接点开 HTML 文件时通常会显示源码。推荐克隆仓库到本地后，用浏览器打开 `index.html`。
 
 ## 学习目标
 
@@ -14,6 +28,25 @@
 1. 学会 FastAPI 基础：路由、请求体、路径参数、查询参数、响应模型、错误处理。
 2. 学会真实后端项目结构：APIRouter、依赖注入、配置管理、SQLite、SQLModel、测试。
 3. 走向 AI 服务接口：后台任务、文件上传、AI 客户端边界、任务状态、OpenAPI 契约和前端调用。
+4. 走向工程化复盘：provider retry、observability、metrics、runbook、题卡训练、评分报告和 GitHub 发布检查。
+
+## 推荐学习路线
+
+| 阶段 | 课程范围 | 学习重点 |
+| --- | --- | --- |
+| 基础 API | Lesson 0001-0012 | FastAPI 路由、请求体、参数、响应模型、APIRouter、依赖注入、配置、鉴权 |
+| 数据与任务 | Lesson 0013-0030 | 后台任务、文件上传、静态前端、任务列表、OpenAPI、兼容性 |
+| AI 服务边界 | Lesson 0031-0049 | AI client 协议、async HTTP、provider health/predict、重试、退避、错误分类 |
+| Provider Metrics | Lesson 0050-0064 | 指标 label、counter、endpoint、Prometheus 导出、命名契约、runbook findings |
+| Runbook 训练包 | Lesson 0065-0074 | findings 报告、题卡、答案键、评分、summary、Markdown 导出、发布检查 |
+
+当前 runbook 训练包的核心入口：
+
+- [Provider Metrics 文档入口](reference/provider-metrics-index.html)
+- [Provider Metrics 排障清单](reference/provider-metrics-runbook.html)
+- [Lesson 0072 - Practice Session Package](lessons/0072-provider-metrics-practice-session-package.html)
+- [Lesson 0073 - Practice Session Markdown](lessons/0073-provider-metrics-practice-session-markdown.html)
+- [Lesson 0074 - Practice Release Checklist](lessons/0074-provider-metrics-practice-release-checklist.html)
 
 ## 项目结构
 
@@ -34,6 +67,7 @@
 ├── learning-records/    # 学习记录
 ├── tests/               # pytest 自动化测试
 ├── COURSE-STANDARD.md   # 后续课程质量标准
+├── DEVELOPMENT.md       # 开发、课程维护和发布检查流程
 ├── MISSION.md           # 学习目标
 ├── RESOURCES.md         # 官方资料和参考资源
 └── index.html           # 课程目录入口
@@ -91,6 +125,13 @@ python -m pytest -q
 - CORS 与静态前端
 - OpenAPI 契约
 - 任务列表分页、筛选和响应信封
+- provider retry、metrics、runbook 训练包和文档链接契约
+
+文档入口本身也有测试保护：
+
+```bash
+python -m pytest tests/test_course_docs_contract.py -q
+```
 
 ## 学习方式
 

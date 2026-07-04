@@ -1,5 +1,146 @@
 # Course Progress
 
+# 2026-07-05 Run: Lesson 0076 GitHub Development Workflow
+
+## Completed
+
+- Completed Lesson 0076: GitHub Development Workflow.
+- Added root `DEVELOPMENT.md` documenting code-change, lesson-change, documentation-change, and GitHub release-readiness workflows.
+- Updated root `README.md` to link the development workflow.
+- Added documentation contract coverage for `DEVELOPMENT.md` required commands and fixed lesson structure.
+- Added Lesson 0076, Reference 0076, learning record 0067, updated Lesson 0075 navigation, Reference 0075 navigation, main course index, and `NOTES.md`.
+
+## Files touched
+
+- `DEVELOPMENT.md`
+- `README.md`
+- `tests/test_course_docs_contract.py`
+- `lessons/0075-github-readme-learning-entry.html`
+- `lessons/0076-github-development-workflow.html`
+- `reference/0075-github-readme-learning-entry-cheatsheet.html`
+- `reference/0076-github-development-workflow-cheatsheet.html`
+- `index.html`
+- `NOTES.md`
+- `learning-records/0067-github-development-workflow.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Continue with Lesson 0077 after user review. A natural next topic is repository release checklist integration or CI workflow planning for the documented maintenance commands.
+
+# 2026-07-05 Run: Lesson 0075 GitHub README Learning Entry
+
+## Completed
+
+- Completed Lesson 0075: GitHub README Learning Entry.
+- Upgraded root `README.md` into a GitHub-friendly learning entry with course index, learning route, run commands, test commands, provider metrics docs, and runbook practice package links.
+- Added `test_root_readme_guides_github_learners_to_course_and_runbook()` to protect README links and commands as documentation contract.
+- Added Lesson 0075, Reference 0075, learning record 0066, updated Lesson 0074 navigation, Reference 0074 navigation, main course index, `NOTES.md`, and lesson structure contract coverage.
+
+## Files touched
+
+- `README.md`
+- `tests/test_course_docs_contract.py`
+- `lessons/0074-provider-metrics-practice-release-checklist.html`
+- `lessons/0075-github-readme-learning-entry.html`
+- `reference/0074-provider-metrics-practice-release-checklist-cheatsheet.html`
+- `reference/0075-github-readme-learning-entry-cheatsheet.html`
+- `index.html`
+- `NOTES.md`
+- `learning-records/0066-github-readme-learning-entry.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Continue with Lesson 0076 after user review. A natural next topic is repository structure cleanup and GitHub contribution/development workflow documentation.
+
+# 2026-07-05 Run: Lesson 0074 Provider Metrics Practice Release Checklist
+
+## Completed
+
+- Completed Lesson 0074: Provider Metrics Practice Release Checklist.
+- Added `build_provider_metrics_runbook_practice_release_checklist()` as a pure GitHub release-readiness checker for complete practice packages.
+- Added provider HTTP tests for complete package readiness and incomplete package failure reporting.
+- Added Lesson 0074, Reference 0074, learning record 0065, updated Lesson 0073 navigation, Reference 0073 navigation, provider metrics index, provider metrics runbook, main course index, `NOTES.md`, and documentation contract coverage.
+
+## Files touched
+
+- `first_api/services/provider_http.py`
+- `tests/test_provider_http.py`
+- `tests/test_course_docs_contract.py`
+- `lessons/0073-provider-metrics-practice-session-markdown.html`
+- `lessons/0074-provider-metrics-practice-release-checklist.html`
+- `reference/0073-provider-metrics-practice-session-markdown-cheatsheet.html`
+- `reference/0074-provider-metrics-practice-release-checklist-cheatsheet.html`
+- `reference/provider-metrics-index.html`
+- `reference/provider-metrics-runbook.html`
+- `index.html`
+- `NOTES.md`
+- `learning-records/0065-provider-metrics-practice-release-checklist.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Continue with Lesson 0075 after user review. A natural next topic is GitHub project README integration and final repository learning path organization.
+
+# 2026-07-05 Run: Lesson 0073 Provider Metrics Practice Session Markdown
+
+## Completed
+
+- Completed Lesson 0073: Provider Metrics Practice Session Markdown.
+- Added `render_provider_metrics_runbook_practice_session_markdown()` as a pure export helper for complete practice sessions.
+- Added provider HTTP test coverage for Markdown package sections, exercise-card table output, answer key inclusion, grading report inclusion, and trailing newline.
+- Added Lesson 0073, Reference 0073, learning record 0064, updated Lesson 0072 navigation, Reference 0072 navigation, provider metrics index, provider metrics runbook, main course index, `NOTES.md`, and documentation contract coverage.
+
+## Files touched
+
+- `first_api/services/provider_http.py`
+- `tests/test_provider_http.py`
+- `tests/test_course_docs_contract.py`
+- `lessons/0072-provider-metrics-practice-session-package.html`
+- `lessons/0073-provider-metrics-practice-session-markdown.html`
+- `reference/0072-provider-metrics-practice-session-package-cheatsheet.html`
+- `reference/0073-provider-metrics-practice-session-markdown-cheatsheet.html`
+- `reference/provider-metrics-index.html`
+- `reference/provider-metrics-runbook.html`
+- `index.html`
+- `NOTES.md`
+- `learning-records/0064-provider-metrics-practice-session-markdown.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Continue with Lesson 0074 after user review. A natural next topic is preparing the GitHub release checklist or course README integration for the completed runbook training package.
+
+# 2026-07-05 Run: Lesson 0072 Provider Metrics Practice Session Package
+
+## Completed
+
+- Completed Lesson 0072: Provider Metrics Practice Session Package.
+- Added `build_provider_metrics_runbook_practice_session()` as a pure orchestration helper for the complete runbook training pipeline.
+- Added provider HTTP test coverage for end-to-end session artifacts, counts, validation, answer key, findings report, and grading report.
+- Added Lesson 0072, Reference 0072, learning record 0063, updated Lesson 0071 navigation, Reference 0071 navigation, provider metrics index, provider metrics runbook, main course index, `NOTES.md`, and documentation contract coverage.
+
+## Files touched
+
+- `first_api/services/provider_http.py`
+- `tests/test_provider_http.py`
+- `tests/test_course_docs_contract.py`
+- `lessons/0071-provider-metrics-grading-summary-validation.html`
+- `lessons/0072-provider-metrics-practice-session-package.html`
+- `reference/0071-provider-metrics-grading-summary-validation-cheatsheet.html`
+- `reference/0072-provider-metrics-practice-session-package-cheatsheet.html`
+- `reference/provider-metrics-index.html`
+- `reference/provider-metrics-runbook.html`
+- `index.html`
+- `NOTES.md`
+- `learning-records/0063-provider-metrics-practice-session-package.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Continue with Lesson 0073 after user review. A natural next topic is exporting or documenting the complete practice session for GitHub release readiness.
+
 # 2026-07-05 Run: Lesson 0071 Provider Metrics Grading Summary Validation
 
 ## Completed

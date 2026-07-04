@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0076 - GitHub Development Workflow</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0076</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0075-github-readme-learning-entry.html">上一课</a>
+        <a href="../reference/0076-github-development-workflow-cheatsheet.html">速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0076 GitHub Development Workflow：把课程维护流程写成可测试协作契约</h1>
+      <p class="lead">本节新增 <code>DEVELOPMENT.md</code>，把代码修改、课程新增、README/导航维护和发布前检查流程固化下来，并用文档契约测试保护关键命令和课程九段结构。它让 GitHub 新手不只会读课程，也知道如何安全维护课程。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>GitHub Development Workflow
+├─ 新增文档：DEVELOPMENT.md
+│  ├─ Before You Change Code
+│  ├─ Code Change Checklist
+│  ├─ Lesson Change Checklist
+│  ├─ Documentation Change Checklist
+│  └─ GitHub Release Readiness
+├─ README 集成
+│  └─ 链接 DEVELOPMENT.md
+├─ 测试保护
+│  ├─ README 必须链接开发工作流
+│  └─ DEVELOPMENT 必须包含关键命令和九段结构
+└─ 核心目标
+   ├─ 降低新手维护风险
+   ├─ 防止课程资料漏更新
+   ├─ 固化测试命令
+   └─ 让文档成为协作契约</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>项目维护不是只会写代码。课程仓库同时包含源码、测试、讲义、速查、学习记录、索引和 README，任何一个环节漏更新，读者都会在 GitHub 上遇到断链或过期说明。</p>
+      <p><code>DEVELOPMENT.md</code> 是给维护者看的协作契约。README 面向学习者，DEVELOPMENT 面向修改者。二者分工清楚，才能避免根 README 变得过长，也避免维护流程散落在聊天记录里。</p>
+      <p>本节继续使用文档契约测试。原因很简单：流程文档一旦成为公共协作入口，它就不应只靠人肉记忆维护。测试可以保护关键命令、九段结构和 README 链接不被未来改动误删。</p>
+      <table>
+        <thead><tr><th>文档</th><th>读者</th><th>职责</th></tr></thead>
+        <tbody>
+          <tr><td><code>README.md</code></td><td>学习者、首次访问者</td><td>项目定位、学习入口、运行测试入口</td></tr>
+          <tr><td><code>DEVELOPMENT.md</code></td><td>维护者、贡献者</td><td>改代码、改课程、改文档、发布前检查</td></tr>
+          <tr><td><code>COURSE-STANDARD.md</code></td><td>课程作者</td><td>课程质量原则和写作标准</td></tr>
+          <tr><td><code>tests/test_course_docs_contract.py</code></td><td>自动化测试</td><td>保护文档入口和课程结构</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code># Development Workflow
+
+This repository is both a runnable FastAPI project and a course archive.</code></pre>
+      <p>开头明确仓库双重身份：既是可运行项目，又是课程档案。维护者必须同时考虑代码正确性和学习材料完整性。</p>
+      <pre><code>## Code Change Checklist
+
+- Update the implementation in `first_api/`.
+- Add or update tests in `tests/`.
+- Run the targeted test file first.
+- Run the full test suite before considering the change complete.</code></pre>
+      <p>代码修改清单强调小步验证。先跑目标测试，再跑全量测试，可以更快定位错误，也能防止局部通过但整体破坏。</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q
+.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q
+.\.venv\Scripts\python.exe -m pytest -q
+git diff --check</code></pre>
+      <p>这些命令是当前仓库的维护底线：provider 逻辑测试、文档契约测试、全量测试和空白检查。写进 DEVELOPMENT 后，新贡献者不用从历史记录里猜。</p>
+      <pre><code>## Lesson Change Checklist
+
+Every new lesson should include:
+
+- a complete HTML lesson in `lessons/`;
+- a quick reference page in `reference/`;
+- an entry in `index.html`;
+- a learning record in `learning-records/`;
+- an update to `NOTES.md`;
+- an update to `COURSE_PROGRESS.md`;</code></pre>
+      <p>课程新增不是只写一个 HTML。lesson、reference、index、learning record、notes、progress 共同组成可追踪学习资料。</p>
+      <pre><code>1. `① 本节核心知识框架`
+...
+9. `⑨ 面试高频真题+解析`</code></pre>
+      <p>DEVELOPMENT 也重复固定九段结构，是为了让维护者在动手前就看到硬标准。这个结构同时被课程页面测试保护。</p>
+      <pre><code>def test_development_workflow_documents_course_maintenance_contract() -> None:
+    workflow = Path("DEVELOPMENT.md").read_text(encoding="utf-8")</code></pre>
+      <p>测试直接读取 DEVELOPMENT 文本。它不解析 Markdown AST，因为本节保护的是关键短语和命令是否存在。</p>
+      <pre><code>assert "Code Change Checklist" in workflow
+assert ".\\.venv\\Scripts\\python.exe -m pytest -q" in workflow
+assert "git diff --check" in workflow
+assert "① 本节核心知识框架" in workflow
+assert "⑨ 面试高频真题+解析" in workflow</code></pre>
+      <p>这些断言保护维护流程的关键骨架。未来如果有人删除测试命令或九段结构，文档契约测试会失败。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>New contributor
+  → README.md
+  → DEVELOPMENT.md
+  → choose change type
+     ├─ code change
+     ├─ lesson change
+     └─ documentation change
+  → update matching files
+  → run targeted tests
+  → run full pytest
+  → run git diff --check</code></pre>
+      <p>这条流程把维护动作从“凭经验”改成“按清单执行”。对于课程仓库尤其重要，因为课程资料比普通代码项目多了导航、速查、学习记录和进度文件。</p>
+      <table>
+        <thead><tr><th>修改类型</th><th>必须关注</th><th>推荐验证</th></tr></thead>
+        <tbody>
+          <tr><td>代码</td><td><code>first_api/</code> 与 <code>tests/</code></td><td>目标测试 + 全量测试</td></tr>
+          <tr><td>课程</td><td><code>lessons/</code>、<code>reference/</code>、<code>index.html</code></td><td>文档契约测试</td></tr>
+          <tr><td>README</td><td>入口链接和命令</td><td>README 契约测试</td></tr>
+          <tr><td>发布</td><td>导航、测试、空白检查</td><td><code>git diff --check</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>README</td><td>足够承载所有维护流程</td><td>README 给入口，DEVELOPMENT 放维护细节。</td></tr>
+          <tr><td>DEVELOPMENT</td><td>只是给开源项目用</td><td>课程型仓库同样需要维护流程。</td></tr>
+          <tr><td>课程变更</td><td>只加 lesson HTML 即可</td><td>还要更新 reference、index、record、notes、progress。</td></tr>
+          <tr><td>文档测试</td><td>没有必要</td><td>关键文档入口是公共契约，应被测试保护。</td></tr>
+          <tr><td>全量测试</td><td>文档改动不用跑</td><td>课程索引和文档契约也可能影响测试。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>后果</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>新增课程忘记 index</td><td>读者无法从目录进入</td><td>Lesson Change Checklist 明确要求更新。</td></tr>
+          <tr><td>改 README 忘记测试</td><td>入口链接可能失效</td><td>运行 docs contract tests。</td></tr>
+          <tr><td>只跑局部测试</td><td>其他模块回归未发现</td><td>最终运行全量 pytest。</td></tr>
+          <tr><td>忽略空白检查</td><td>提交出现尾随空格或格式问题</td><td>运行 <code>git diff --check</code>。</td></tr>
+          <tr><td>维护流程写在聊天里</td><td>换人后知识丢失</td><td>沉淀到 <code>DEVELOPMENT.md</code>。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学仓库</th><th>生产仓库</th></tr></thead>
+        <tbody>
+          <tr><td>开发流程</td><td>文档清单 + pytest</td><td>CI/CD、review 规则、分支保护</td></tr>
+          <tr><td>发布检查</td><td>课程入口、测试、空白检查</td><td>构建、部署、迁移、安全扫描</td></tr>
+          <tr><td>文档职责</td><td>帮助新手学习和维护</td><td>帮助团队协作、上线、回滚、审计</td></tr>
+          <tr><td>质量门禁</td><td>本地命令为主</td><td>自动化流水线强制阻断</td></tr>
+          <tr><td>风险</td><td>课程断链或内容过期</td><td>线上故障、数据损坏、安全事故</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. 为什么需要单独的 <code>DEVELOPMENT.md</code>？</summary><p class="answer">README 面向学习入口，DEVELOPMENT 面向维护流程。分开后根 README 不会过长，维护规则也更集中。</p></details>
+      <details><summary>2. 新增课程为什么要同时改多个文件？</summary><p class="answer">课程页、速查页、目录、学习记录、NOTES 和进度共同构成可导航、可追踪的学习产品。</p></details>
+      <details><summary>3. 为什么文档契约测试要检查 DEVELOPMENT？</summary><p class="answer">维护命令和九段结构是课程质量底线，不能依赖人工记忆，应该被测试保护。</p></details>
+      <details><summary>4. <code>git diff --check</code> 检查什么？</summary><p class="answer">它检查 diff 中的空白问题，例如尾随空格等。当前 Windows LF-to-CRLF 提示不是空白错误。</p></details>
+      <details><summary>5. 生产仓库会如何升级这个流程？</summary><p class="answer">生产仓库会用 CI/CD、分支保护、review、自动部署、安全扫描和审计机制强制执行流程。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：为什么工程项目需要开发流程文档？</summary><p class="answer">开发流程文档把隐性经验显式化，降低新人上手成本，并减少漏跑测试、漏更新文档、误发布等问题。</p></details>
+      <details><summary>面试题 2：README 和 DEVELOPMENT 如何分工？</summary><p class="answer">README 面向使用者和第一次访问者，DEVELOPMENT 面向维护者和贡献者。前者给入口，后者给操作流程。</p></details>
+      <details><summary>面试题 3：为什么课程仓库也需要质量门禁？</summary><p class="answer">课程仓库的产品是学习体验。断链、缺速查、漏测试和结构不一致都会破坏学习体验，因此也需要门禁。</p></details>
+      <details><summary>面试题 4：如何把本地维护流程迁移到 CI？</summary><p class="answer">把目标测试、文档契约测试、全量测试和空白检查写入 CI workflow，并设置 PR 必须通过检查后才能合并。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0075-github-readme-learning-entry.html">上一课：GitHub README Learning Entry</a>
+        <a href="../reference/0076-github-development-workflow-cheatsheet.html">查看速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Provider Metrics Practice Release Checklist Cheat Sheet</title><link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+  <nav class="course-nav" aria-label="速查表导航"><span class="nav-title">Reference 0074</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0074-provider-metrics-practice-release-checklist.html">回到第 74 课</a><a href="./0073-provider-metrics-practice-session-markdown-cheatsheet.html">上一张速查</a><a href="./0075-github-readme-learning-entry-cheatsheet.html">下一张速查</a></span></nav>
+  <header><p class="eyebrow">Reference 0074</p><h1>Provider Metrics Practice Release Checklist 速查</h1><p class="lead">GitHub 发布完整训练包前，检查关键材料是否齐全。</p></header>
+  <h2>核心函数</h2><pre><code>build_provider_metrics_runbook_practice_release_checklist(session, package_markdown)</code></pre>
+  <h2>检查项</h2><ul><li><code>findings_markdown_present</code></li><li><code>exercise_cards_present</code></li><li><code>answer_key_present</code></li><li><code>grading_summary_valid</code></li><li><code>grading_report_present</code></li><li><code>package_sections_present</code></li></ul>
+  <h2>返回结构</h2><ul><li><code>ready</code>：全部检查通过才为 true。</li><li><code>checks</code>：逐项 <code>id/passed/evidence</code>。</li></ul>
+  <h2>边界</h2><ul><li>不生成缺失材料。</li><li>不重新评分。</li><li>不替代生产 CI。</li></ul>
+  <h2>测试命令</h2><pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q</code></pre>
+  <nav class="course-nav bottom" aria-label="速查表底部导航"><span class="nav-title">继续学习</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0074-provider-metrics-practice-release-checklist.html">回到第 74 课</a><a href="./0073-provider-metrics-practice-session-markdown-cheatsheet.html">上一张速查</a><a href="./0075-github-readme-learning-entry-cheatsheet.html">下一张速查</a></span></nav>
+</main></body></html>

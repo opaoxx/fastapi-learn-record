@@ -483,6 +483,128 @@ def render_provider_metrics_runbook_grading_summary_markdown(
     return "\n".join(lines) + "\n"
 
 
+def build_provider_metrics_runbook_practice_session(
+    responses_by_card_id: dict[str, str],
+) -> dict[str, object]:
+    samples = build_provider_metrics_runbook_scenario_samples()
+    findings = build_provider_metrics_runbook_findings(samples)
+    findings_markdown = render_provider_metrics_runbook_findings_markdown(findings)
+    cards = build_provider_metrics_runbook_exercise_cards(findings)
+    answer_key = render_provider_metrics_runbook_exercise_answer_key(cards)
+    summary = summarize_provider_metrics_runbook_exercise_grades(
+        cards,
+        responses_by_card_id,
+    )
+    validation = validate_provider_metrics_runbook_grading_summary(summary)
+    report_markdown = (
+        render_provider_metrics_runbook_grading_summary_markdown(summary)
+        if validation["valid"]
+        else ""
+    )
+    return {
+        "samples": samples,
+        "findings": findings,
+        "findings_markdown": findings_markdown,
+        "cards": cards,
+        "answer_key": answer_key,
+        "summary": summary,
+        "validation": validation,
+        "report_markdown": report_markdown,
+    }
+
+
+def render_provider_metrics_runbook_practice_session_markdown(
+    session: dict[str, object],
+) -> str:
+    lines = [
+        "# Provider Metrics Runbook Practice Session",
+        "",
+        "## Findings",
+        "",
+        str(session["findings_markdown"]).rstrip(),
+        "",
+        "## Exercise Cards",
+        "",
+        "| card_id | prompt | expected_severity |",
+        "| --- | --- | --- |",
+    ]
+    cards = session["cards"]
+    if not isinstance(cards, list):
+        raise ValueError("Practice session cards must be a list.")
+    for card in cards:
+        lines.append(
+            "| {card_id} | {prompt} | {expected_severity} |".format(
+                card_id=card["id"],
+                prompt=card["prompt"],
+                expected_severity=card["expected_severity"],
+            )
+        )
+    lines.extend(
+        [
+            "",
+            "## Answer Key",
+            "",
+            str(session["answer_key"]).rstrip(),
+            "",
+            "## Grading Report",
+            "",
+            str(session["report_markdown"]).rstrip(),
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def build_provider_metrics_runbook_practice_release_checklist(
+    session: dict[str, object],
+    package_markdown: str,
+) -> dict[str, object]:
+    checks = [
+        {
+            "id": "findings_markdown_present",
+            "passed": bool(str(session.get("findings_markdown", "")).strip()),
+            "evidence": "Findings Markdown is present.",
+        },
+        {
+            "id": "exercise_cards_present",
+            "passed": bool(session.get("cards")),
+            "evidence": "Exercise cards are present.",
+        },
+        {
+            "id": "answer_key_present",
+            "passed": "## provider-metrics-runbook-" in str(session.get("answer_key", "")),
+            "evidence": "Answer key contains runbook card sections.",
+        },
+        {
+            "id": "grading_summary_valid",
+            "passed": session.get("validation") == {"valid": True, "errors": []},
+            "evidence": "Grading summary validation passed.",
+        },
+        {
+            "id": "grading_report_present",
+            "passed": bool(str(session.get("report_markdown", "")).strip()),
+            "evidence": "Grading report Markdown is present.",
+        },
+        {
+            "id": "package_sections_present",
+            "passed": all(
+                section in package_markdown
+                for section in [
+                    "## Findings",
+                    "## Exercise Cards",
+                    "## Answer Key",
+                    "## Grading Report",
+                ]
+            ),
+            "evidence": "Practice package contains all required sections.",
+        },
+    ]
+    return {
+        "ready": all(check["passed"] for check in checks),
+        "checks": checks,
+    }
+
+
 def escape_prometheus_label_value(value: object) -> str:
     return str(value).replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
 

@@ -22,6 +22,9 @@
         <a href="../lessons/0069-provider-metrics-grading-summary.html">汇总课</a>
         <a href="../lessons/0070-provider-metrics-grading-summary-markdown.html">报告课</a>
         <a href="../lessons/0071-provider-metrics-grading-summary-validation.html">校验课</a>
+        <a href="../lessons/0072-provider-metrics-practice-session-package.html">会话课</a>
+        <a href="../lessons/0073-provider-metrics-practice-session-markdown.html">导出课</a>
+        <a href="../lessons/0074-provider-metrics-practice-release-checklist.html">发布检查课</a>
       </span>
     </nav>
 
@@ -117,6 +120,9 @@
       <p>如果需要复盘多题训练结果，再使用 <code>summarize_provider_metrics_runbook_exercise_grades()</code> 统计 <code>total</code>、<code>answered</code>、<code>passed</code>、<code>failed</code> 和 <code>unanswered</code>。</p>
       <p>如果需要把训练结果贴到 GitHub 或 PR 中，再使用 <code>render_provider_metrics_runbook_grading_summary_markdown()</code> 生成 Markdown 报告。</p>
       <p>渲染报告前，可以用 <code>validate_provider_metrics_runbook_grading_summary()</code> 检查 summary 字段、grade 明细和统计一致性。</p>
+      <p>如果要一次性得到完整练习包，可以用 <code>build_provider_metrics_runbook_practice_session()</code> 从固定样本生成 findings、题卡、答案键、summary、validation 和 Markdown 报告。</p>
+      <p>如果要发布完整离线复盘材料，可以用 <code>render_provider_metrics_runbook_practice_session_markdown()</code> 把 session 渲染成 GitHub 友好的 Markdown 包。</p>
+      <p>发布到 GitHub 前，可以用 <code>build_provider_metrics_runbook_practice_release_checklist()</code> 检查关键材料和 Markdown 章节是否齐全。</p>
     </section>
 
     <section>
@@ -143,6 +149,9 @@
         <a href="../lessons/0069-provider-metrics-grading-summary.html">学习评分汇总</a>
         <a href="../lessons/0070-provider-metrics-grading-summary-markdown.html">学习评分报告</a>
         <a href="../lessons/0071-provider-metrics-grading-summary-validation.html">学习评分校验</a>
+        <a href="../lessons/0072-provider-metrics-practice-session-package.html">学习训练会话</a>
+        <a href="../lessons/0073-provider-metrics-practice-session-markdown.html">学习会话导出</a>
+        <a href="../lessons/0074-provider-metrics-practice-release-checklist.html">学习发布检查</a>
       </span>
     </nav>
   </main>

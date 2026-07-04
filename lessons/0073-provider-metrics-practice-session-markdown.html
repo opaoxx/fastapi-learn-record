@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0073 - Provider Metrics Practice Session Markdown</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0073</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0072-provider-metrics-practice-session-package.html">上一课</a>
+        <a href="../reference/0073-provider-metrics-practice-session-markdown-cheatsheet.html">速查</a>
+        <a href="./0074-provider-metrics-practice-release-checklist.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0073 Provider Metrics Practice Session Markdown：把完整训练会话导出为 GitHub 复盘文档</h1>
+      <p class="lead">本节新增 <code>render_provider_metrics_runbook_practice_session_markdown()</code>，把 0072 的 practice session 包渲染成完整 Markdown 文档。它将 findings、题卡、答案键和评分报告整合到一份可复制到 GitHub、PR 或学习记录的离线材料中。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Practice Session Markdown
+├─ 输入：practice session
+│  ├─ findings_markdown
+│  ├─ cards
+│  ├─ answer_key
+│  └─ report_markdown
+├─ 输出：完整 Markdown 文档
+│  ├─ 标题
+│  ├─ Findings
+│  ├─ Exercise Cards
+│  ├─ Answer Key
+│  └─ Grading Report
+├─ 设计原则
+│  ├─ 不重新生成 session
+│  ├─ 不重新评分
+│  ├─ 题卡区不暴露 next_action
+│  └─ 保持 GitHub 可读格式
+└─ 验证重点
+   ├─ 章节顺序稳定
+   ├─ 表头稳定
+   ├─ answer key 不丢
+   └─ grading report 不丢</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>practice session 是机器可消费的结构化对象，Markdown package 是人类可阅读的发布格式。二者分离后，训练流水线可以被测试和复用，展示格式也可以独立演进。</p>
+      <p>本节 renderer 只消费 session，不负责构建 session。这样能避免展示层重新调用 samples、findings、grading 等函数，防止同一个练习在不同入口产生不同结果。</p>
+      <p>题卡区只展示 <code>id</code>、<code>prompt</code> 和 <code>expected_severity</code>，不展示 <code>expected_next_action</code>。因为题卡段面向练习，答案动作应留在 Answer Key 和 Grading Report 中，避免题干提前泄露完整答案。</p>
+      <table>
+        <thead><tr><th>内容块</th><th>来源字段</th><th>用途</th></tr></thead>
+        <tbody>
+          <tr><td>Findings</td><td><code>findings_markdown</code></td><td>复盘指标解释</td></tr>
+          <tr><td>Exercise Cards</td><td><code>cards</code></td><td>给学习者自测题目</td></tr>
+          <tr><td>Answer Key</td><td><code>answer_key</code></td><td>提供标准答案</td></tr>
+          <tr><td>Grading Report</td><td><code>report_markdown</code></td><td>复盘作答结果</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>def render_provider_metrics_runbook_practice_session_markdown(
+    session: dict[str, object],
+) -> str:
+    lines = [
+        "# Provider Metrics Runbook Practice Session",
+        "",
+        "## Findings",
+        "",
+        str(session["findings_markdown"]).rstrip(),</code></pre>
+      <p>函数接收完整 session 包，返回单个 Markdown 字符串。开头先建立文档标题和 Findings 章节，<code>rstrip()</code> 去掉已有片段末尾多余换行，避免组合后空行失控。</p>
+      <pre><code>"",
+"## Exercise Cards",
+"",
+"| card_id | prompt | expected_severity |",
+"| --- | --- | --- |",
+]</code></pre>
+      <p>Exercise Cards 章节使用稳定表格结构。只放 <code>expected_severity</code>，不放 <code>expected_next_action</code>，是为了保持练习区和答案区分层。</p>
+      <pre><code>cards = session["cards"]
+if not isinstance(cards, list):
+    raise ValueError("Practice session cards must be a list.")</code></pre>
+      <p>cards 必须是列表，因为表格需要逐题渲染。若调用方传入错误结构，立即抛出可诊断错误，而不是输出损坏表格。</p>
+      <pre><code>for card in cards:
+    lines.append(
+        "| {card_id} | {prompt} | {expected_severity} |".format(
+            card_id=card["id"],
+            prompt=card["prompt"],
+            expected_severity=card["expected_severity"],
+        )
+    )</code></pre>
+      <p>每张题卡渲染为一行。使用字段索引读取可以暴露 session 契约错误；如果题卡缺 <code>id</code> 或 <code>prompt</code>，说明上游练习包生成已经损坏。</p>
+      <pre><code>lines.extend(
+    [
+        "",
+        "## Answer Key",
+        "",
+        str(session["answer_key"]).rstrip(),
+        "",
+        "## Grading Report",
+        "",
+        str(session["report_markdown"]).rstrip(),
+        "",
+    ]
+)
+return "\n".join(lines)</code></pre>
+      <p>最后追加答案键和评分报告。返回值保留末尾换行，因为列表最后一个元素是空字符串，<code>join</code> 后自然以换行结束，便于直接写入 Markdown 文件。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>responses
+  → build_provider_metrics_runbook_practice_session(responses)
+  → session
+  → render_provider_metrics_runbook_practice_session_markdown(session)
+  → full Markdown package
+  → GitHub / PR / learning record</code></pre>
+      <p>完整链路把训练执行和训练发布分开。session 负责携带结构化数据，Markdown renderer 负责发布格式。这个边界让测试可以分别锁定数据正确性和文本格式稳定性。</p>
+      <table>
+        <thead><tr><th>阶段</th><th>产物</th><th>检查点</th><th>常见风险</th></tr></thead>
+        <tbody>
+          <tr><td>会话生成</td><td>session dict</td><td>字段齐全</td><td>中间产物缺失</td></tr>
+          <tr><td>报告组合</td><td>Markdown str</td><td>章节顺序</td><td>重复计算或漏章节</td></tr>
+          <tr><td>发布复盘</td><td>GitHub 文档</td><td>可读性</td><td>题干泄露完整答案</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>session Markdown</td><td>等于重新执行练习</td><td>它只渲染已有 session。</td></tr>
+          <tr><td>Exercise Cards</td><td>应展示全部标准答案</td><td>练习区只展示题目和必要锚点。</td></tr>
+          <tr><td><code>rstrip()</code></td><td>会破坏内容</td><td>这里只去掉片段末尾换行，避免组合空行膨胀。</td></tr>
+          <tr><td>完整包</td><td>只需要最终评分报告</td><td>完整复盘还需要 findings、题卡和答案键。</td></tr>
+          <tr><td>GitHub 发布</td><td>随便拼字符串即可</td><td>需要稳定标题、表头、章节顺序和测试保护。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>后果</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>renderer 内部重新 build session</td><td>输入不可控，测试不稳定</td><td>只接收 session 参数。</td></tr>
+          <tr><td>不校验 cards 类型</td><td>错误结构被渲染成坏表格</td><td>要求 cards 必须是 list。</td></tr>
+          <tr><td>题卡表泄露 next_action</td><td>练习题失去训练价值</td><td>next_action 留在 Answer Key。</td></tr>
+          <tr><td>不处理片段末尾换行</td><td>组合文档空行混乱</td><td>对嵌入片段使用 <code>rstrip()</code>。</td></tr>
+          <tr><td>只测试是否包含标题</td><td>章节顺序漂移无人发现</td><td>测试关键章节和表格片段。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>报告格式</td><td>单个 Markdown 字符串</td><td>模板系统、PDF、网页、ticket 附件</td></tr>
+          <tr><td>数据治理</td><td>固定练习样本</td><td>题库版本、用户权限、审计链路</td></tr>
+          <tr><td>安全</td><td>字段受控，少量转义</td><td>HTML/Markdown 转义、敏感信息脱敏</td></tr>
+          <tr><td>发布流程</td><td>复制到 GitHub 文档</td><td>审批、归档、访问控制、变更记录</td></tr>
+          <tr><td>测试策略</td><td>字符串片段断言</td><td>模板快照、视觉回归、schema 校验</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. 为什么本节 renderer 只接收 session？</summary><p class="answer">这样可以避免展示层重新执行练习流水线，保证同一份 session 在不同渲染入口结果一致。</p></details>
+      <details><summary>2. 为什么 Exercise Cards 表不展示 next_action？</summary><p class="answer">next_action 是学生需要推导的关键答案，提前放入题卡区会破坏训练价值。</p></details>
+      <details><summary>3. 为什么要把 Answer Key 和 Grading Report 都放入完整包？</summary><p class="answer">Answer Key 说明标准答案，Grading Report 说明本次作答结果，二者服务不同复盘需求。</p></details>
+      <details><summary>4. <code>rstrip()</code> 在组合 Markdown 时解决什么问题？</summary><p class="answer">它去掉嵌入片段末尾多余换行，避免多段 Markdown 组合后产生不可控空行。</p></details>
+      <details><summary>5. 生产环境如何升级这个 Markdown renderer？</summary><p class="answer">应引入模板版本、字段转义、权限控制、报告归档、审批流程和快照测试。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：为什么导出层不应该重新计算业务结果？</summary><p class="answer">导出层的职责是格式转换。重新计算会制造第二套事实源，导致报告和结构化 session 可能不一致。</p></details>
+      <details><summary>面试题 2：如何设计 GitHub 友好的技术报告？</summary><p class="answer">应使用稳定标题、清晰章节、表格化关键信息、可复制文本和测试保护的输出格式。</p></details>
+      <details><summary>面试题 3：为什么完整复盘包需要中间材料？</summary><p class="answer">只看最终评分无法解释为什么这么判。Findings、题卡和答案键能提供从事实到结果的可追溯链路。</p></details>
+      <details><summary>面试题 4：生产报告系统为什么需要模板治理？</summary><p class="answer">报告一旦用于协作或审计，就需要版本、审批、权限、脱敏、归档和回归测试，不能靠散乱字符串拼接。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0072-provider-metrics-practice-session-package.html">上一课：Provider Metrics Practice Session Package</a>
+        <a href="../reference/0073-provider-metrics-practice-session-markdown-cheatsheet.html">查看速查</a>
+        <a href="./0074-provider-metrics-practice-release-checklist.html">下一课：Provider Metrics Practice Release Checklist</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

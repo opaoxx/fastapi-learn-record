@@ -108,6 +108,11 @@ def test_rebuilt_foundation_lessons_use_exam_review_structure() -> None:
         Path("lessons/0069-provider-metrics-grading-summary.html"),
         Path("lessons/0070-provider-metrics-grading-summary-markdown.html"),
         Path("lessons/0071-provider-metrics-grading-summary-validation.html"),
+        Path("lessons/0072-provider-metrics-practice-session-package.html"),
+        Path("lessons/0073-provider-metrics-practice-session-markdown.html"),
+        Path("lessons/0074-provider-metrics-practice-release-checklist.html"),
+        Path("lessons/0075-github-readme-learning-entry.html"),
+        Path("lessons/0076-github-development-workflow.html"),
     ]
     required_sections = [
         "① 本节核心知识框架",
@@ -160,6 +165,9 @@ def test_provider_metrics_documentation_index_links_learning_and_tests() -> None
     assert "../lessons/0069-provider-metrics-grading-summary.html" in parser.links
     assert "../lessons/0070-provider-metrics-grading-summary-markdown.html" in parser.links
     assert "../lessons/0071-provider-metrics-grading-summary-validation.html" in parser.links
+    assert "../lessons/0072-provider-metrics-practice-session-package.html" in parser.links
+    assert "../lessons/0073-provider-metrics-practice-session-markdown.html" in parser.links
+    assert "../lessons/0074-provider-metrics-practice-release-checklist.html" in parser.links
     assert "../tests/test_provider_http.py" in parser.links
     assert "../tests/test_openapi_contract.py" in parser.links
 
@@ -191,3 +199,34 @@ def test_provider_metrics_runbook_links_docs_lessons_and_tests() -> None:
     assert "../tests/test_provider_http.py" in parser.links
     assert "../tests/test_ai_client_dependency.py" in parser.links
     assert "../tests/test_course_docs_contract.py" in parser.links
+
+
+def test_root_readme_guides_github_learners_to_course_and_runbook() -> None:
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "[课程总目录](index.html)" in readme
+    assert "[first_api/README.md](first_api/README.md)" in readme
+    assert "[开发工作流](DEVELOPMENT.md)" in readme
+    assert "[Provider Metrics 文档入口](reference/provider-metrics-index.html)" in readme
+    assert "[Provider Metrics 排障清单](reference/provider-metrics-runbook.html)" in readme
+    assert "[Lesson 0072 - Practice Session Package](lessons/0072-provider-metrics-practice-session-package.html)" in readme
+    assert "[Lesson 0073 - Practice Session Markdown](lessons/0073-provider-metrics-practice-session-markdown.html)" in readme
+    assert "[Lesson 0074 - Practice Release Checklist](lessons/0074-provider-metrics-practice-release-checklist.html)" in readme
+    assert "fastapi dev first_api/main.py" in readme
+    assert "python -m pytest -q" in readme
+    assert "python -m pytest tests/test_course_docs_contract.py -q" in readme
+
+
+def test_development_workflow_documents_course_maintenance_contract() -> None:
+    workflow = Path("DEVELOPMENT.md").read_text(encoding="utf-8")
+
+    assert "Code Change Checklist" in workflow
+    assert "Lesson Change Checklist" in workflow
+    assert "Documentation Change Checklist" in workflow
+    assert "GitHub Release Readiness" in workflow
+    assert ".\\.venv\\Scripts\\python.exe -m pytest tests\\test_provider_http.py -q" in workflow
+    assert ".\\.venv\\Scripts\\python.exe -m pytest tests\\test_course_docs_contract.py -q" in workflow
+    assert ".\\.venv\\Scripts\\python.exe -m pytest -q" in workflow
+    assert "git diff --check" in workflow
+    assert "① 本节核心知识框架" in workflow
+    assert "⑨ 面试高频真题+解析" in workflow

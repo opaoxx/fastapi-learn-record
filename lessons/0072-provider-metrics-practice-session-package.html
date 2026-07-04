@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0072 - Provider Metrics Practice Session Package</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0072</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0071-provider-metrics-grading-summary-validation.html">上一课</a>
+        <a href="../reference/0072-provider-metrics-practice-session-package-cheatsheet.html">速查</a>
+        <a href="./0073-provider-metrics-practice-session-markdown.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0072 Provider Metrics Practice Session Package：把 Runbook 训练流水线打包成端到端会话</h1>
+      <p class="lead">本节新增 <code>build_provider_metrics_runbook_practice_session()</code>，把 samples、findings、题卡、答案键、评分汇总、summary 校验和 Markdown 报告串成一个完整 practice session。它是教学项目里的“编排层”，负责调用顺序，不复制任何下层业务规则。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Practice Session Package
+├─ 输入
+│  └─ responses_by_card_id
+├─ 编排链路
+│  ├─ build_provider_metrics_runbook_scenario_samples()
+│  ├─ build_provider_metrics_runbook_findings(samples)
+│  ├─ render_provider_metrics_runbook_findings_markdown(findings)
+│  ├─ build_provider_metrics_runbook_exercise_cards(findings)
+│  ├─ render_provider_metrics_runbook_exercise_answer_key(cards)
+│  ├─ summarize_provider_metrics_runbook_exercise_grades(cards, responses)
+│  ├─ validate_provider_metrics_runbook_grading_summary(summary)
+│  └─ render_provider_metrics_runbook_grading_summary_markdown(summary)
+├─ 输出
+│  ├─ samples
+│  ├─ findings
+│  ├─ findings_markdown
+│  ├─ cards
+│  ├─ answer_key
+│  ├─ summary
+│  ├─ validation
+│  └─ report_markdown
+└─ 边界
+   ├─ 不请求 provider
+   ├─ 不读取全局 counter
+   ├─ 不持久化
+   └─ 不复制评分规则</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>编排层解决的是“多个纯函数如何按正确顺序协作”。前面几节分别实现了样本、解释、题卡、答案键、评分、汇总、校验和报告；本节把这些能力合成一条端到端训练流水线。</p>
+      <p>编排层不应该重新实现下层逻辑。它不判断 outcome，不生成 severity，不重新计算 passed，也不手写 Markdown 表格。它只负责传递每一步的产物，保证数据流方向清晰。</p>
+      <p>practice session 的价值是可复盘：一个返回对象同时包含原始教学样本、解释结果、题卡、标准答案、评分汇总和报告文本。读者可以从任意层回看“为什么这一题这么判”。</p>
+      <table>
+        <thead><tr><th>层级</th><th>核心问题</th><th>本节处理方式</th></tr></thead>
+        <tbody>
+          <tr><td>数据层</td><td>练习事实从哪里来</td><td>固定 scenario samples</td></tr>
+          <tr><td>解释层</td><td>指标说明什么</td><td>findings + next_action</td></tr>
+          <tr><td>训练层</td><td>如何出题和给答案</td><td>cards + answer_key</td></tr>
+          <tr><td>评估层</td><td>学习结果如何衡量</td><td>summary + validation + report</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>def build_provider_metrics_runbook_practice_session(
+    responses_by_card_id: dict[str, str],
+) -> dict[str, object]:
+    samples = build_provider_metrics_runbook_scenario_samples()</code></pre>
+      <p>函数只接收作答字典，说明练习场景本身由课程固定样本提供。这样端到端练习可重复、可测试，不依赖线上 provider 状态。</p>
+      <pre><code>findings = build_provider_metrics_runbook_findings(samples)
+findings_markdown = render_provider_metrics_runbook_findings_markdown(findings)</code></pre>
+      <p>先把 metric samples 翻译成 findings，再生成 findings 报告。注意报告来自 findings，而不是 samples；这是为了保持“事实 → 解释 → 展示”的单向链路。</p>
+      <pre><code>cards = build_provider_metrics_runbook_exercise_cards(findings)
+answer_key = render_provider_metrics_runbook_exercise_answer_key(cards)</code></pre>
+      <p>题卡也从 findings 生成，标准答案再从 cards 渲染。这样题干、评分锚点和答案键共享同一份结构化来源，避免手写题库和代码契约漂移。</p>
+      <pre><code>summary = summarize_provider_metrics_runbook_exercise_grades(
+    cards,
+    responses_by_card_id,
+)</code></pre>
+      <p>评分汇总复用 0069 的批量函数。编排层不关心每题如何判分，只传入 cards 和 responses，得到 summary。</p>
+      <pre><code>validation = validate_provider_metrics_runbook_grading_summary(summary)
+report_markdown = (
+    render_provider_metrics_runbook_grading_summary_markdown(summary)
+    if validation["valid"]
+    else ""
+)</code></pre>
+      <p>报告渲染前先校验 summary。若 validation 失败，返回空报告而不是强行渲染，这是为了避免坏数据被包装成看似可信的复盘材料。</p>
+      <pre><code>return {
+    "samples": samples,
+    "findings": findings,
+    "findings_markdown": findings_markdown,
+    "cards": cards,
+    "answer_key": answer_key,
+    "summary": summary,
+    "validation": validation,
+    "report_markdown": report_markdown,
+}</code></pre>
+      <p>返回完整会话包。每个字段都是前面某一层的稳定产物，方便测试、文档和调试。若只返回 report_markdown，读者无法追溯评分结果来自哪些样本和题卡。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>responses_by_card_id
+  + fixed scenario samples
+  → findings
+  → findings_markdown
+  → cards
+  → answer_key
+  → summary
+  → validation
+  → report_markdown
+  → practice session package</code></pre>
+      <p>这条链路是课程后半段 runbook 训练能力的闭环。它把“观测事实”“排障解释”“训练题目”“标准答案”“学生表现”和“复盘报告”放进同一个可测试对象。</p>
+      <table>
+        <thead><tr><th>步骤</th><th>输入</th><th>输出</th><th>失败定位</th></tr></thead>
+        <tbody>
+          <tr><td>samples</td><td>无外部输入</td><td>固定指标样本</td><td>场景覆盖不足</td></tr>
+          <tr><td>findings</td><td>samples</td><td>severity/action</td><td>排障规则错误</td></tr>
+          <tr><td>cards</td><td>findings</td><td>题卡</td><td>题干泄露答案</td></tr>
+          <tr><td>summary</td><td>cards + responses</td><td>评分统计</td><td>作答匹配或计数错误</td></tr>
+          <tr><td>report</td><td>valid summary</td><td>Markdown</td><td>展示格式错误</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>编排层</td><td>应该顺手写业务规则</td><td>只负责调用顺序和数据传递。</td></tr>
+          <tr><td>practice session</td><td>只是 Markdown 报告</td><td>它包含从样本到报告的全部中间产物。</td></tr>
+          <tr><td>validation 失败</td><td>仍然渲染报告更方便</td><td>坏数据不应被包装成可信报告。</td></tr>
+          <tr><td>responses</td><td>应写进最终报告</td><td>当前会话只传播评分结果，避免原始文本扩散。</td></tr>
+          <tr><td>固定 samples</td><td>不如实时 counter 真实</td><td>教学练习优先可重复；实时数据适合生产演练。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>后果</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>跳过 validation 直接渲染</td><td>坏 summary 变成可信报告</td><td>先校验，valid 后再渲染。</td></tr>
+          <tr><td>编排层复制评分逻辑</td><td>与单题评分函数漂移</td><td>调用已有评分/汇总函数。</td></tr>
+          <tr><td>只返回最终 Markdown</td><td>无法调试中间步骤</td><td>返回完整 session package。</td></tr>
+          <tr><td>从全局 counter 取样本</td><td>练习结果不可复现</td><td>使用固定 scenario samples。</td></tr>
+          <tr><td>把 response 原文写进 session</td><td>隐私风险和报告噪声增加</td><td>只通过 summary 传播评分结果。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>数据来源</td><td>固定样本</td><td>真实事故、演练批次、历史告警</td></tr>
+          <tr><td>编排方式</td><td>同步纯函数调用</td><td>workflow、队列、任务状态机</td></tr>
+          <tr><td>状态管理</td><td>内存返回对象</td><td>数据库、对象存储、审计日志</td></tr>
+          <tr><td>失败处理</td><td>validation 失败则空报告</td><td>错误码、重试、人工复核、告警</td></tr>
+          <tr><td>隐私治理</td><td>不传播 response 原文</td><td>脱敏、权限、保留周期、删除申请</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. 为什么本节称为编排层？</summary><p class="answer">因为它主要负责把多个已存在的纯函数按正确顺序串起来，不复制下层业务规则。</p></details>
+      <details><summary>2. 为什么 practice session 返回中间产物？</summary><p class="answer">中间产物能支持调试和复盘，读者可以追溯 report 来自哪些 samples、findings、cards 和 summary。</p></details>
+      <details><summary>3. 为什么 validation 失败时不渲染报告？</summary><p class="answer">报告会给人可信感。坏 summary 若被渲染，会把错误数据包装成正式复盘材料。</p></details>
+      <details><summary>4. 为什么不读取全局 counter？</summary><p class="answer">全局 counter 会随测试或运行顺序变化，教学练习需要固定、可重复、可测试的样本。</p></details>
+      <details><summary>5. 生产环境如何升级这个 practice session？</summary><p class="answer">可引入 workflow、数据库批次、用户身份、题库版本、任务状态、权限控制和审计日志。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：什么是编排层，为什么它不应该写业务规则？</summary><p class="answer">编排层负责连接多个业务能力并控制调用顺序。若它复制业务规则，会形成多个事实源，导致维护和测试成本上升。</p></details>
+      <details><summary>面试题 2：如何设计可复盘的训练会话对象？</summary><p class="answer">应同时返回关键中间产物和最终报告，包括输入样本、解释、题卡、答案键、评分汇总、校验结果和展示文本。</p></details>
+      <details><summary>面试题 3：为什么教学流水线适合纯函数？</summary><p class="answer">纯函数可复现、易测试、无外部状态依赖，特别适合 GitHub 离线课程和新手调试。</p></details>
+      <details><summary>面试题 4：生产 workflow 与本节纯函数编排有什么差异？</summary><p class="answer">生产 workflow 还要处理持久化、幂等、失败重试、权限、审计、并发和跨服务调用，本节只保留核心数据流。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0071-provider-metrics-grading-summary-validation.html">上一课：Provider Metrics Grading Summary Validation</a>
+        <a href="../reference/0072-provider-metrics-practice-session-package-cheatsheet.html">查看速查</a>
+        <a href="./0073-provider-metrics-practice-session-markdown.html">下一课：Provider Metrics Practice Session Markdown</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>
