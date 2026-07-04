@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Provider Metrics Runbook</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="文档导航">
+      <span class="nav-title">Provider Metrics Runbook</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./provider-metrics-index.html">文档入口</a>
+        <a href="../lessons/0062-provider-metrics-runbook-checklist.html">回到第 62 课</a>
+        <a href="./0062-provider-metrics-runbook-checklist-cheatsheet.html">第 62 课速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Runbook</p>
+      <h1>Provider Metrics 排障清单</h1>
+      <p class="lead">这是一张教学项目里的排障 runbook：看到 provider prediction metrics 变化时，先确认观测入口，再按 outcome 分类定位原因。当前指标是 teaching signal, not a paging alert。</p>
+    </header>
+
+    <section>
+      <h2>1. 观测入口</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>入口</th>
+            <th>看什么</th>
+            <th>什么时候用</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>GET /provider/metrics</code></td>
+            <td>JSON snapshot，方便手工检查 labels 和 count。</td>
+            <td>课堂实验、测试排查、确认某个 outcome 是否出现。</td>
+          </tr>
+          <tr>
+            <td><code>GET /provider/metrics/prometheus</code></td>
+            <td><code>provider_prediction_total</code> 的 Prometheus text-style rendering。</td>
+            <td>观察 HELP、TYPE、label 格式和 text/plain export 形状。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>2. Outcome 排查表</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>outcome</th>
+            <th>通常说明</th>
+            <th>下一步</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>success</code></td>
+            <td>provider prediction 请求完成并返回有效响应。</td>
+            <td>确认成功样本是否和预期测试或请求数量一致。</td>
+          </tr>
+          <tr>
+            <td><code>retry_scheduled</code></td>
+            <td>出现 timeout、request error、429 或临时 5xx，系统准备重试。</td>
+            <td>看 <code>failure_category</code>、<code>status_code</code> 和 retry delay log。</td>
+          </tr>
+          <tr>
+            <td><code>retry_exhausted</code></td>
+            <td>可重试失败已经用完最大尝试次数。</td>
+            <td>确认 <code>max_attempts</code>、provider 可用性和最后一次错误类别。</td>
+          </tr>
+          <tr>
+            <td><code>fail_fast</code></td>
+            <td>非重试型 HTTP 错误或 provider 响应体无效。</td>
+            <td>区分 <code>non_retryable_http_status</code> 与 <code>invalid_response</code>。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>3. 五步排查流程</h2>
+      <ol>
+        <li>先读取 <code>/provider/metrics</code>，确认 snapshot 是否为空。</li>
+        <li>按 <code>outcome</code> 分组，先看是否只有 <code>success</code>，再看失败 outcome。</li>
+        <li>失败时读取 <code>failure_category</code>、<code>error_code</code> 和 <code>status_code</code>。</li>
+        <li>如果是 retry 相关 outcome，再回看 retry scheduled、retry exhausted 和 fail-fast 日志测试。</li>
+        <li>需要检查导出格式时，再读取 <code>/provider/metrics/prometheus</code>，确认 text export 和 label 转义。</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>4. 相关测试</h2>
+      <ul>
+        <li><a href="../tests/test_provider_http.py"><code>tests/test_provider_http.py</code></a>：保护 outcome label、counter、snapshot、text rendering、retry/fail-fast 分类。</li>
+        <li><a href="../tests/test_ai_client_dependency.py"><code>tests/test_ai_client_dependency.py</code></a>：保护 provider metrics endpoint 在集成路径里的行为和测试隔离。</li>
+        <li><a href="../tests/test_course_docs_contract.py"><code>tests/test_course_docs_contract.py</code></a>：保护本 runbook 必须保留的排障入口和 outcome 分类。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>5. 不要误用</h2>
+      <ul>
+        <li>当前 counter 是进程内教学实现，不代表生产全局计数。</li>
+        <li>当前 runbook 是学习排障顺序，不是值班升级策略。</li>
+        <li>看到 <code>retry_scheduled</code> 不等于用户请求最终失败，它只说明发生过一次可重试失败。</li>
+        <li>看到 <code>fail_fast</code> 时不要盲目增加重试次数，先确认错误是不是本来就不该重试。</li>
+      </ul>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="文档底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./provider-metrics-index.html">回到文档入口</a>
+        <a href="../lessons/0062-provider-metrics-runbook-checklist.html">学习第 62 课</a>
+        <a href="./0062-provider-metrics-runbook-checklist-cheatsheet.html">查看第 62 课速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

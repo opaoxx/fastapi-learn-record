@@ -683,3 +683,57 @@ Continue with Lesson 0062: Provider Metrics Runbook Checklist. Suggested scope:
 ### Blockers
 
 - No project blocker found.
+
+## 2026-07-04 Run: Lesson 0062 Provider Metrics Runbook Checklist
+
+### Completed
+
+- Continued from Lesson 0061 in the current 3-lesson batch.
+- Completed Lesson 0062: Provider Metrics Runbook Checklist.
+- Added `reference/provider-metrics-runbook.html` as a durable troubleshooting checklist for provider metrics endpoints, outcomes, failure labels, and related tests.
+- Expanded `tests/test_course_docs_contract.py` with runbook contract tests that protect required endpoints, metric name, outcome names, warning text, and traceability links.
+- Added Reference 0062 and updated course index/navigation from Lesson 0061 and Reference 0061.
+- Updated `reference/provider-metrics-index.html` to point readers from the documentation index to the runbook.
+- Updated `NOTES.md` and added `learning-records/0053-provider-metrics-runbook-checklist.md`.
+- Current 3-lesson continuation batch has completed 2 of 3 lessons: 0061 and 0062.
+
+### Files touched
+
+- `tests/test_course_docs_contract.py`
+- `reference/provider-metrics-index.html`
+- `reference/provider-metrics-runbook.html`
+- `lessons/0061-provider-metrics-documentation-index.html`
+- `lessons/0062-provider-metrics-runbook-checklist.html`
+- `reference/0061-provider-metrics-documentation-index-cheatsheet.html`
+- `reference/0062-provider-metrics-runbook-checklist-cheatsheet.html`
+- `index.html`
+- `NOTES.md`
+- `learning-records/0053-provider-metrics-runbook-checklist.md`
+- `COURSE_PROGRESS.md`
+
+### Token budget and split decision
+
+Estimated scope before writing: one complete course slice focused on turning provider metrics into an operational runbook, with one durable runbook page, two small documentation contract tests, one full lesson, one quick reference, navigation, and progress records.
+
+Reason for split: runbook structure is a complete slice. The next lesson should separately create scenario fixtures or predictable sample data so learners can practice the runbook against concrete metric states without mixing scenario generation into the checklist lesson.
+
+### Verification
+
+- Ran `.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q`
+- Result: 4 passed.
+- Ran `.\.venv\Scripts\python.exe -m pytest -q`
+- Result: 81 passed, 1 existing Starlette/FastAPI TestClient deprecation warning.
+- Ran `git diff --check`
+- Result: no whitespace errors; Git reported normal Windows LF-to-CRLF working-copy warnings.
+
+### Next task
+
+Continue with Lesson 0063: Provider Metrics Scenario Fixtures. Suggested scope:
+
+- Create predictable sample scenarios for success, retry scheduled, retry exhausted, and fail-fast metrics.
+- Use the scenarios to make the runbook easier to practice and verify.
+- After Lesson 0063, save a 3/3 checkpoint for the current batch.
+
+### Blockers
+
+- No project blocker found.

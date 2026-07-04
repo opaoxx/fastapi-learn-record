@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Provider Metrics Runbook Checklist Cheat Sheet</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="速查表导航">
+      <span class="nav-title">Reference 0062</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="../lessons/0062-provider-metrics-runbook-checklist.html">回到第 62 课</a>
+        <a href="./0061-provider-metrics-documentation-index-cheatsheet.html">上一张速查</a>
+        <a href="./provider-metrics-runbook.html">Runbook</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Reference 0062</p>
+      <h1>Provider Metrics Runbook Checklist 速查</h1>
+      <p class="lead">先看入口，再按 outcome 分支排查，最后追溯日志和测试。</p>
+    </header>
+
+    <h2>一句话模型</h2>
+    <blockquote>
+      <p>metrics 告诉你发生了什么；runbook 告诉你下一步查什么。</p>
+    </blockquote>
+
+    <h2>观测入口</h2>
+    <ul>
+      <li><code>GET /provider/metrics</code>：优先用于人工排查 JSON snapshot。</li>
+      <li><code>GET /provider/metrics/prometheus</code>：用于检查 <code>provider_prediction_total</code> 的文本导出形状。</li>
+    </ul>
+
+    <h2>Outcome 判断</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>outcome</th>
+          <th>下一步</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>success</code></td>
+          <td>确认成功样本是否符合请求量。</td>
+        </tr>
+        <tr>
+          <td><code>retry_scheduled</code></td>
+          <td>看失败类别、状态码和 retry delay log。</td>
+        </tr>
+        <tr>
+          <td><code>retry_exhausted</code></td>
+          <td>确认最大尝试次数、provider 可用性和最终错误。</td>
+        </tr>
+        <tr>
+          <td><code>fail_fast</code></td>
+          <td>区分非重试 HTTP 错误和无效响应体。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>五步流程</h2>
+    <ol>
+      <li>读 <code>/provider/metrics</code>。</li>
+      <li>按 <code>outcome</code> 分组。</li>
+      <li>失败时看 <code>failure_category</code>、<code>error_code</code>、<code>status_code</code>。</li>
+      <li>retry 相关时回看日志和 provider HTTP 测试。</li>
+      <li>需要确认导出格式时读 <code>/provider/metrics/prometheus</code>。</li>
+    </ol>
+
+    <h2>测试命令</h2>
+    <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q</code></pre>
+
+    <h2>常见误判</h2>
+    <ul>
+      <li><code>retry_scheduled</code> 不等于最终失败。</li>
+      <li><code>fail_fast</code> 不应默认靠增加重试解决。</li>
+      <li>教学 counter 不是生产全局指标。</li>
+      <li>只看 count 不看 label 会丢掉原因。</li>
+    </ul>
+
+    <footer>
+      来源：<a href="https://prometheus.io/docs/practices/instrumentation/">Prometheus instrumentation practices</a>、
+      <a href="https://prometheus.io/docs/practices/alerting/">Prometheus alerting practices</a>、
+      <a href="https://sre.google/sre-book/monitoring-distributed-systems/">Google SRE Book - Monitoring Distributed Systems</a>。
+    </footer>
+
+    <nav class="course-nav bottom" aria-label="速查表底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="../lessons/0062-provider-metrics-runbook-checklist.html">回到第 62 课</a>
+        <a href="./0061-provider-metrics-documentation-index-cheatsheet.html">上一张速查</a>
+        <a href="./provider-metrics-runbook.html">打开 Runbook</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

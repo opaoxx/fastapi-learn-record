@@ -58,3 +58,30 @@ def test_provider_metrics_documentation_index_links_learning_and_tests() -> None
     assert "../lessons/0061-provider-metrics-documentation-index.html" in parser.links
     assert "../tests/test_provider_http.py" in parser.links
     assert "../tests/test_openapi_contract.py" in parser.links
+
+
+def test_provider_metrics_runbook_lists_investigation_contract() -> None:
+    runbook = Path("reference/provider-metrics-runbook.html")
+
+    parser = parse_html(runbook)
+
+    assert "/provider/metrics" in parser.text
+    assert "/provider/metrics/prometheus" in parser.text
+    assert "provider_prediction_total" in parser.text
+    assert "success" in parser.text
+    assert "retry_scheduled" in parser.text
+    assert "retry_exhausted" in parser.text
+    assert "fail_fast" in parser.text
+    assert "teaching signal, not a paging alert" in parser.text
+
+
+def test_provider_metrics_runbook_links_docs_lessons_and_tests() -> None:
+    runbook = Path("reference/provider-metrics-runbook.html")
+
+    parser = parse_html(runbook)
+
+    assert "./provider-metrics-index.html" in parser.links
+    assert "../lessons/0062-provider-metrics-runbook-checklist.html" in parser.links
+    assert "../tests/test_provider_http.py" in parser.links
+    assert "../tests/test_ai_client_dependency.py" in parser.links
+    assert "../tests/test_course_docs_contract.py" in parser.links

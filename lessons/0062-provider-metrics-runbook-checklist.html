@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0062 - Provider Metrics Runbook Checklist</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0062</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0061-provider-metrics-documentation-index.html">上一课</a>
+        <a href="../reference/0062-provider-metrics-runbook-checklist-cheatsheet.html">本课速查</a>
+        <a href="../reference/provider-metrics-runbook.html">Runbook</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Lesson 0062</p>
+      <h1>Provider Metrics Runbook Checklist：看到指标异常时按什么顺序排查</h1>
+      <p class="lead">上一课把 provider metrics 整理成文档入口。本课继续往前走一步：把“看到指标变化后怎么查”整理成 runbook。runbook 不是新功能，而是把 endpoint、label、日志、测试和边界说明组织成一套排查动作。</p>
+    </header>
+
+    <section>
+      <h2>0. 本节学习目标</h2>
+      <ul>
+        <li>理解 runbook 和普通文档的区别：runbook 关注操作顺序和判断分支。</li>
+        <li>学会用 <code>success</code>、<code>retry_scheduled</code>、<code>retry_exhausted</code>、<code>fail_fast</code> 四类 outcome 定位 provider prediction 状态。</li>
+        <li>学会把 metrics endpoint、Prometheus text export、日志测试和 endpoint 测试串成一条排障路径。</li>
+        <li>学会用轻量文档测试保护 runbook 不能漏掉关键 outcome 和入口。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>1. 背景：指标不是答案，排查顺序才是答案</h2>
+      <p>很多初学者看到 metrics 后会直接问：“这个数字是不是异常？”但后端排障里更重要的问题通常是：“我下一步应该查什么？”</p>
+      <p>例如 <code>provider_prediction_total{outcome="retry_scheduled"}</code> 变多，它不一定代表最终请求失败。它只说明系统曾经遇到可重试失败，并安排过重试。真正要判断影响，还要继续看是否出现 <code>retry_exhausted</code>，是否仍有 <code>success</code>，以及失败类别是 timeout、request error、429 还是 5xx。</p>
+      <p>所以本课新增 <a href="../reference/provider-metrics-runbook.html"><code>reference/provider-metrics-runbook.html</code></a>：它不是再解释一遍 metrics，而是给出“看到什么、下一步看什么”的操作清单。</p>
+    </section>
+
+    <section class="callout">
+      <h2>2. 核心心智模型：runbook 是条件分支表</h2>
+      <p>文档入口回答“资料在哪里”；runbook 回答“现在先做哪一步”。一个好的 runbook 至少要包含：</p>
+      <ol>
+        <li>观测入口：去哪儿看，例如 <code>/provider/metrics</code>。</li>
+        <li>判断字段：看哪些 label，例如 <code>outcome</code> 和 <code>failure_category</code>。</li>
+        <li>分支动作：不同 outcome 下一步做什么。</li>
+        <li>边界提醒：当前信号能说明什么，不能说明什么。</li>
+        <li>验证来源：哪些测试保护了这些判断。</li>
+      </ol>
+      <p>这也是为什么 runbook 比普通说明更像“调试脚本”：它把人的排查动作固定成可重复流程。</p>
+    </section>
+
+    <section>
+      <h2>3. 本课新增的 runbook 页面</h2>
+      <p>本课新增的 <code>reference/provider-metrics-runbook.html</code> 包含五个部分：</p>
+      <ul>
+        <li>观测入口：JSON snapshot 和 Prometheus text-style export。</li>
+        <li>Outcome 排查表：四类 outcome 的含义和下一步。</li>
+        <li>五步排查流程：从 snapshot 到失败 label，再到日志和文本导出。</li>
+        <li>相关测试：把 runbook 判断连接到项目测试。</li>
+        <li>不要误用：强调当前指标是教学信号，不是生产 paging alert。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>4. 机制：从 endpoint 到判断分支</h2>
+      <p>排查 provider prediction metrics 时，第一步应该看 JSON snapshot，因为它最容易被人读：</p>
+      <pre><code>GET /provider/metrics</code></pre>
+      <p>它返回的每个 sample 都有 <code>labels</code> 和 <code>count</code>。这时先不要急着看 count 大不大，而是先看 <code>outcome</code>：</p>
+      <ul>
+        <li><code>success</code>：请求成功完成。</li>
+        <li><code>retry_scheduled</code>：某次尝试失败，但系统准备继续重试。</li>
+        <li><code>retry_exhausted</code>：可重试失败用完最大尝试次数。</li>
+        <li><code>fail_fast</code>：遇到不该重试的错误，或者 provider 返回结构无效。</li>
+      </ul>
+      <p>只有当 outcome 指向失败路径时，才继续看 <code>failure_category</code>、<code>error_code</code> 和 <code>status_code</code>。这能避免把所有失败都混成“provider 挂了”。</p>
+    </section>
+
+    <section>
+      <h2>5. 代码精读一：runbook 文档契约测试</h2>
+      <pre><code>def test_provider_metrics_runbook_lists_investigation_contract() -> None:
+    runbook = Path("reference/provider-metrics-runbook.html")
+
+    parser = parse_html(runbook)
+
+    assert "/provider/metrics" in parser.text
+    assert "/provider/metrics/prometheus" in parser.text
+    assert "provider_prediction_total" in parser.text
+    assert "success" in parser.text
+    assert "retry_scheduled" in parser.text
+    assert "retry_exhausted" in parser.text
+    assert "fail_fast" in parser.text
+    assert "teaching signal, not a paging alert" in parser.text</code></pre>
+      <p>这条测试保护的是 runbook 的最小排障能力。如果页面漏掉四类 outcome 中任何一个，读者就可能在真实排查时少走一个分支。</p>
+    </section>
+
+    <section>
+      <h2>6. 代码精读二：runbook 必须能追溯到测试</h2>
+      <pre><code>def test_provider_metrics_runbook_links_docs_lessons_and_tests() -> None:
+    runbook = Path("reference/provider-metrics-runbook.html")
+
+    parser = parse_html(runbook)
+
+    assert "./provider-metrics-index.html" in parser.links
+    assert "../lessons/0062-provider-metrics-runbook-checklist.html" in parser.links
+    assert "../tests/test_provider_http.py" in parser.links
+    assert "../tests/test_ai_client_dependency.py" in parser.links
+    assert "../tests/test_course_docs_contract.py" in parser.links</code></pre>
+      <p>runbook 给的是操作建议，所以必须能追溯到测试。否则它很容易退化成“看起来有道理，但没人知道是否还和项目一致”的说明。</p>
+    </section>
+
+    <section>
+      <h2>7. 排查示例：看到 retry_scheduled 变多</h2>
+      <ol>
+        <li>先打开 <code>/provider/metrics</code>，找到 <code>outcome="retry_scheduled"</code> 的 sample。</li>
+        <li>看 <code>failure_category</code>。如果是 <code>retryable_http_status</code>，继续看 <code>status_code</code> 是否为 429、500、502、503 或 504。</li>
+        <li>看是否也出现 <code>retry_exhausted</code>。如果没有，说明重试可能已经恢复成功。</li>
+        <li>对照 retry scheduled log 测试，确认 delay、attempt、retry reason 是否符合预期。</li>
+        <li>如果需要检查导出格式，再打开 <code>/provider/metrics/prometheus</code> 看文本 label 是否正确。</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>8. 动手实验</h2>
+      <p>运行文档契约测试：</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q</code></pre>
+      <p>预期看到 4 个测试通过。然后可以临时从 runbook 页面删除 <code>retry_exhausted</code>，再次运行测试。测试失败说明 runbook 漏掉了一个关键排障分支。</p>
+    </section>
+
+    <section>
+      <h2>9. 常见错误</h2>
+      <ul>
+        <li>把 <code>retry_scheduled</code> 当成最终失败，忽略后续成功。</li>
+        <li>只看 count，不看 label，导致无法区分 timeout、HTTP 503 和 invalid response。</li>
+        <li>看到 <code>fail_fast</code> 就增加重试次数，但 fail-fast 往往说明错误不该重试。</li>
+        <li>把教学用 in-process counter 当成生产全局指标。</li>
+        <li>runbook 不链接测试，导致排查建议长期漂移。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>10. 面试视角：如何解释 runbook</h2>
+      <blockquote>
+        <p>我会把 runbook 解释成一张可重复执行的排查分支表。指标本身只告诉我们发生过什么，runbook 告诉我们下一步该查哪个字段、哪个日志、哪个测试。比如 provider metrics 里我会先看 JSON snapshot，再按 outcome 区分 success、retry_scheduled、retry_exhausted 和 fail_fast，最后结合 failure_category、status_code 和相关测试判断是临时失败、重试耗尽、非重试错误还是响应结构错误。</p>
+      </blockquote>
+    </section>
+
+    <section>
+      <h2>11. 记忆练习</h2>
+      <details>
+        <summary>1. runbook 和 documentation index 的区别是什么？</summary>
+        <p class="answer">documentation index 告诉读者资料在哪里；runbook 告诉读者按什么顺序排查、遇到不同信号下一步做什么。</p>
+      </details>
+      <details>
+        <summary>2. 为什么看到 retry_scheduled 不能直接判断最终失败？</summary>
+        <p class="answer">因为 retry_scheduled 只表示某次尝试安排了重试，后续请求可能成功；需要继续看 retry_exhausted 和 success。</p>
+      </details>
+      <details>
+        <summary>3. fail_fast 出现时为什么不应该先增加重试次数？</summary>
+        <p class="answer">fail_fast 通常代表非重试型 HTTP 错误或无效响应体，盲目重试可能放大错误而不是修复问题。</p>
+      </details>
+      <details>
+        <summary>4. runbook 文档测试保护的重点是什么？</summary>
+        <p class="answer">保护关键入口、指标名、四类 outcome、边界提醒和测试链接，避免排查清单失去可执行性。</p>
+      </details>
+    </section>
+
+    <section>
+      <h2>12. 本节总结</h2>
+      <p>本课把 provider metrics 从“可以被读取的指标”推进到“可以按步骤排查的信号”。你现在应该能解释：为什么要先看 outcome，再看 failure_category、error_code 和 status_code；为什么 retry_scheduled 不等于最终失败；为什么 fail_fast 不应该默认重试；以及为什么 runbook 也值得被测试保护。</p>
+      <p>下一节建议继续做 Provider Metrics Scenario Fixtures：用少量固定场景生成可预测的 metrics 样本，让 runbook 能配合更具体的实验数据。</p>
+      <p>推荐主资源：<a href="https://prometheus.io/docs/practices/instrumentation/">Prometheus instrumentation practices</a>、<a href="https://prometheus.io/docs/practices/alerting/">Prometheus alerting practices</a>、<a href="https://sre.google/sre-book/monitoring-distributed-systems/">Google SRE Book - Monitoring Distributed Systems</a>。</p>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">回到课程目录</a>
+        <a href="./0061-provider-metrics-documentation-index.html">上一课：Provider Metrics Documentation Index</a>
+        <a href="../reference/0062-provider-metrics-runbook-checklist-cheatsheet.html">查看本课速查</a>
+        <a href="../reference/provider-metrics-runbook.html">打开 Runbook</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>
