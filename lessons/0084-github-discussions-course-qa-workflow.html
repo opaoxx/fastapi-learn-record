@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0084 - GitHub Discussions Course QA Workflow</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0084</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0083-github-projects-board-workflow.html">上一课</a>
+        <a href="./0085-github-release-notes-tags-workflow.html">下一课</a>
+        <a href="../reference/0084-github-discussions-course-qa-workflow-cheatsheet.html">速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0084 GitHub Discussions：把学习问答从 issue 队列中分离出来</h1>
+      <p class="lead">本节新增 <code>.github/DISCUSSIONS.md</code>，定义课程仓库的 GitHub Discussions 分类、issue 与 discussion 分流规则、回答质量清单和转 issue 流程。Issues 追踪可执行仓库工作，Discussions 承载学习问答、长文本解释、经验沉淀和开放讨论。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>GitHub Discussions Course Q&A Workflow
+├── 定位
+│   ├── Issue: 可执行维护任务
+│   ├── Discussion: 学习问答与开放讨论
+│   ├── PR: 修复交付与验证证据
+│   └── Projects: 执行队列可视化
+├── 推荐分类
+│   ├── Q&A: 课程、代码、错误、概念问题
+│   ├── Study Notes: 学习总结与复盘记录
+│   ├── Ideas: 课程选题与流程改进建议
+│   ├── Show and Tell: 学员项目与实现展示
+│   └── Announcements: 维护者更新
+├── 分流规则
+│   ├── 可复现、可验收、会改文件 -> Issue
+│   ├── 探索性、解释性、开放式 -> Discussion
+│   ├── discussion 发现仓库工作 -> 转 issue
+│   └── issue 修复完成 -> PR + CI + review
+├── 回答质量
+│   ├── 链接 lesson/reference/source/test
+│   ├── 先讲原理再给结论
+│   ├── 区分教学 demo 和生产规范
+│   ├── 暴露仓库工作时创建 issue
+│   └── Q&A 解决后再标记答案
+└── 工程边界
+    ├── Discussions 是远程 GitHub 功能
+    ├── 本地文档记录分类与运营规则
+    ├── 不能替代 issue triage
+    └── 不能绕过 CI、review、branch protection</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>开源仓库的输入并不全是任务。有些输入是“这里断了”，需要 issue；有些输入是“为什么这样设计”，需要讨论；还有些输入是“我做了一个扩展项目”，适合展示和沉淀。若所有内容都进入 issue 队列，维护者会把可执行任务和学习交流混在一起，triage 成本快速上升。</p>
+      <p>GitHub Discussions 的底层定位是社区知识库，而不是任务跟踪器。它支持分类、问答、长文本讨论、置顶、链接 issue/PR 等协作方式。对课程仓库而言，它能承接新手问题、学习笔记、课程建议和项目展示，避免 issue 被“怎么看”“为什么”“我想法是”这类开放文本淹没。</p>
+      <p>Discussions 与 Issues 的核心区别是“是否已经可定义 done”。如果问题有复现步骤、影响文件、验收标准和修改目标，就进入 issue；如果问题仍在探索、需要解释、需要多人交流，先进入 discussion。Discussion 的价值在于让问题在变成任务之前获得足够上下文。</p>
+      <table>
+        <thead><tr><th>入口</th><th>适合内容</th><th>完成定义</th><th>后续动作</th></tr></thead>
+        <tbody>
+          <tr><td>Issue</td><td>bug、文档缺陷、明确课程补强、流程缺陷。</td><td>测试、文档、导航、记录同步完成。</td><td>triage、project、PR、CI、review。</td></tr>
+          <tr><td>Discussion</td><td>学习问答、思路讨论、学习笔记、项目展示。</td><td>问题得到解释或沉淀为知识。</td><td>标记答案，必要时转 issue。</td></tr>
+          <tr><td>Pull Request</td><td>已经实现的代码或文档变更。</td><td>检查通过并被 review 接受。</td><td>合并并关闭相关 issue。</td></tr>
+          <tr><td>Projects</td><td>已接受任务的执行可视化。</td><td>状态进入 Done。</td><td>复盘、发布说明、进度记录。</td></tr>
+        </tbody>
+      </table>
+      <p>课程仓库尤其需要 Discussions，因为新手问题常常不是 bug，而是认知路径还没有搭好。例如“为什么 TestClient 能直接调用 app”“为什么 Projects 不是质量门禁”“生产环境还要加什么字段”，这些问题如果开 issue 会污染任务队列，但作为 discussion 可以沉淀为可复用解释。</p>
+      <p>Discussion 不是低质量入口。高质量回答必须链接相关课程、速查、源码或测试；必须先解释原理，再给操作建议；必须区分教学 demo 与生产规范；如果回答过程发现仓库确实缺内容，就应转成 issue。这样 discussion 才能从聊天区升级为课程知识库。</p>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code># GitHub Discussions Workflow</code></pre>
+      <p>标题定义文档职责：它记录 Discussions 的使用流程。它不创建远程 Discussions 功能，只描述维护者在 GitHub 设置中启用该功能后应采用的分类和规则。</p>
+
+      <pre><code>This document defines how the course repository should use GitHub Discussions for learner questions, long-form explanations, and community knowledge sharing.</code></pre>
+      <p>首句明确三个使用场景：learner questions、long-form explanations、community knowledge sharing。它把 Discussions 与 issue triage 区分开：这里处理学习支持，不是直接处理可执行维护任务。</p>
+
+      <pre><code>Discussions are remote GitHub configuration; this file records the categories and operating rules maintainers should reproduce.</code></pre>
+      <p>这句是工程边界声明。和 Projects 一样，Discussions 是远程 GitHub 配置，提交 Markdown 不会自动启用 Discussions，也不会自动创建分类。文档只是配置契约。</p>
+
+      <pre><code>## Purpose</code></pre>
+      <p>Purpose 先定义为什么需要 Discussions。没有目的说明时，贡献者会把讨论、bug、需求和 PR 建议混在一起，导致 issue 与 discussion 的边界失效。</p>
+
+      <pre><code>Issues track actionable maintenance work.</code></pre>
+      <p>Issue 的关键词是 actionable maintenance work。它必须能被 triage、排期、验收和关闭。若一个问题还不能定义 done，就不应急着放入 issue 队列。</p>
+
+      <pre><code>Discussions host exploratory questions, study notes, implementation ideas, and longer learner support.</code></pre>
+      <p>Discussion 的关键词是 exploratory 与 learner support。它允许问题还没完全收敛，允许长文本解释，也允许学习者分享自己的理解和项目。</p>
+
+      <pre><code>## Recommended Categories</code></pre>
+      <p>Recommended Categories 是分类模型。分类不能只按热闹程度设计，而要按维护动作设计：问答、笔记、想法、展示、公告分别对应不同处理方式。</p>
+
+      <pre><code>| Q&A | Learner questions about lessons, code, errors, or concepts. |</code></pre>
+      <p>Q&A 是课程仓库最核心分类。它承接“这段代码为什么这样写”“这个错误怎么理解”“某节课和生产有什么差异”等问题。若答案揭示真实缺陷，再转 issue。</p>
+
+      <pre><code>| Study Notes | Learner summaries, review notes, and solved practice records. |</code></pre>
+      <p>Study Notes 让学习者沉淀复习材料。优秀学习笔记可能反向暴露课程表述不清、例子不足或速查页缺项，此时再创建 documentation issue。</p>
+
+      <pre><code>| Ideas | Proposed course topics, workflow improvements, or learning route suggestions. |</code></pre>
+      <p>Ideas 处理尚未成形的课程建议。只有当建议具备验收标准、范围和维护者共识后，才应转成 lesson request 或 workflow issue。</p>
+
+      <pre><code>| Show and Tell | Learner projects, adaptations, and implementation demos. |</code></pre>
+      <p>Show and Tell 用于展示项目，不应自动变成仓库任务。只有当展示项目暴露课程缺陷或缺少生产指导时，才需要转 issue。</p>
+
+      <pre><code>| Announcements | Maintainer updates about new lessons, release checks, or repository workflow changes. |</code></pre>
+      <p>Announcements 是维护者广播入口。公告应链接具体 lesson、PR、release check 或进度记录，而不是写成无法追踪的口头通知。</p>
+
+      <pre><code>## Issue vs Discussion Decision Rules</code></pre>
+      <p>Decision Rules 是本节核心。它告诉贡献者什么时候开 issue，什么时候发 discussion。没有这张表，两个入口会互相污染。</p>
+
+      <pre><code>| The work is reproducible, scoped, and should change repository files. | The topic is exploratory, open-ended, or primarily educational. |</code></pre>
+      <p>这行用三个条件定义 issue：reproducible、scoped、should change repository files。只要缺少这些条件，就更适合先 discussion。</p>
+
+      <pre><code>| Maintainers can define done. | Maintainers need conversation before defining done. |</code></pre>
+      <p>是否能 define done 是最实用判断标准。能定义完成条件，走 issue；需要先交流才能定义完成条件，走 discussion。</p>
+
+      <pre><code>## Answer Quality Checklist</code></pre>
+      <p>回答质量清单把 discussion 从随意聊天提升为课程知识库。每条高质量回答都应能帮助后来的学习者复用，而不是只解决当前一句追问。</p>
+
+      <pre><code>Link the relevant lesson, reference page, source file, or test file.</code></pre>
+      <p>链接上下文是回答质量底线。课程仓库内容多，回答若不绑定 lesson/reference/source/test，后续学习者无法沿着知识链复盘。</p>
+
+      <pre><code>Explain the principle before giving a shortcut answer.</code></pre>
+      <p>先讲原理再给捷径，符合本课程“期末复习干货 + 技术博文”定位。只给命令会让学习者能跑但不懂，无法应试、面试或写项目。</p>
+
+      <pre><code>Distinguish teaching demo behavior from production behavior.</code></pre>
+      <p>教学 demo 与生产规范必须分开。很多新手误区来自把教学简化实现直接当生产方案，discussion 回答要主动补这条边界。</p>
+
+      <pre><code>If the discussion reveals repository work, open or link an issue.</code></pre>
+      <p>这句定义转化机制。Discussion 一旦发现可执行工作，例如断链、缺少章节、代码解释错误，就不应停留在讨论区，而应转 issue 进入 triage。</p>
+
+      <pre><code>## Conversion Flow</code></pre>
+      <p>Conversion Flow 描述 discussion 到 issue 的单向升级路径。它让开放讨论不会丢失，也不会直接绕过 issue 模板、标签和 Projects。</p>
+
+      <pre><code>discussion question
+  -> answer with lesson/source/test links
+  -> identify whether repository work exists
+  -> if yes:
+       open issue with template</code></pre>
+      <p>流程先回答学习问题，再判断是否存在仓库工作。若存在，必须用 issue template 重新结构化证据，而不是只在 discussion 里说“以后改”。</p>
+
+      <pre><code>link discussion and issue both ways
+  -> triage labels
+  -> project board
+  -> pull request</code></pre>
+      <p>双向链接保证追踪链完整。Discussion 保存背景，issue 保存任务，Projects 保存执行状态，PR 保存修复。任何一环孤立都会降低维护可追溯性。</p>
+
+      <pre><code>## Production Notes</code></pre>
+      <p>Production Notes 说明启用、隐私和治理边界。Discussions 是公开协作入口，不应用来粘贴密钥、私有日志或个人数据，也不能绕过 CI 和 review。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>Learner has a question
+  -> choose Discussions instead of Issues
+  -> select category:
+       Q&A / Study Notes / Ideas / Show and Tell / Announcements
+  -> write question with lesson, code, error, or study context
+  -> maintainer answers:
+       link lesson/reference/source/test
+       explain principle
+       distinguish demo vs production
+  -> if repository work is found:
+       open issue with template
+       link discussion and issue
+       triage labels
+       project board
+       pull request
+  -> if answer resolves question:
+       mark accepted answer in Q&A</code></pre>
+      <p>该流程的关键是“先判断输入性质”。Discussion 不是 issue 的低配版，而是 issue 前的知识澄清区。它允许问题变清楚后再进入 issue，也允许问题只作为知识沉淀结束。</p>
+      <table>
+        <thead><tr><th>输入场景</th><th>推荐入口</th><th>原因</th><th>可能升级</th></tr></thead>
+        <tbody>
+          <tr><td>“Lesson 0083 里为什么 Projects 不是质量门禁？”</td><td>Q&A</td><td>需要解释概念，不一定改仓库。</td><td>若课程解释不清，转 docs issue。</td></tr>
+          <tr><td>“index.html 的 0083 链接打不开。”</td><td>Issue</td><td>可复现、可修复、可验收。</td><td>进入 triage 和 PR。</td></tr>
+          <tr><td>“我整理了一份 0077-0083 复习笔记。”</td><td>Study Notes</td><td>适合沉淀学习材料。</td><td>若发现缺项，转 docs issue。</td></tr>
+          <tr><td>“能不能增加 GitHub Discussions 一课？”</td><td>Ideas</td><td>先讨论范围和必要性。</td><td>收敛后转 lesson request。</td></tr>
+          <tr><td>“我基于课程做了自己的 FastAPI 小项目。”</td><td>Show and Tell</td><td>适合展示与交流。</td><td>若暴露课程缺陷，转 issue。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>Discussions 与 Issues</td><td>都是提问题，随便用。</td><td>Issue 面向可执行任务，Discussion 面向解释、交流和知识沉淀。</td></tr>
+          <tr><td>Q&A 与 bug report</td><td>报错就一定是 Q&A。</td><td>可复现且需要改文件的错误应开 issue；概念理解和学习问题才走 Q&A。</td></tr>
+          <tr><td>Ideas 与 lesson request</td><td>想加课就直接开 issue。</td><td>未收敛的想法先 discussion；有范围和验收标准后再 lesson request。</td></tr>
+          <tr><td>Announcements</td><td>公告可以替代进度记录。</td><td>公告用于广播，应链接 PR、lesson、COURSE_PROGRESS 或 release note。</td></tr>
+          <tr><td>Accepted answer</td><td>有回复就标答案。</td><td>只有直接解决提问并提供足够上下文时才标记答案。</td></tr>
+          <tr><td>隐私边界</td><td>Discussion 可以贴任何日志。</td><td>公开仓库 discussion 不能贴密钥、私有日志、个人数据或敏感信息。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>表现</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>GitHub 未启用 Discussions。</td><td>仓库有文档，但页面没有 Discussions 标签。</td><td>在 GitHub repository settings 中启用 Discussions，并按文档创建分类。</td></tr>
+          <tr><td>问题入口分流不清。</td><td>bug 进 discussion，学习问题进 issue。</td><td>在 README/DEVELOPMENT 链接分流规则，回答时主动转正确入口。</td></tr>
+          <tr><td>回答只给命令。</td><td>学习者能复制执行但不懂原理。</td><td>先解释底层机制，再给命令或修复建议。</td></tr>
+          <tr><td>讨论发现缺陷但不转 issue。</td><td>问题被聊天淹没，后续无人修复。</td><td>一旦具备可执行工作，立即开 issue 并双向链接。</td></tr>
+          <tr><td>分类过多。</td><td>新手不知道该发到哪里。</td><td>先保留 Q&A、Study Notes、Ideas、Show and Tell、Announcements 五类。</td></tr>
+          <tr><td>公告缺少链接。</td><td>维护更新不可追溯。</td><td>公告必须链接 lesson、reference、PR、issue、COURSE_PROGRESS 或测试结果。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学仓库</th><th>生产仓库</th></tr></thead>
+        <tbody>
+          <tr><td>讨论目标</td><td>学习问答、复习笔记、课程建议、项目展示。</td><td>用户社区、产品反馈、RFC、生态支持、公告。</td></tr>
+          <tr><td>分类数量</td><td>五类高频入口，降低新手选择成本。</td><td>可能按产品线、版本、语言、平台、RFC、support 分细类。</td></tr>
+          <tr><td>回答标准</td><td>强调原理、课程链接、demo vs production。</td><td>还要考虑 SLA、支持范围、合规、客户影响和安全边界。</td></tr>
+          <tr><td>转 issue 条件</td><td>发现课程缺项、断链、代码错误、流程缺陷。</td><td>发现产品缺陷、需求承诺、客户阻塞、合规或安全风险。</td></tr>
+          <tr><td>治理能力</td><td>文档规则 + 人工维护。</td><td>增加 moderation、模板、机器人、标签同步、社区准则。</td></tr>
+          <tr><td>隐私要求</td><td>避免密钥、私有日志、个人数据。</td><td>严格的 PII、客户数据、漏洞披露、安全响应流程。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. Discussions 在课程仓库中的核心职责是什么？</summary><p class="answer">承载学习问答、长文本解释、学习笔记、课程想法和项目展示，避免开放式问题污染 issue 任务队列。</p></details>
+      <details><summary>2. 什么时候应该从 Discussion 转 Issue？</summary><p class="answer">当讨论发现可复现缺陷、明确文档缺项、课程补强点或流程问题，并且能够定义验收标准时，应转 issue。</p></details>
+      <details><summary>3. 高质量 Q&A 回答至少应包含什么？</summary><p class="answer">应链接相关 lesson、reference、source 或 test，解释底层原理，区分教学 demo 和生产规范，必要时创建或链接 issue。</p></details>
+      <details><summary>4. 为什么 Ideas 不应直接等同于 lesson request？</summary><p class="answer">Ideas 可能还没有范围和验收标准，需要先讨论收敛；lesson request 应是可执行课程任务。</p></details>
+      <details><summary>5. Discussions 能否绕过 CI 和 code review？</summary><p class="answer">不能。Discussions 只负责交流和知识沉淀，任何仓库文件变更仍必须走 issue/PR、CI、CODEOWNERS review 和 branch protection。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：如何区分 GitHub Issues 和 Discussions？</summary><p class="answer">看是否可定义 done。可复现、可验收、需要改仓库文件的问题走 Issues；探索性、解释性、开放式学习交流走 Discussions。</p></details>
+      <details><summary>面试题 2：为什么开源项目需要 Discussions？</summary><p class="answer">它能承接社区问答、想法、展示和经验沉淀，降低 issue 队列噪声，让 issue 保持可执行任务属性。</p></details>
+      <details><summary>面试题 3：Discussion 转 Issue 时应保留哪些信息？</summary><p class="answer">应复制复现步骤、学习缺口、受影响文件、建议修复、相关 lesson/source/test 链接，并把 discussion 与 issue 双向链接。</p></details>
+      <details><summary>面试题 4：为什么公告不能替代进度记录或 release note？</summary><p class="answer">公告是通知入口，进度记录和 release note 是可追溯交付记录。公告应链接具体变更，而不是成为唯一事实来源。</p></details>
+      <details><summary>面试题 5：生产环境使用 Discussions 要额外注意什么？</summary><p class="answer">要注意隐私、客户数据、安全漏洞披露、moderation、支持范围、SLA 和社区准则，不能把公开讨论当私有支持通道。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0083-github-projects-board-workflow.html">上一课：GitHub Projects Board</a>
+        <a href="./0085-github-release-notes-tags-workflow.html">下一课：GitHub Releases</a>
+        <a href="../reference/0084-github-discussions-course-qa-workflow-cheatsheet.html">查看速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

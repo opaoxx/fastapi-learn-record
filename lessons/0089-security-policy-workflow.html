@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0089 - Security Policy Workflow</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0089</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0088-code-of-conduct-workflow.html">上一课</a>
+        <a href="./0090-license-reuse-boundary.html">下一课</a>
+        <a href="../reference/0089-security-policy-workflow-cheatsheet.html">速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0089 SECURITY：为教学仓库建立漏洞私下披露与修复闭环</h1>
+      <p class="lead">本节新增 <code>SECURITY.md</code>，把第 88 节的“不要公开贴安全细节”落成可执行安全策略：定义安全报告范围、非安全报告范围、私下报告路径、报告字段、维护者分级、修复披露流程和验证命令。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Security Policy Workflow
+├─ 定位
+│  ├─ teaching repository 也需要安全报告协议
+│  ├─ public issue 不承载 exploit detail
+│  ├─ private disclosure 保护学习者和维护者
+│  └─ security fix 仍走测试和 review
+├─ Supported Scope
+│  ├─ exposed credentials / tokens
+│  ├─ auth or authorization bypass
+│  ├─ unsafe file upload
+│  ├─ dependency or configuration risk
+│  └─ unsafe production guidance
+├─ Not Security Reports
+│  ├─ beginner concept question
+│  ├─ general best-practice suggestion
+│  ├─ hardening note without concrete risk
+│  └─ local warning without data exposure
+├─ Private Reporting
+│  ├─ GitHub private vulnerability reporting
+│  ├─ short public issue only asks contact path
+│  ├─ no secrets / logs / personal data
+│  └─ private report includes impact + affected area
+└─ Maintainer Flow
+   ├─ critical / high / medium / low
+   ├─ reproduce safely
+   ├─ patch code/docs/tests/workflow
+   ├─ run required verification
+   └─ minimal public disclosure</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>安全策略的底层目标是控制信息扩散半径。普通 bug 可以公开复现，因为公开复现能帮助协作；安全问题若公开完整攻击步骤，会把“帮助修复”变成“帮助利用”。因此安全报告必须先进入私下通道。</p>
+      <p>教学仓库不是生产服务，但仍有安全风险。学习者可能复制代码到真实项目；仓库可能误提交密钥；课程可能给出不安全生产建议；上传、鉴权、CORS、依赖配置都可能被误学误用。SECURITY.md 的作用是把这些风险纳入可处理流程。</p>
+      <p>安全报告与普通 issue 的核心区别是敏感细节。普通 issue 追求公开、完整、可复现；安全报告追求私密、最小披露、证据可检查。报告者应提供影响范围、最小复现、受影响文件和缓解建议，但不能在公开区发布可武器化细节。</p>
+      <table>
+        <thead><tr><th>入口</th><th>适用内容</th><th>是否公开细节</th><th>处理目标</th></tr></thead>
+        <tbody>
+          <tr><td>Issue</td><td>普通 bug、断链、课程错误</td><td>可以公开复现</td><td>协作修复</td></tr>
+          <tr><td>Discussion</td><td>概念问题、开放讨论</td><td>不贴敏感信息</td><td>知识沉淀</td></tr>
+          <tr><td>Security report</td><td>漏洞、密钥、隐私、可利用风险</td><td>私下披露</td><td>降低利用风险并修复</td></tr>
+          <tr><td>Code of Conduct report</td><td>骚扰、安全协作事件</td><td>私下处理</td><td>保护参与者</td></tr>
+        </tbody>
+      </table>
+      <p>生产环境安全流程通常有 SLA、漏洞赏金、CVE、embargo、专用邮箱和安全团队。本教学仓库采用轻量流程，但仍保留核心原则：私下报告、分级响应、证据保全、最小公开披露、修复后验证。</p>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code># Security Policy</code></pre>
+      <p>标题采用 GitHub 识别的安全策略文件名。根目录 <code>SECURITY.md</code> 会成为贡献者寻找漏洞披露规则的默认入口。</p>
+
+      <pre><code>This repository is a teaching project, but security reports still need a private and evidence-based workflow.</code></pre>
+      <p>这行说明教学项目不等于无安全责任。即使没有线上服务，也可能影响学习者复制实践、仓库公开内容和贡献协作安全。</p>
+
+      <pre><code>Do not publish exploit details, secrets, private logs, personal data, customer data, or working attack steps in public issues, discussions, pull requests, or comments.</code></pre>
+      <p>这是安全策略的红线。公开渠道一旦出现 exploit detail 或 secrets，就可能被搜索引擎、fork、通知邮件和第三方缓存扩散。</p>
+
+      <pre><code>## Supported Scope</code></pre>
+      <p>Supported Scope 定义哪些问题按安全流程处理。没有范围，报告者会把普通问题都当漏洞，维护者会浪费 triage 成本。</p>
+
+      <pre><code>Exposed credentials, API keys, tokens, or secret-like values committed to the repository.</code></pre>
+      <p>密钥暴露是最高频仓库安全事故。即使是教学 key，也要训练学习者形成“公开仓库不放 secrets”的习惯。</p>
+
+      <pre><code>Authentication or authorization bypass in the FastAPI teaching project.</code></pre>
+      <p>鉴权绕过属于真实安全风险。课程已有 API key、依赖注入和受保护接口，若行为与文档不一致，应走安全流程。</p>
+
+      <pre><code>Unsafe file upload behavior that could expose private data or execute unintended content.</code></pre>
+      <p>上传入口常见风险包括过大文件、路径处理、内容解析、私有数据暴露和非预期执行。本项目虽是教学实现，仍要明确边界。</p>
+
+      <pre><code>Documentation that instructs learners to use unsafe production practices.</code></pre>
+      <p>课程文档本身也可能制造安全问题。如果教程鼓励把 demo key 用到生产、公开日志或关闭鉴权，这就是教学层安全风险。</p>
+
+      <pre><code>This teaching repository does not provide a production service, hosted customer environment, bug bounty program, or guaranteed response SLA.</code></pre>
+      <p>这行定义非承诺范围。教学仓库不能承诺生产 SLA 或漏洞赏金，避免报告者产生错误预期。</p>
+
+      <pre><code>## Not Security Reports</code></pre>
+      <p>Not Security Reports 用于分流普通问题。安全流程应处理可利用风险，不应承载所有概念疑问和泛化建议。</p>
+
+      <pre><code>Beginner questions about API keys, CORS, authentication, or GitHub permissions.</code></pre>
+      <p>概念问题不等于漏洞。它们应进入 Discussion 或普通 issue，除非包含具体可利用行为或敏感信息。</p>
+
+      <pre><code>When unsure, avoid posting sensitive details publicly and ask maintainers for a private contact path.</code></pre>
+      <p>不确定时采用安全默认值：少公开，先问私下路径。这个规则能避免误把漏洞细节贴到公开区。</p>
+
+      <pre><code>## Private Reporting Workflow</code></pre>
+      <p>Private Reporting Workflow 是本节执行核心。它规定优先使用 GitHub 私密漏洞报告；没有私密通道时，只能公开请求联系路径，不能公开细节。</p>
+
+      <pre><code>Open a short public issue asking for a maintainer security contact path.</code></pre>
+      <p>这是兜底策略。公开 issue 只表达“需要安全联系路径”，不包含复现步骤、payload、密钥、日志或个人数据。</p>
+
+      <pre><code>Include the following in the private report:</code></pre>
+      <p>私下报告字段保证可处理性。没有 affected area、impact、minimal reproduction、mitigation，维护者难以分级和修复。</p>
+
+      <pre><code>Affected file, route, dependency, lesson, or GitHub workflow.</code></pre>
+      <p>该字段覆盖课程仓库的全部风险对象：源码、接口、依赖、课程文档和 GitHub 工作流。安全风险不只存在于后端代码。</p>
+
+      <pre><code>## Maintainer Triage</code></pre>
+      <p>Maintainer Triage 定义分级。分级让维护者用不同优先级处理密钥泄露、数据暴露、文档硬化和证据不足的报告。</p>
+
+      <pre><code>critical: credential exposure, public exploit path, or severe access-control bypass.</code></pre>
+      <p>critical 对应立即风险：密钥、公开利用路径或严重访问控制绕过。处理目标是快速止血、删除暴露、旋转密钥并修复。</p>
+
+      <pre><code>medium: unsafe documented practice that learners may copy into production.</code></pre>
+      <p>medium 体现教学仓库特性。即使代码不在线运行，不安全文档也可能被学习者复制到生产，因此需要修复。</p>
+
+      <pre><code>## Fix and Disclosure Flow</code></pre>
+      <p>Fix and Disclosure Flow 把安全报告转成修复链路：私下报告、分级、复现、修补、验证、合并、最小公开披露。</p>
+
+      <pre><code>Public disclosure should avoid weaponized detail.</code></pre>
+      <p>公开说明要帮助学习者修复和理解影响，而不是提供可直接攻击的细节。应说明范围、缓解、固定版本或 commit。</p>
+
+      <pre><code>## Required Verification</code></pre>
+      <p>安全修复仍需正常质量门禁。安全问题不能成为绕过测试、review、branch protection 的理由。</p>
+
+      <pre><code>Add focused tests when the fix changes behavior, validation, authentication, file handling, dependency configuration, or documented security guidance.</code></pre>
+      <p>这句要求回归保护。安全修复若没有测试，很容易在后续重构中复发。</p>
+
+      <pre><code>## Relationship to Other Documents</code></pre>
+      <p>最后把 SECURITY 接入治理体系：CODE_OF_CONDUCT 处理协作安全，CONTRIBUTING 处理正常贡献，DEVELOPMENT 处理命令，ISSUE_TRIAGE 处理普通 issue，RELEASE_PROCESS 处理发布。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>Potential vulnerability found
+  -> classify
+       concrete exploitable risk? security
+       concept question? discussion
+       normal defect? issue
+  -> choose channel
+       private vulnerability reporting if enabled
+       otherwise short public issue asking contact path
+  -> private report
+       affected area
+       impact
+       minimal reproduction
+       secrets/private data involvement
+       mitigation
+  -> maintainer triage
+       critical / high / medium / low
+  -> safe reproduction
+  -> patch
+       code / docs / tests / workflow
+  -> verification
+       provider HTTP
+       docs contract
+       full pytest
+       git diff --check
+  -> minimal disclosure
+       affected scope
+       mitigation
+       fixed commit or release</code></pre>
+      <p>该流程的关键是“通道先于细节”。在确认私密通道前，报告者不应公开 payload、密钥、日志或完整复现。维护者则要在保护信息的同时保留足够证据完成修复。</p>
+      <table>
+        <thead><tr><th>场景</th><th>入口</th><th>原因</th><th>公开区写法</th></tr></thead>
+        <tbody>
+          <tr><td>发现真实 token 被提交</td><td>Security report</td><td>凭据泄露可被立即滥用</td><td>只请求私下联系路径</td></tr>
+          <tr><td>不理解 API key 用法</td><td>Discussion</td><td>概念问题，不是漏洞</td><td>描述问题但不贴真实 key</td></tr>
+          <tr><td>课程建议补充生产鉴权说明</td><td>Issue 或 Discussion</td><td>无具体可利用风险</td><td>说明缺口和建议范围</td></tr>
+          <tr><td>上传接口可能暴露文件内容</td><td>Security report</td><td>涉及数据暴露路径</td><td>不贴私有文件样本</td></tr>
+          <tr><td>依赖存在公开 CVE</td><td>Security report 或 issue</td><td>取决于可利用性和影响</td><td>避免提供攻击复现细节</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混淆点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>安全报告 vs 普通 bug</td><td>所有 bug 都是安全问题。</td><td>只有涉及可利用风险、凭据、隐私、访问控制或不安全指导时才走安全流程。</td></tr>
+          <tr><td>完整复现</td><td>安全报告也应公开贴完整步骤。</td><td>安全复现应私下提供，公开区只保留最小非敏感说明。</td></tr>
+          <tr><td>教学仓库</td><td>没有线上服务就没有安全风险。</td><td>学习者会复制代码和文档，公开仓库也可能泄露 secrets 或传播错误实践。</td></tr>
+          <tr><td>SLA</td><td>SECURITY.md 意味着承诺生产响应。</td><td>本教学仓库不承诺生产服务、漏洞赏金或固定 SLA。</td></tr>
+          <tr><td>安全修复</td><td>紧急修复可以跳过测试。</td><td>安全修复更需要验证和回归测试，只是披露细节要受控。</td></tr>
+          <tr><td>Code of Conduct vs Security</td><td>二者都管安全，重复了。</td><td>行为准则管协作安全；SECURITY 管漏洞和敏感技术细节披露。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>表现</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>公开贴漏洞 payload</td><td>issue 中出现可直接利用步骤。</td><td>立即隐藏或编辑，转入私下报告路径。</td></tr>
+          <tr><td>把概念问题当漏洞</td><td>大量安全报告其实是 CORS/API key 学习问题。</td><td>用 Not Security Reports 分流到 Discussion 或普通 issue。</td></tr>
+          <tr><td>报告字段不足</td><td>只有“这里不安全”，无法复现。</td><td>要求 affected area、impact、minimal reproduction、mitigation。</td></tr>
+          <tr><td>修复只改文档不改测试</td><td>安全建议后续又被改坏。</td><td>行为或文档安全边界变化时增加 focused tests 或 docs contract。</td></tr>
+          <tr><td>公开披露过细</td><td>release note 变成攻击教程。</td><td>只说明影响范围、缓解措施、固定版本或 commit。</td></tr>
+          <tr><td>误承诺 SLA</td><td>教学仓库被理解为生产支持。</td><td>明确 no production service、no bug bounty、no guaranteed response SLA。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>服务承诺</td><td>不提供线上客户环境和固定 SLA。</td><td>通常有响应 SLA、值班、安全团队和升级机制。</td></tr>
+          <tr><td>报告入口</td><td>GitHub private reporting 或维护者私下路径。</td><td>专用邮箱、漏洞平台、bug bounty、客户支持通道。</td></tr>
+          <tr><td>风险对象</td><td>教学代码、文档指导、公开仓库 secrets。</td><td>生产服务、用户数据、基础设施、供应链、合规。</td></tr>
+          <tr><td>披露</td><td>最小公开说明，保护学习者安全。</td><td>可能需要 CVE、advisory、embargo、客户通知和补丁窗口。</td></tr>
+          <tr><td>验证</td><td>pytest、docs contract、diff check、focused tests。</td><td>还包括 SAST、DAST、依赖扫描、渗透测试、制品签名。</td></tr>
+          <tr><td>密钥处理</td><td>删除暴露内容并提示轮换。</td><td>还要审计访问、吊销凭据、事件响应和合规报告。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. SECURITY.md 的核心职责是什么？</summary><p class="answer">定义漏洞和敏感安全问题的私下报告、维护者分级、修复验证和最小公开披露流程，避免在公开渠道扩散可利用细节。</p></details>
+      <details><summary>2. 为什么教学仓库仍然需要安全策略？</summary><p class="answer">学习者会复制代码和文档；仓库可能暴露密钥；课程可能传播不安全生产实践。因此即使没有线上服务，也需要安全报告边界。</p></details>
+      <details><summary>3. 不确定是否为漏洞时应如何处理？</summary><p class="answer">不要公开敏感细节，先请求维护者私下联系路径；确认不是安全问题后再转为普通 issue 或 discussion。</p></details>
+      <details><summary>4. 安全报告私下应包含哪些字段？</summary><p class="answer">受影响文件/接口/依赖/课程/工作流、影响摘要、最小复现、是否涉及 secrets 或私有数据、缓解建议、是否已公开。</p></details>
+      <details><summary>5. 安全修复为什么仍要跑测试？</summary><p class="answer">安全修复可能改变鉴权、校验、上传、依赖或文档契约；没有测试会导致回归。紧急性不能替代验证。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：SECURITY.md 和普通 issue template 的区别是什么？</summary><p class="answer">SECURITY.md 处理敏感漏洞和私下披露，强调最小公开细节；issue template 处理普通可公开复现问题，强调完整上下文和验收条件。</p></details>
+      <details><summary>面试题 2：为什么公开漏洞复现细节有风险？</summary><p class="answer">公开细节会被搜索、通知、fork 和缓存扩散，攻击者可直接利用。私下披露能让维护者先修复和验证，再发布最小安全说明。</p></details>
+      <details><summary>面试题 3：安全报告如何分级？</summary><p class="answer">可按影响和可利用性分为 critical、high、medium、low。凭据泄露和严重绕过最高，文档不安全指导通常为中等，证据不足硬化建议较低。</p></details>
+      <details><summary>面试题 4：安全修复的发布说明应包含什么？</summary><p class="answer">应包含受影响范围、缓解措施、固定版本或 commit、学习者需要修改的做法，避免 payload、完整攻击链和敏感数据。</p></details>
+      <details><summary>面试题 5：生产级安全策略还需要哪些能力？</summary><p class="answer">需要专用报告通道、SLA、漏洞赏金、CVE/advisory、embargo、依赖扫描、事件响应、密钥轮换、客户通知和合规记录。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0088-code-of-conduct-workflow.html">上一课：CODE_OF_CONDUCT</a>
+        <a href="./0090-license-reuse-boundary.html">下一课：LICENSE</a>
+        <a href="../reference/0089-security-policy-workflow-cheatsheet.html">查看速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

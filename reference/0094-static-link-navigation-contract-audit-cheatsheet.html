@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Static Link Navigation Contract Audit Cheat Sheet</title><link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+  <nav class="course-nav" aria-label="速查表导航"><span class="nav-title">Reference 0094</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0094-static-link-navigation-contract-audit.html">回到第 94 课</a><a href="./0093-repository-final-quality-audit-checklist-cheatsheet.html">上一张速查</a><a href="./0095-release-candidate-versioned-publishing-readiness-cheatsheet.html">下一张速查</a></span></nav>
+  <header><p class="eyebrow">Reference 0094</p><h1>Static Link Navigation Contract Audit 速查</h1><p class="lead">用 <code>.github/LINK_AUDIT.md</code> 和文档契约测试保护课程静态链接。</p></header>
+  <h2>扫描范围</h2><pre><code>index.html
+lessons/*.html
+reference/*.html</code></pre>
+  <h2>纳入检查</h2><pre><code>../index.html
+./previous-lesson.html
+../reference/current-cheatsheet.html
+../lessons/current-lesson.html
+reference/current-cheatsheet.html</code></pre>
+  <h2>排除检查</h2><pre><code>https://...
+http://...
+mailto:...
+#fragment</code></pre>
+  <h2>核心算法</h2><pre><code>HTMLParser -> collect a[href]
+urlsplit(href).path
+resolve against current page parent
+reject outside repository
+target.exists()</code></pre>
+  <h2>测试命令</h2><pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q
+git diff --check</code></pre>
+  <nav class="course-nav bottom" aria-label="速查表底部导航"><span class="nav-title">继续学习</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0094-static-link-navigation-contract-audit.html">回到第 94 课</a><a href="./0093-repository-final-quality-audit-checklist-cheatsheet.html">上一张速查</a><a href="./0095-release-candidate-versioned-publishing-readiness-cheatsheet.html">下一张速查</a></span></nav>
+</main></body></html>

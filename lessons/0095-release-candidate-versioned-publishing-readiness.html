@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0095 - Release Candidate Versioned Publishing Readiness</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0095</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0094-static-link-navigation-contract-audit.html">上一课</a>
+        <a href="../reference/0095-release-candidate-versioned-publishing-readiness-cheatsheet.html">速查</a>
+        <a href="./0096-full-course-completion-release-runbook.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0095 Release Candidate：96 节课程发布候选与版本化发布就绪</h1>
+      <p class="lead">本节新增 <code>.github/RELEASE_CANDIDATE.md</code>，把“准备发布”拆成进入条件、冻结规则、验证证据、文档证据、Tag/Release Notes 就绪、GitHub Pages 就绪和退出条件。目标是让课程从持续制作状态，平滑进入可打 tag、可写 Release、可公开推广的候选发布状态。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Release Candidate Versioned Publishing Readiness
+├─ RC 定义
+│  ├─ 不是最终 Release
+│  ├─ 是发布前证据包
+│  └─ 证明仓库可被 tag / release / Pages promotion
+├─ 进入条件
+│  ├─ lesson range 明确
+│  ├─ lesson/reference/index 对齐
+│  ├─ COURSE_PROGRESS 有证据
+│  ├─ CHANGELOG Unreleased 准确
+│  └─ FINAL_AUDIT + LINK_AUDIT 已复核
+├─ 冻结规则
+│  ├─ 不随意加新主题
+│  ├─ 不随意改文件名
+│  ├─ 不改公共 API 而不更新课程
+│  └─ 不提交真实密钥
+├─ 验证证据
+│  ├─ docs contract
+│  ├─ provider HTTP
+│  ├─ full pytest
+│  └─ git diff --check
+├─ 发布就绪
+│  ├─ annotated tag
+│  ├─ Release Notes
+│  ├─ known warnings
+│  └─ rollback link
+└─ 退出条件
+   ├─ 命令全过
+   ├─ 无断链和缺速查
+   ├─ 无 secret leak
+   └─ 证据可复现</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>Release Candidate，简称 RC，是最终发布前的候选状态。它不是“已经发布”，也不是“继续随便改”；它的核心含义是：当前仓库已经足够完整，可以进入冻结、验证、记录已知警告和准备 tag 的阶段。</p>
+      <p>课程仓库的 RC 比普通后端服务更复杂。后端服务主要验证运行行为；课程仓库还要验证学习路径、HTML 导航、速查页、README 入口、治理文档、发布说明和无密钥边界。任何一个环节失败，都会降低 GitHub 推广质量。</p>
+      <p>RC 的底层思想是状态机：开发中 -> 发布候选 -> 正式发布。开发中允许新增主题；发布候选只允许修复阻断发布的问题；正式发布则通过 tag 和 Release Notes 固化一个可引用版本。</p>
+      <table>
+        <thead><tr><th>状态</th><th>允许变化</th><th>核心证据</th><th>风险</th></tr></thead>
+        <tbody>
+          <tr><td>开发中</td><td>新增课程、重构文档、补测试</td><td>单节课验证</td><td>范围流动，不能称为发布版</td></tr>
+          <tr><td>Release Candidate</td><td>修复阻断问题、补证据、补发布说明</td><td>完整测试、审计文档、变更账本</td><td>随意加功能会破坏候选态</td></tr>
+          <tr><td>正式 Release</td><td>只允许新版本继续演进</td><td>annotated tag、Release Notes、可复现测试结果</td><td>移动 tag 会破坏信任</td></tr>
+        </tbody>
+      </table>
+      <p>RC 不是流程仪式，而是降低发布事故的工程控制。它让维护者在创建 tag 前确认：内容范围清楚、测试结果可复现、已知警告可解释、GitHub Pages 发布边界明确、用户不会拿到半成品。</p>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code># Release Candidate Checklist</code></pre>
+      <p>标题将该文档限定为发布候选清单。它与 <code>.github/RELEASE_PROCESS.md</code> 的区别是：前者判断能否进入发布，后者描述如何创建 tag 和 GitHub Release。</p>
+
+      <pre><code>A release candidate is not the final GitHub Release; it is the evidence bundle...</code></pre>
+      <p>这行定义 RC 的本质：证据包。没有证据的“准备发布”只是主观判断；有证据的 RC 才能让维护者、协作者和未来读者复查。</p>
+
+      <pre><code>## Release Candidate Purpose</code></pre>
+      <p>Purpose 先说明目标，避免清单变成无上下文的命令集合。目标包括冻结范围、验证一致性、收集证据、记录已知警告和防止半成品发布。</p>
+
+      <pre><code>- Freeze the intended lesson range before publishing.</code></pre>
+      <p>冻结 lesson range 是 RC 的第一要义。若目标是 0001-0096，就不能在 RC 期间随意插入新主题，否则验证证据立即失效。</p>
+
+      <pre><code>- Verify that source code, tests, lessons, references, and governance documents agree.</code></pre>
+      <p>这行建立跨层一致性：源码行为、测试断言、课程讲解、速查页和 GitHub 治理文档必须讲同一个事实。</p>
+
+      <pre><code>## Entry Criteria</code></pre>
+      <p>Entry Criteria 规定什么时候可以开始 RC。没有进入条件，维护者可能在课程还缺速查、目录还断链时就写 release notes。</p>
+
+      <pre><code>- lessons 0001-0096 are present or the release notes explicitly describe the partial range;</code></pre>
+      <p>该行兼容两种发布：最终全量发布和阶段性发布。若不是 96 节全量，Release Notes 必须明确部分范围，不能误导学习者。</p>
+
+      <pre><code>- `.github/FINAL_AUDIT.md` and `.github/LINK_AUDIT.md` have been reviewed.</code></pre>
+      <p>RC 不是替代最终审计，而是调用审计。FINAL_AUDIT 管整体质量，LINK_AUDIT 管静态导航，RC 管候选发布状态。</p>
+
+      <pre><code>## Freeze Rules</code></pre>
+      <p>冻结规则把 RC 和日常开发区分开。进入 RC 后，允许修复失败项，但不应该再扩大范围。</p>
+
+      <pre><code>- Do not add new lesson topics unless the release candidate is restarted.</code></pre>
+      <p>新增主题会改变验证对象。若确实要新增，必须重启 RC，并重新跑完整证据链。</p>
+
+      <pre><code>- Do not rename lesson or reference files unless navigation and link tests are updated in the same change.</code></pre>
+      <p>文件名是静态站点 URL。重命名会影响 index、相邻导航、速查回链和 Pages URL，必须和链接测试同步修改。</p>
+
+      <pre><code>## Verification Evidence</code></pre>
+      <p>Verification Evidence 把发布判断落到可复现命令。每条命令保护不同层级：文档、Provider 行为、全项目回归和格式。</p>
+
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q</code></pre>
+      <p>文档契约测试保护九段式结构、公共文档、链接扫描和 GitHub 治理文档内容。</p>
+
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q</code></pre>
+      <p>Provider 专项测试保护课程中大量涉及的 AI provider、retry、metrics、runbook 相关行为。</p>
+
+      <pre><code>.\.venv\Scripts\python.exe -m pytest -q</code></pre>
+      <p>全量测试确认没有局部修改破坏其他 API、OpenAPI、数据库、任务或前端相关行为。</p>
+
+      <pre><code>git diff --check</code></pre>
+      <p>空白检查防止行尾空格、冲突标记等低级问题进入发布。Windows LF-to-CRLF 提示不是 whitespace error，需要区别看待。</p>
+
+      <pre><code>## Tag and Release Notes Readiness</code></pre>
+      <p>这一节连接 RC 和正式发布。RC 通过后，才应该选择 tag 名、准备 Release Notes、记录 known warnings，并确认 rollback 规则。</p>
+
+      <pre><code>- choose a tag name that follows `course-vYYYY.MM.DD-N`;</code></pre>
+      <p>tag 命名必须稳定可排序。日期加序号能表达课程批次发布时间，也能支持同一天多个发布。</p>
+
+      <pre><code>- use an annotated tag;</code></pre>
+      <p>annotated tag 带消息、作者、日期等元数据，比 lightweight tag 更适合正式课程版本。</p>
+
+      <pre><code>## Exit Criteria</code></pre>
+      <p>Exit Criteria 决定候选版本能否变成正式 release。只要仍有断链、缺速查、secret 泄漏或证据不可复现，就不能退出 RC。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>course production reaches release boundary
+  -> define release range:
+       lessons 0001-0096 or explicit partial range
+  -> enter release candidate
+  -> freeze new lesson topics
+  -> run final audit and link audit
+  -> run verification commands
+  -> update CHANGELOG Unreleased
+  -> prepare release notes:
+       changed lessons
+       changed references
+       code/workflow changes
+       verification
+       known warnings
+  -> choose annotated tag name
+  -> verify GitHub Pages readiness
+  -> exit RC only if evidence is reproducible
+  -> create tag and GitHub Release</code></pre>
+      <p>流程的关键是顺序。先确定范围，再冻结，再验证，再写发布说明，最后才创建 tag。若先 tag 再补测试，tag 就不再代表可信状态。</p>
+      <table>
+        <thead><tr><th>阶段</th><th>主要动作</th><th>产物</th></tr></thead>
+        <tbody>
+          <tr><td>进入 RC</td><td>确定 lesson range、检查目录和速查</td><td>候选范围</td></tr>
+          <tr><td>冻结</td><td>禁止扩大主题，只修阻断问题</td><td>稳定验证对象</td></tr>
+          <tr><td>验证</td><td>跑 docs/provider/full/diff</td><td>可复现测试证据</td></tr>
+          <tr><td>说明</td><td>整理 CHANGELOG 和 Release Notes</td><td>发布文本</td></tr>
+          <tr><td>发布</td><td>annotated tag + GitHub Release</td><td>可引用版本</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>RC vs Release</td><td>RC 就是已经发布。</td><td>RC 是发布前候选证据包；Release 是 tag 和发布说明固化后的版本。</td></tr>
+          <tr><td>冻结 vs 停止修复</td><td>冻结后不能改任何东西。</td><td>冻结后可以修阻断发布的问题，但不能随意扩大范围。</td></tr>
+          <tr><td>CHANGELOG vs Release Notes</td><td>两者写一份就行。</td><td>CHANGELOG 是仓库变更账本，Release Notes 是某个 tag 的发布摘要。</td></tr>
+          <tr><td>lightweight tag vs annotated tag</td><td>tag 都一样。</td><td>正式发布更适合 annotated tag，因为它携带发布元数据。</td></tr>
+          <tr><td>已知警告 vs 测试失败</td><td>警告和失败都可以忽略。</td><td>已知警告可记录；测试失败是 release blocker。</td></tr>
+          <tr><td>Pages ready vs GitHub file view</td><td>GitHub 能看到 HTML 文件就是 Pages ready。</td><td>Pages ready 要确认发布源、静态资源、链接测试和 raw HTML 提示。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>报错/坑点</th><th>根因</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>RC 期间又新增课程主题</td><td>没有冻结 release range。</td><td>重启 RC，重新跑完整验证证据。</td></tr>
+          <tr><td>Release Notes 范围不清</td><td>未声明是 0001-0096 全量还是阶段发布。</td><td>在 RC 和 Release Notes 中明确 lesson range。</td></tr>
+          <tr><td>tag 创建后又移动</td><td>把 tag 当作可变指针。</td><td>不要静默移动已发布 tag；必要时发布新 tag 并说明原因。</td></tr>
+          <tr><td>known warning 没记录</td><td>只看 passed，忽略 warnings summary。</td><td>把可接受警告写入 RC 证据和 Release Notes。</td></tr>
+          <tr><td>文档测试过了但 provider 失败</td><td>只验证课程结构，没有验证真实行为。</td><td>RC 必须跑 provider 专项和 full pytest。</td></tr>
+          <tr><td>发布后 Pages 入口不对</td><td>未按 root 发布或未包含静态资源。</td><td>按 <code>.github/PAGES.md</code> 验证 branch、folder、entry 和资源目录。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>候选范围</td><td>课程编号、HTML、速查、测试和治理文档。</td><td>服务、数据库迁移、配置、依赖、基础设施和客户影响。</td></tr>
+          <tr><td>冻结策略</td><td>冻结课程主题和文件名，允许修断链和文档错误。</td><td>冻结功能、依赖、schema、部署配置，变更需审批。</td></tr>
+          <tr><td>证据</td><td>pytest、文档契约、diff check、COURSE_PROGRESS。</td><td>CI 构建、制品签名、安全扫描、性能测试、变更单。</td></tr>
+          <tr><td>发布介质</td><td>GitHub tag、Release Notes、GitHub Pages。</td><td>制品仓库、容器镜像、CDN、灰度和回滚平台。</td></tr>
+          <tr><td>警告处理</td><td>记录 StarletteDeprecationWarning 等已知测试警告。</td><td>分级处理 deprecation、安全、性能和合规警告。</td></tr>
+          <tr><td>回滚</td><td>不移动旧 tag，发布新修复版本。</td><td>流量回滚、数据库回滚、配置回滚和事故复盘。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. Release Candidate 为什么不是正式 Release？</summary><p class="answer">RC 是发布前候选证据包，用于验证范围、测试、文档、警告和发布说明是否就绪；正式 Release 是通过 tag 和 Release Notes 固化后的版本。</p></details>
+      <details><summary>2. RC 的进入条件至少包括什么？</summary><p class="answer">包括明确 lesson range、lesson/reference/index 对齐、COURSE_PROGRESS 有证据、CHANGELOG Unreleased 准确、FINAL_AUDIT 和 LINK_AUDIT 已复核。</p></details>
+      <details><summary>3. 为什么 RC 期间不能随意新增课程主题？</summary><p class="answer">新增主题会改变候选范围，使之前的验证证据不再覆盖完整对象，因此必须重启 RC 并重新验证。</p></details>
+      <details><summary>4. 发布前为什么推荐 annotated tag？</summary><p class="answer">annotated tag 带发布消息、作者、日期等元数据，更适合作为正式课程版本的可追溯发布点。</p></details>
+      <details><summary>5. known warning 和测试失败有什么区别？</summary><p class="answer">known warning 是已评估且记录的非阻断警告；测试失败说明行为或文档契约不满足，是发布阻断项。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：你会如何设计一个项目的 release candidate 流程？</summary><p class="answer">先定义进入条件和发布范围，再冻结新功能，运行分层验证，整理 changelog 和 release notes，记录 known warnings，最后用明确退出条件决定是否创建 tag。</p></details>
+      <details><summary>面试题 2：为什么发布前要冻结范围？</summary><p class="answer">冻结范围保证测试证据与发布对象一致。如果验证过程中继续扩大范围，之前的测试结果不能证明新增内容也满足发布质量。</p></details>
+      <details><summary>面试题 3：Release Notes 应包含哪些工程证据？</summary><p class="answer">应包含变更范围、重要课程或代码变化、验证命令结果、已知警告、回滚说明，以及必要的文档或迁移提示。</p></details>
+      <details><summary>面试题 4：为什么不能静默移动已发布 tag？</summary><p class="answer">tag 是用户、CI、Release Notes 和下游引用的版本锚点。静默移动会破坏可复现性和信任，应发布新 tag 或明确公告。</p></details>
+      <details><summary>面试题 5：课程仓库的 RC 与服务端应用 RC 最大差异是什么？</summary><p class="answer">课程仓库除了代码行为，还必须验证学习路径、文档结构、导航、速查页、发布入口和无密钥边界；服务端应用更强调运行时行为、部署和生产影响。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0094-static-link-navigation-contract-audit.html">上一课：链接导航审计</a>
+        <a href="../reference/0095-release-candidate-versioned-publishing-readiness-cheatsheet.html">查看速查</a>
+        <a href="./0096-full-course-completion-release-runbook.html">下一课：课程完结 Runbook</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

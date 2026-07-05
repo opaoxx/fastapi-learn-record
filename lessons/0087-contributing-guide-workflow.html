@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0087 - Contributing Guide Workflow</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0087</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0086-changelog-maintenance-workflow.html">上一课</a>
+        <a href="./0088-code-of-conduct-workflow.html">下一课</a>
+        <a href="../reference/0087-contributing-guide-workflow-cheatsheet.html">速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0087 CONTRIBUTING：把新手贡献转化为可审查工程闭环</h1>
+      <p class="lead">本节新增 <code>CONTRIBUTING.md</code>。它不是礼貌性欢迎页，而是贡献者工作流控制面：规定贡献范围、开始前检查、分支与提交、课程九段标准、文档更新清单、验证命令、PR 证据、CODEOWNERS review、changelog 与 release 边界。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Contributing Guide Workflow
+├─ 贡献入口
+│  ├─ README.md: 学习路线
+│  ├─ DEVELOPMENT.md: 本地维护命令
+│  ├─ CHANGELOG.md: 未发布公共变更
+│  ├─ Issues/Discussions: 工作分流
+│  └─ CONTRIBUTING.md: 贡献者控制面
+├─ 贡献类型
+│  ├─ link/typo/command fix
+│  ├─ lesson audit/refactor
+│  ├─ quick reference update
+│  ├─ behavior/docs contract tests
+│  └─ GitHub governance documentation
+├─ 课程贡献标准
+│  ├─ 九段结构
+│  ├─ Final Review + CSDN Deep Dive
+│  ├─ code + principle + runtime flow
+│  ├─ teaching vs production
+│  └─ exercises + interview analysis
+├─ PR 证据
+│  ├─ summary / why / change type
+│  ├─ verification commands
+│  ├─ documentation checklist
+│  ├─ risk notes
+│  └─ linked issue or discussion
+└─ 治理闭环
+   ├─ CODEOWNERS review
+   ├─ branch protection
+   ├─ CHANGELOG Unreleased
+   └─ release process</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>开源仓库的贡献入口不是单一文档，而是一组协作协议。Issue 定义问题，Discussion 澄清想法，Branch 承载修改，PR 提交证据，CI 验证行为，CODEOWNERS 路由 review，CHANGELOG 沉淀公共变更。<code>CONTRIBUTING.md</code> 的职责是把这些协议压成贡献者能执行的路径。</p>
+      <p>课程仓库比普通代码仓库更容易被改坏，因为它有三类同步对象：可运行代码、课程解释、离线导航。贡献者只改 lesson 不改 reference，会破坏复习闭环；只改 README 不改 docs contract，会让入口缺少测试保护；只写 Release Notes 不改 CHANGELOG，会让本地账本丢失。</p>
+      <p>贡献指南的底层价值是降低维护者审查成本。它把“什么能改、改前看什么、改后跑什么、PR 提交什么证据”前置给贡献者。这样 review 可以聚焦正确性、边界、教学质量和测试，而不是反复追问缺失信息。</p>
+      <table>
+        <thead><tr><th>协作文件</th><th>主要读者</th><th>职责</th><th>失败后果</th></tr></thead>
+        <tbody>
+          <tr><td>README.md</td><td>学习者</td><td>给出学习路线和运行入口</td><td>新手找不到课程入口</td></tr>
+          <tr><td>DEVELOPMENT.md</td><td>维护者</td><td>给出本地命令和维护清单</td><td>贡献者无法验证变更</td></tr>
+          <tr><td>CONTRIBUTING.md</td><td>贡献者</td><td>给出从想法到 PR 的规则</td><td>PR 缺证据、范围发散</td></tr>
+          <tr><td>CHANGELOG.md</td><td>学习者与贡献者</td><td>记录公共可见变更</td><td>发布说明缺素材</td></tr>
+          <tr><td>CODEOWNERS</td><td>Reviewer</td><td>按路径路由审查</td><td>关键文件无人负责</td></tr>
+        </tbody>
+      </table>
+      <p>高质量贡献指南必须区分“教学 Demo 贡献”和“生产项目贡献”。教学仓库允许占位 owner、手工 changelog、简化 release；生产仓库通常还需要 DCO/CLA、代码行为兼容性、漏洞披露、合规审查、签名提交和正式行为准则。</p>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code># Contributing Guide</code></pre>
+      <p>标题使用社区约定。GitHub 会在贡献相关流程中识别 <code>CONTRIBUTING.md</code>，新贡献者也会自然寻找该文件。若贡献规则散落在 README 段落中，可发现性和可维护性都会降低。</p>
+
+      <pre><code>Thank you for improving this course repository.</code></pre>
+      <p>开头保持简洁欢迎，但不展开口号。贡献指南的主体不是社交文本，而是可执行规则。过度寒暄会稀释关键流程。</p>
+
+      <pre><code>This repository is both a runnable FastAPI project and a structured learning archive.</code></pre>
+      <p>这行定义双重属性：既是可运行项目，也是结构化课程档案。后续所有要求都从这里推出：代码、测试、课程、速查、导航必须同步。</p>
+
+      <pre><code>Contributions must keep code behavior, lesson content, quick references, navigation, tests, and GitHub workflow documents synchronized.</code></pre>
+      <p>这是贡献不变量。若贡献者只改一个面向，仓库就会出现“代码能跑但课程过时”或“课程写了但入口没链接”的断裂。</p>
+
+      <pre><code>## Contribution Scope</code></pre>
+      <p>Contribution Scope 限定适合贡献的工作类型。它把“欢迎贡献”转化为可选择任务，降低新手进入成本。</p>
+
+      <pre><code>Fix a broken course link, typo that changes meaning, or outdated command.</code></pre>
+      <p>该条定义低风险贡献。注意不是所有 typo 都值得进入贡献流程，只有改变含义、导航或命令正确性的修改才值得公开审查。</p>
+
+      <pre><code>Improve an existing lesson while keeping the fixed nine-section structure.</code></pre>
+      <p>该条绑定用户要求的课程标准。任何 lesson 改进都不能破坏九段结构，否则会让文档契约测试失败，也会降低期末复习式密度。</p>
+
+      <pre><code>Open a discussion first when the idea is exploratory, broad, or primarily educational.</code></pre>
+      <p>这行复用第 84 节的分流规则。开放性想法先进 Discussion，避免把未成形需求塞进 issue 队列。</p>
+
+      <pre><code>Open an issue when the work is reproducible, scoped, and can be reviewed against a clear definition of done.</code></pre>
+      <p>这行定义 issue 入口。可复现、范围明确、可验收是任务化的三个条件，缺一则先讨论。</p>
+
+      <pre><code>## Before You Start</code></pre>
+      <p>Before You Start 是贡献前置依赖。贡献者先读 README、DEVELOPMENT、CHANGELOG，再搜索 issue/discussion，最后绑定 scoped issue。</p>
+
+      <pre><code>Check CHANGELOG.md for unreleased public changes.</code></pre>
+      <p>这一步防止重复劳动。若同类变更已经在 Unreleased 中，贡献者应基于现有方向补充，而不是开出冲突 PR。</p>
+
+      <pre><code>## Branch and Commit Workflow</code></pre>
+      <p>分支与提交规则限制变更范围。短分支名能表达工作类型，独立 PR 能降低 review 和回滚成本。</p>
+
+      <pre><code>docs/fix-lesson-0086-link
+course/add-lesson-0087-contributing
+tests/protect-contributing-guide</code></pre>
+      <p>这些示例体现命名语义：docs、course、tests 先说明变更域，再说明具体目标。若分支名写成 <code>update</code>，无法从列表中判断工作内容。</p>
+
+      <pre><code>Avoid mixing unrelated lesson rewrites, source changes, and GitHub governance changes in one pull request.</code></pre>
+      <p>这是 PR 原子性原则。混合无关修改会让 reviewer 无法判断风险，也会让回滚粒度变粗。</p>
+
+      <pre><code>## Lesson Contribution Standard</code></pre>
+      <p>该节复制九段结构作为硬约束。贡献指南必须把课程标准前置，否则外部贡献很容易退回网课式浅讲。</p>
+
+      <pre><code>Lessons must use the Final Review + CSDN Deep Dive style marker.</code></pre>
+      <p>style marker 是文档契约的一部分，测试会保护它。它让课程风格从自然语言要求变成可检测约束。</p>
+
+      <pre><code>## Documentation Checklist</code></pre>
+      <p>Documentation Checklist 是 lesson 变更的提交算法。课程不是单文件产物，必须同步 lesson、reference、index、learning record、NOTES、COURSE_PROGRESS、CHANGELOG 和测试。</p>
+
+      <pre><code>Update CHANGELOG.md when the change is learner-visible or contributor-visible.</code></pre>
+      <p>这行把第 86 节的 changelog 接入贡献流程。不是所有内部步骤都写 changelog，但公共可见变化必须记录。</p>
+
+      <pre><code>## Required Verification</code></pre>
+      <p>Required Verification 定义 PR 前质量门禁。贡献者必须先本地跑测试，不能把 CI 当作第一次验证。</p>
+
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q
+.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q
+.\.venv\Scripts\python.exe -m pytest -q
+git diff --check</code></pre>
+      <p>四条命令覆盖核心业务、文档契约、跨模块回归和空白质量。课程仓库的“可合并”必须同时满足代码和文档质量。</p>
+
+      <pre><code>## Pull Request Requirements</code></pre>
+      <p>PR Requirements 定义 reviewer 需要的证据。summary、why、change type、verification、checklist、risk notes、linked issue/discussion 缺一都会增加沟通成本。</p>
+
+      <pre><code>The repository pull request template in .github/PULL_REQUEST_TEMPLATE.md is the source of truth for the required evidence.</code></pre>
+      <p>这行防止贡献指南和 PR 模板分叉。贡献指南讲规则，PR 模板收集证据；真正提交时以模板为准。</p>
+
+      <pre><code>## Review and Ownership</code></pre>
+      <p>Review and Ownership 把贡献流接入 CODEOWNERS 和 branch protection。贡献者知道为什么某些文件需要特定 reviewer，也知道 CI 与 conversation resolution 不是形式主义。</p>
+
+      <pre><code>## Changelog and Release Notes</code></pre>
+      <p>该节说明贡献合入后如何进入发布链路。贡献先进入 CHANGELOG Unreleased，维护者发布时再通过 RELEASE_PROCESS 生成 tag 和 Release Notes。</p>
+
+      <pre><code>## Code of Conduct Boundary</code></pre>
+      <p>当前仓库尚未定义完整行为准则，因此这里先给出最低边界：技术、尊重、证据、安全。后续可在第 88 节或后续课程升级为 CODE_OF_CONDUCT。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>Contributor finds improvement
+  -> decide channel
+       exploratory? discussion
+       scoped and reproducible? issue
+  -> read repository entry points
+       README / DEVELOPMENT / CHANGELOG / CONTRIBUTING
+  -> create branch
+       docs/... or course/... or tests/...
+  -> implement scoped change
+       code / lesson / reference / navigation / tests / docs
+  -> run verification
+       provider HTTP
+       docs contract
+       full pytest
+       git diff --check
+  -> update public records
+       NOTES
+       COURSE_PROGRESS
+       CHANGELOG
+  -> open PR
+       summary + why + type + verification + checklist + risks
+  -> review
+       CODEOWNERS
+       CI
+       branch protection
+  -> merge
+       release process later turns changelog into tag notes</code></pre>
+      <p>这条链路的关键是“贡献不是从 PR 开始”。真正可靠的贡献从分流开始：先判断 discussion 还是 issue，再根据仓库入口理解上下文，最后用 PR 提交证据。</p>
+      <table>
+        <thead><tr><th>贡献场景</th><th>正确入口</th><th>必须同步</th><th>验证重点</th></tr></thead>
+        <tbody>
+          <tr><td>修复课程断链</td><td>Issue 或直接小 PR</td><td>lesson/reference/index</td><td>docs contract + diff check</td></tr>
+          <tr><td>重构一节课</td><td>Issue</td><td>lesson/reference/NOTES/CHANGELOG</td><td>九段结构 + docs contract</td></tr>
+          <tr><td>新增 GitHub workflow 文档</td><td>Issue</td><td>README/DEVELOPMENT/tests</td><td>文档入口测试</td></tr>
+          <tr><td>开放性课程建议</td><td>Discussion</td><td>暂不改文件</td><td>澄清范围和 done</td></tr>
+          <tr><td>后端行为修改</td><td>Issue + PR</td><td>first_api/tests/lesson</td><td>targeted tests + full pytest</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混淆点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>CONTRIBUTING vs DEVELOPMENT</td><td>都是开发说明，二选一。</td><td>CONTRIBUTING 面向外部贡献者；DEVELOPMENT 面向维护者日常命令和规则。</td></tr>
+          <tr><td>Issue vs Discussion</td><td>提问题都开 issue。</td><td>可复现、可验收、会改文件才开 issue；探索性问题先 discussion。</td></tr>
+          <tr><td>PR Template vs CONTRIBUTING</td><td>有 PR 模板就不需要贡献指南。</td><td>贡献指南讲完整流程；PR 模板收集本次 PR 证据。</td></tr>
+          <tr><td>CODEOWNERS</td><td>只是自动 @ 人。</td><td>它是 review ownership 映射，可与 branch protection 形成强制审查。</td></tr>
+          <tr><td>小修可以不测试</td><td>只改文档不用跑测试。</td><td>课程文档由 docs contract 保护，小修也可能破坏导航或九段结构。</td></tr>
+          <tr><td>CHANGELOG</td><td>只有 release 时才写。</td><td>公共变更落地后应进入 Unreleased，release 时再迁移。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>表现</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>PR 范围过大</td><td>同时改课程、代码、CI、README，review 无法聚焦。</td><td>拆成独立 issue 和 PR，每个 PR 只解决一个可验收目标。</td></tr>
+          <tr><td>缺少验证输出</td><td>PR 描述写“应该没问题”。</td><td>按模板粘贴 targeted、docs contract、full pytest、diff check 结果。</td></tr>
+          <tr><td>破坏九段结构</td><td>新增 lesson 通过人工看似完整，但测试失败。</td><td>按 CONTRIBUTING 中九段标题逐项检查，并更新 docs contract。</td></tr>
+          <tr><td>只改 lesson 不改 reference</td><td>完整课与速查表内容脱节。</td><td>课程变更必须同步 reference 和 index 导航。</td></tr>
+          <tr><td>贡献前不搜 issue</td><td>重复实现或方向冲突。</td><td>Before You Start 阶段先搜索 issue/discussion 和 CHANGELOG Unreleased。</td></tr>
+          <tr><td>把 secrets 贴进 issue</td><td>公开泄露密钥、日志或个人信息。</td><td>贡献指南明确禁止 secrets、private logs、personal data 和 credentials。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>贡献门槛</td><td>强调新手可读、流程清楚、测试可运行。</td><td>可能要求 CLA/DCO、签名提交、企业账号或权限审批。</td></tr>
+          <tr><td>安全边界</td><td>禁止粘贴 secrets、私有日志、个人数据。</td><td>还需漏洞披露流程、安全联系人、embargo、合规审查。</td></tr>
+          <tr><td>Review</td><td>CODEOWNERS 占位团队 + branch protection 说明。</td><td>真实团队、强制 owner review、审计日志、合并策略限制。</td></tr>
+          <tr><td>测试证据</td><td>pytest、docs contract、diff check。</td><td>还包括性能、兼容性、安全扫描、制品验证、部署验证。</td></tr>
+          <tr><td>课程标准</td><td>九段结构与教学/生产差异是硬约束。</td><td>更多关注 API 兼容性、客户影响、运行成本和 SLA。</td></tr>
+          <tr><td>行为准则</td><td>先给最低技术与安全边界。</td><td>通常有完整 CODE_OF_CONDUCT、moderation、举报和处置流程。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. CONTRIBUTING.md 的核心职责是什么？</summary><p class="answer">把贡献者从想法引导到可审查 PR，明确贡献范围、开始前检查、课程标准、验证命令、PR 证据、review 所有权和发布记录边界。</p></details>
+      <details><summary>2. 为什么贡献指南要同时提 README、DEVELOPMENT 和 CHANGELOG？</summary><p class="answer">README 说明学习入口，DEVELOPMENT 说明维护命令，CHANGELOG 说明未发布公共变更。贡献者必须理解三者才能避免重复、漏测和漏记录。</p></details>
+      <details><summary>3. Lesson 贡献为什么必须保留九段结构？</summary><p class="answer">九段结构是本课程“期末复习干货 + CSDN 深度技术文”标准的结构化载体，也是文档契约测试保护的核心内容。</p></details>
+      <details><summary>4. PR 必须提供哪些证据？</summary><p class="answer">至少提供 summary、why、change type、verification output、course documentation checklist、risk notes，以及相关 issue 或 discussion 链接。</p></details>
+      <details><summary>5. 贡献指南和 PR 模板如何分工？</summary><p class="answer">贡献指南解释完整协作流程和规则，PR 模板在每次提交中收集具体证据。二者互补，PR 模板是提交证据的直接入口。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：一个成熟开源项目为什么需要 CONTRIBUTING.md？</summary><p class="answer">它降低贡献者进入成本，统一 issue/branch/PR/test/review/changelog 流程，减少维护者反复追问缺失信息，让 review 聚焦质量和风险。</p></details>
+      <details><summary>面试题 2：如何设计贡献指南中的测试要求？</summary><p class="answer">测试要求应覆盖项目最高风险行为、公共文档契约、全量回归和格式质量。本仓库对应 provider HTTP、docs contract、full pytest、git diff --check。</p></details>
+      <details><summary>面试题 3：为什么不建议一个 PR 混合多个无关变更？</summary><p class="answer">混合 PR 会扩大 review 面积、模糊风险来源、增加回滚难度，并让 CI 失败原因难以定位。更好的做法是按可验收目标拆分。</p></details>
+      <details><summary>面试题 4：CONTRIBUTING.md 与 CODEOWNERS 有什么关系？</summary><p class="answer">CONTRIBUTING 告诉贡献者如何提交合格变更；CODEOWNERS 告诉 GitHub 和维护者哪些路径需要谁审查。前者是流程说明，后者是 ownership 规则。</p></details>
+      <details><summary>面试题 5：教学仓库的贡献指南和生产仓库有什么不同？</summary><p class="answer">教学仓库强调学习路径、九段课程结构、文档契约和新手安全；生产仓库还要加入 CLA/DCO、安全披露、合规、性能、部署和 SLA 等要求。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0086-changelog-maintenance-workflow.html">上一课：CHANGELOG</a>
+        <a href="./0088-code-of-conduct-workflow.html">下一课：CODE_OF_CONDUCT</a>
+        <a href="../reference/0087-contributing-guide-workflow-cheatsheet.html">查看速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

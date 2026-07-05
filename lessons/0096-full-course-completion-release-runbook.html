@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0096 - Full Course Completion Release Runbook</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0096</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0095-release-candidate-versioned-publishing-readiness.html">上一课</a>
+        <a href="../reference/0096-full-course-completion-release-runbook-cheatsheet.html">速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0096 全课程完结发布 Runbook：从 96 节课程到可复查 GitHub 学习产品</h1>
+      <p class="lead">本节新增 <code>.github/COURSE_COMPLETION.md</code>，作为 96 节 FastAPI 课程的最终完结执行手册。它把课程编号完整性、九段式结构、速查表、目录导航、审计文档、发布候选、Release、Pages、无密钥边界和测试证据收束成一个可复现的完成判定。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Full Course Completion Release Runbook
+├─ 完结定义
+│  ├─ lessons 0001-0096 无缺号
+│  ├─ nine-section structure 全覆盖
+│  ├─ reference quick sheets 全覆盖
+│  ├─ index.html 全链路入口
+│  └─ no secrets / no private data
+├─ 最终运行顺序
+│  ├─ FINAL_AUDIT
+│  ├─ LINK_AUDIT
+│  ├─ RELEASE_CANDIDATE
+│  ├─ RELEASE_PROCESS
+│  └─ PAGES
+├─ 验证证据
+│  ├─ docs contract
+│  ├─ provider HTTP
+│  ├─ full pytest
+│  └─ git diff --check
+├─ 发布说明
+│  ├─ completed range 0001-0096
+│  ├─ learning path summary
+│  ├─ verification evidence
+│  ├─ known warnings
+│  └─ local/Pages reading instructions
+└─ 完结后治理
+   ├─ 不静默重写已完成版本
+   ├─ 修复走 patch release
+   ├─ issue/discussion/PR 继续按文档流转
+   └─ 后续扩展不破坏 96 节基线</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>“课程完结”不是最后一个 HTML 文件存在。对 GitHub 公开课程来说，完结意味着内容、代码、测试、目录、速查、治理文档和发布证据共同形成一个可复查的学习产品。</p>
+      <p>第 96 节的底层思想是闭环控制。前 95 节已经建立了课程内容、项目代码、测试、GitHub 协作、审计和 RC 流程；本节把这些流程按最终发布顺序串起来，避免最后一步只靠人工记忆。</p>
+      <p><code>.github/COURSE_COMPLETION.md</code> 与前几个文档分工明确：<code>FINAL_AUDIT</code> 判断总体质量，<code>LINK_AUDIT</code> 判断静态链接，<code>RELEASE_CANDIDATE</code> 判断候选发布，<code>RELEASE_PROCESS</code> 指导 tag 和 Release，<code>COURSE_COMPLETION</code> 负责最终收官顺序。</p>
+      <table>
+        <thead><tr><th>文档</th><th>作用</th><th>完成阶段位置</th></tr></thead>
+        <tbody>
+          <tr><td><code>FINAL_AUDIT.md</code></td><td>仓库级质量审计</td><td>确认整体合格</td></tr>
+          <tr><td><code>LINK_AUDIT.md</code></td><td>静态 HTML 链接与导航契约</td><td>确认学习路径可达</td></tr>
+          <tr><td><code>RELEASE_CANDIDATE.md</code></td><td>发布候选冻结和证据收集</td><td>确认可进入发布</td></tr>
+          <tr><td><code>RELEASE_PROCESS.md</code></td><td>tag、Release Notes、rollback</td><td>执行正式版本发布</td></tr>
+          <tr><td><code>COURSE_COMPLETION.md</code></td><td>96 节课程最终收官顺序</td><td>宣布完成前最后确认</td></tr>
+        </tbody>
+      </table>
+      <p>从工程角度看，课程完结是一种版本承诺。读者、贡献者和未来维护者会把 0001-0096 当作稳定基线，因此必须用测试和文档同时保护这个基线。</p>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code># Course Completion Release Runbook</code></pre>
+      <p>标题定义最终职责：课程完结发布运行手册。Runbook 表示它不是理念说明，而是可按步骤执行的操作文档。</p>
+
+      <pre><code>This runbook defines the final completion procedure for the 96-lesson FastAPI course.</code></pre>
+      <p>这行绑定最终范围：96 节 FastAPI 课程。若不写范围，后续扩展课程可能误用该文档宣布新阶段已完成。</p>
+
+      <pre><code>It is used after Lesson 0096 exists and before maintainers announce the course as complete.</code></pre>
+      <p>这行定义使用时机：第 96 节已经存在，但尚未宣布完成。它是宣布前的最后门禁，不是课程开发中的普通清单。</p>
+
+      <pre><code>## Completion Meaning</code></pre>
+      <p>Completion Meaning 明确定义“完结”含义。没有定义，完结就会退化为主观感觉。</p>
+
+      <pre><code>- lessons 0001-0096 exist with no numbering gaps;</code></pre>
+      <p>编号无缺口是完成的第一事实。测试中新增的编号连续性检查会直接保护这一条。</p>
+
+      <pre><code>- each protected lesson keeps the required nine-section review structure;</code></pre>
+      <p>九段式结构是用户最初定下的质量标准。完结时不能只追求数量，必须保持期末复习笔记和高质量技术博文风格。</p>
+
+      <pre><code>- each included lesson has a matching quick reference;</code></pre>
+      <p>速查表是复习闭环。完整课程不仅能精读，还应能考前快速回忆。</p>
+
+      <pre><code>- no real secret, private token, production provider URL, private log, customer data, or personal data is committed;</code></pre>
+      <p>公开 GitHub 仓库必须把无密钥边界写进完成定义。教学材料传播范围越大，泄漏成本越高。</p>
+
+      <pre><code>## Final Run Order</code></pre>
+      <p>Final Run Order 把多个文档排序。排序很重要：先确认完整，再审计，再进入 RC，再按发布流程执行。</p>
+
+      <pre><code>1. Confirm the lesson range is complete.</code></pre>
+      <p>第一步检查 0001-0096 是否齐全。若范围不完整，后面的 Release、Pages 和公告都没有意义。</p>
+
+      <pre><code>2. Review `.github/FINAL_AUDIT.md`.</code></pre>
+      <p>总审计负责仓库级质量，不只看最后一课，也看课程、源码、测试、治理文档的一致性。</p>
+
+      <pre><code>3. Review `.github/LINK_AUDIT.md`.</code></pre>
+      <p>链接审计确保离线 HTML 和 Pages 场景下，目录、课程和速查能互相抵达。</p>
+
+      <pre><code>4. Review `.github/RELEASE_CANDIDATE.md`.</code></pre>
+      <p>RC 文档负责冻结范围、记录验证证据和确认候选版本是否能进入 tag 阶段。</p>
+
+      <pre><code>7. Run the required verification commands.</code></pre>
+      <p>最终发布不能跳过命令证据。人工审阅能发现语义问题，测试能发现结构、链接和行为回归。</p>
+
+      <pre><code>## Required Verification</code></pre>
+      <p>这一节列出完结前必须执行的命令。它继承了前面课程建立的质量门禁。</p>
+
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q
+.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q
+.\.venv\Scripts\python.exe -m pytest -q
+git diff --check</code></pre>
+      <p>四条命令分别保护文档契约、Provider HTTP 行为、全项目回归和空白格式。docs contract 现在还保护 0001-0096 编号连续性和静态链接。</p>
+
+      <pre><code>## Release Announcement Draft</code></pre>
+      <p>发布公告不是营销文案，而是用户理解课程范围和质量证据的入口。它必须写明完成范围、学习路径、验证结果、已知警告和阅读方式。</p>
+
+      <pre><code>## Do Not Announce Complete If</code></pre>
+      <p>该节定义阻断条件。只要缺课、缺速查、断链、测试失败、泄漏 secret 或已知警告不清楚，就不能宣布完成。</p>
+
+      <pre><code>## After Completion</code></pre>
+      <p>完结后治理防止“静默重写已完成版本”。公开学习产品应保留基线，修复通过 patch release 或新 tag 透明发布。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>Lesson 0096 is added
+  -> create Reference 0096
+  -> update Lesson 0095 navigation
+  -> update Reference 0095 navigation
+  -> update index.html
+  -> update README / DEVELOPMENT / CHANGELOG / NOTES
+  -> add COURSE_COMPLETION.md
+  -> protect Lesson 0096 in docs contract
+  -> protect lesson numbering 0001-0096
+  -> run docs contract
+  -> run provider tests
+  -> run full pytest
+  -> run git diff --check
+  -> record evidence in COURSE_PROGRESS
+  -> course baseline becomes 96/96 complete</code></pre>
+      <p>这条流程说明最后一课本身也是一次完整课程切片。只有 lesson、reference、导航、目录、记录、测试和进度证据全部完成，96/96 才成立。</p>
+      <table>
+        <thead><tr><th>检查层</th><th>检查对象</th><th>完成信号</th></tr></thead>
+        <tbody>
+          <tr><td>数量层</td><td><code>lessons/0001-0096</code></td><td>编号无缺口</td></tr>
+          <tr><td>结构层</td><td>每节课九段式</td><td>docs contract 通过</td></tr>
+          <tr><td>导航层</td><td><code>index</code>、lesson、reference</td><td>本地链接扫描通过</td></tr>
+          <tr><td>行为层</td><td><code>first_api/</code> 和 tests</td><td>provider + full pytest 通过</td></tr>
+          <tr><td>发布层</td><td>RC、Release、Pages 文档</td><td>完成 runbook 可执行</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>最后一课完成 vs 全课程完成</td><td>写完第 96 个 HTML 就完结。</td><td>还要有速查、导航、测试、文档、进度证据和无密钥检查。</td></tr>
+          <tr><td>Completion Runbook vs Release Process</td><td>两者都是发布流程，可以二选一。</td><td>Completion Runbook 排最终收官顺序；Release Process 执行 tag 和 GitHub Release。</td></tr>
+          <tr><td>测试通过 vs 可宣布完成</td><td>pytest 过了就能宣布。</td><td>还要确认范围、公告、已知警告、Pages 边界和治理文档一致。</td></tr>
+          <tr><td>完结基线 vs 后续扩展</td><td>完结后继续直接改旧版本。</td><td>96 节是稳定基线；后续修复和扩展应通过新版本透明发布。</td></tr>
+          <tr><td>本地阅读 vs GitHub 文件视图</td><td>GitHub 点开 HTML 就是课程站点。</td><td>GitHub 文件视图可能显示源码；本地 index 或 Pages URL 才是阅读入口。</td></tr>
+          <tr><td>known warning vs release blocker</td><td>所有 warning 都必须阻断。</td><td>已评估警告可记录；测试失败、断链、缺课、secret 泄漏必须阻断。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>报错/坑点</th><th>根因</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>编号连续性测试失败</td><td>缺少某个 lesson HTML 或编号命名不规范。</td><td>补齐文件，保持四位编号前缀和稳定文件名。</td></tr>
+          <tr><td>第 95 课没有下一课</td><td>新增第 96 课后未回填导航。</td><td>更新 Lesson 0095 和 Reference 0095 的下一课链接。</td></tr>
+          <tr><td>index 缺少第 96 课入口</td><td>只创建了文件，没有更新课程目录。</td><td>在课程列表和速查列表追加 Lesson/Reference 0096。</td></tr>
+          <tr><td>完成公告范围不清</td><td>未明确 0001-0096 是稳定基线。</td><td>公告和 Release Notes 写清 completed range。</td></tr>
+          <tr><td>测试有 warning 未解释</td><td>只记录 passed，忽略 warnings summary。</td><td>在 completion 和 release notes 中记录已知 warning。</td></tr>
+          <tr><td>完结后直接重写旧 tag</td><td>把发布版本当作可变草稿。</td><td>发布 patch tag 或 follow-up release，不静默改写基线。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>完成定义</td><td>课程范围、文档结构、代码示例、测试和发布入口一致。</td><td>功能范围、SLA、部署、监控、合规和客户影响达标。</td></tr>
+          <tr><td>完成证据</td><td>pytest、docs contract、link audit、COURSE_PROGRESS。</td><td>CI/CD 制品、变更审批、安全扫描、监控和审计记录。</td></tr>
+          <tr><td>发布对象</td><td>HTML 课程、速查、源码示例、GitHub 文档。</td><td>可运行服务、镜像、数据库迁移、配置和基础设施。</td></tr>
+          <tr><td>回滚方式</td><td>保留旧 tag，发布修复 tag 或课程补丁。</td><td>流量切换、制品回滚、数据库回滚和事故响应。</td></tr>
+          <tr><td>用户影响</td><td>学习路径断裂、误学旧代码、无法离线阅读。</td><td>业务中断、数据错误、安全风险和收入影响。</td></tr>
+          <tr><td>后续演进</td><td>以 96 节为稳定基线继续扩展。</td><td>以版本、变更窗口和兼容策略持续演进。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. 为什么课程完结不等于最后一个 HTML 文件存在？</summary><p class="answer">因为公开课程还需要速查、目录导航、九段式结构、源码一致性、测试证据、无密钥检查和发布文档一致，只有这些共同成立才是学习产品完结。</p></details>
+      <details><summary>2. COURSE_COMPLETION 与 RELEASE_PROCESS 的区别是什么？</summary><p class="answer">COURSE_COMPLETION 定义宣布 96 节课程完成前的最终顺序；RELEASE_PROCESS 定义创建 annotated tag、GitHub Release Notes 和 rollback 的发布动作。</p></details>
+      <details><summary>3. 完结前必须运行哪些命令？</summary><p class="answer">必须运行文档契约测试、provider HTTP 测试、全量 pytest 和 git diff --check，并记录结果。</p></details>
+      <details><summary>4. 为什么要保护 lessons 0001-0096 无缺号？</summary><p class="answer">编号是学习路径、目录、速查、发布范围和用户预期的公共索引。缺号会让课程看起来不完整，也会破坏导航和公告可信度。</p></details>
+      <details><summary>5. 完结后发现错误应该怎么处理？</summary><p class="answer">不要静默重写已完成版本，应通过新 tag、patch release 或明确的 follow-up 修复透明处理。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：如何判断一个技术课程仓库可以宣布完成？</summary><p class="answer">要同时检查范围完整、内容结构、导航链路、源码一致性、测试结果、发布文档、许可证、贡献流程、安全边界和无密钥状态，而不是只看文件数量。</p></details>
+      <details><summary>面试题 2：为什么要把完成流程写成 runbook？</summary><p class="answer">Runbook 把关键步骤顺序化、显式化、可复查化，避免依赖个人记忆；它也让后续维护者能复现同样的完成判断。</p></details>
+      <details><summary>面试题 3：发布完成后为什么不能静默改写 tag？</summary><p class="answer">tag 是版本承诺。静默改写会破坏读者、CI、Release Notes 和下游引用的一致性，应通过新版本透明修复。</p></details>
+      <details><summary>面试题 4：文档型项目的质量门禁与服务端项目有何不同？</summary><p class="answer">文档型项目更重视结构、链接、导航、术语一致性和阅读入口；服务端项目更重视运行时行为、部署、数据和 SLA。课程仓库两者都要覆盖。</p></details>
+      <details><summary>面试题 5：如何处理完结版本中的已知 warning？</summary><p class="answer">先判断是否阻断发布；非阻断 warning 要记录来源、影响和后续处理计划。测试失败、断链、缺课和 secret 泄漏不能作为 known warning 放行。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">课程完结</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0095-release-candidate-versioned-publishing-readiness.html">上一课：Release Candidate</a>
+        <a href="../reference/0096-full-course-completion-release-runbook-cheatsheet.html">查看速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

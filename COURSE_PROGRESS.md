@@ -1,5 +1,482 @@
 # Course Progress
 
+# 2026-07-05 Run: Lesson 0096 Full Course Completion Release Runbook
+
+## Completed
+
+- Completed Lesson 0096: Full Course Completion Release Runbook.
+- Added `.github/COURSE_COMPLETION.md` documenting the final 96-lesson completion meaning, final run order, required verification, documentation sweep, release announcement draft, release blockers, and post-completion governance.
+- Added documentation contract coverage for the completion runbook, README links, DEVELOPMENT links, CHANGELOG linkage, final-audit linkage, release-candidate linkage, the new lesson's fixed review structure, and the complete lessons 0001-0096 no-gap range.
+- Added Lesson 0096, Reference 0096, learning record 0087, updated Lesson 0095 navigation, Reference 0095 navigation, README, DEVELOPMENT.md, main course index, and `NOTES.md`.
+
+## Verification
+
+- `.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q` -> 30 passed.
+- `.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q` -> 54 passed.
+- `.\.venv\Scripts\python.exe -m pytest -q` -> 125 passed, 1 existing StarletteDeprecationWarning.
+- `git diff --check` -> no whitespace errors; Windows LF-to-CRLF warnings only.
+
+## Files touched
+
+- `.github/COURSE_COMPLETION.md`
+- `.github/FINAL_AUDIT.md`
+- `.github/RELEASE_CANDIDATE.md`
+- `CHANGELOG.md`
+- `lessons/0096-full-course-completion-release-runbook.html`
+- `lessons/0095-release-candidate-versioned-publishing-readiness.html`
+- `reference/0096-full-course-completion-release-runbook-cheatsheet.html`
+- `reference/0095-release-candidate-versioned-publishing-readiness-cheatsheet.html`
+- `learning-records/0087-full-course-completion-release-runbook.md`
+- `README.md`
+- `DEVELOPMENT.md`
+- `index.html`
+- `NOTES.md`
+- `tests/test_course_docs_contract.py`
+- `COURSE_PROGRESS.md`
+
+## Completion status
+
+The planned 96-lesson course baseline is now complete and verified.
+
+# 2026-07-05 Run: Lesson 0095 Release Candidate Versioned Publishing Readiness
+
+## Completed
+
+- Completed Lesson 0095: Release Candidate Versioned Publishing Readiness.
+- Added `.github/RELEASE_CANDIDATE.md` documenting RC purpose, entry criteria, freeze rules, verification evidence, documentation evidence, tag and Release Notes readiness, GitHub Pages readiness, and exit criteria.
+- Added documentation contract coverage for the release-candidate checklist, README links, DEVELOPMENT links, CHANGELOG linkage, release-process linkage, final-audit linkage, and the new lesson's fixed review structure.
+- Added Lesson 0095, Reference 0095, learning record 0086, updated Lesson 0094 navigation, Reference 0094 navigation, README, DEVELOPMENT.md, main course index, and `NOTES.md`.
+
+## Verification
+
+- `.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q` -> 28 passed.
+- `.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q` -> 54 passed.
+- `.\.venv\Scripts\python.exe -m pytest -q` -> 123 passed, 1 existing StarletteDeprecationWarning.
+- `git diff --check` -> no whitespace errors; Windows LF-to-CRLF warnings only.
+
+## Files touched
+
+- `.github/RELEASE_CANDIDATE.md`
+- `.github/RELEASE_PROCESS.md`
+- `.github/FINAL_AUDIT.md`
+- `CHANGELOG.md`
+- `lessons/0095-release-candidate-versioned-publishing-readiness.html`
+- `lessons/0094-static-link-navigation-contract-audit.html`
+- `reference/0095-release-candidate-versioned-publishing-readiness-cheatsheet.html`
+- `reference/0094-static-link-navigation-contract-audit-cheatsheet.html`
+- `learning-records/0086-release-candidate-versioned-publishing-readiness.md`
+- `README.md`
+- `DEVELOPMENT.md`
+- `index.html`
+- `NOTES.md`
+- `tests/test_course_docs_contract.py`
+- `COURSE_PROGRESS.md`
+
+## Next suggested step
+
+Run documentation, provider, full pytest, and whitespace checks. Continue with Lesson 0096 after user review; the final topic should be the full course completion release runbook.
+
+# 2026-07-05 Run: Lesson 0094 Static Link Navigation Contract Audit
+
+## Completed
+
+- Completed Lesson 0094: Static Link Navigation Contract Audit.
+- Added `.github/LINK_AUDIT.md` documenting static HTML link scope, required navigation pattern, path rules, test contract, manual review checklist, required verification, and production link-audit differences.
+- Extended documentation contract tests to scan local links in `index.html`, `lessons/`, and `reference/`, resolve them relative to each source page, reject paths outside the repository, and fail on missing local targets.
+- Added Lesson 0094, Reference 0094, learning record 0085, updated Lesson 0093 navigation, Reference 0093 navigation, README, DEVELOPMENT.md, main course index, and `NOTES.md`.
+
+## Verification
+
+- `.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q` -> 27 passed.
+- `.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q` -> 54 passed.
+- `.\.venv\Scripts\python.exe -m pytest -q` -> 122 passed, 1 existing StarletteDeprecationWarning.
+- `git diff --check` -> no whitespace errors; Windows LF-to-CRLF warnings only.
+
+## Files touched
+
+- `.github/LINK_AUDIT.md`
+- `.github/FINAL_AUDIT.md`
+- `CHANGELOG.md`
+- `lessons/0094-static-link-navigation-contract-audit.html`
+- `lessons/0093-repository-final-quality-audit-checklist.html`
+- `reference/0094-static-link-navigation-contract-audit-cheatsheet.html`
+- `reference/0093-repository-final-quality-audit-checklist-cheatsheet.html`
+- `learning-records/0085-static-link-navigation-contract-audit.md`
+- `README.md`
+- `DEVELOPMENT.md`
+- `index.html`
+- `NOTES.md`
+- `tests/test_course_docs_contract.py`
+- `COURSE_PROGRESS.md`
+
+## Next suggested step
+
+Run documentation, provider, full pytest, and whitespace checks. Continue with Lesson 0095 after user review; a natural next topic is release candidate checklist and versioned publishing readiness.
+
+# 2026-07-05 Run: Lesson 0093 Repository Final Quality Audit Checklist
+
+## Completed
+
+- Completed Lesson 0093: Repository Final Quality Audit Checklist.
+- Added `.github/FINAL_AUDIT.md` documenting 96-lesson coverage, fixed nine-section structure, navigation integrity, source/test integrity, governance documents, no-secret checks, required verification, and release decision rules.
+- Added documentation contract coverage for the final audit document, README links, DEVELOPMENT links, CHANGELOG linkage, and the new lesson's fixed review structure.
+- Added Lesson 0093, Reference 0093, learning record 0084, updated Lesson 0092 navigation, Reference 0092 navigation, README, DEVELOPMENT.md, main course index, and `NOTES.md`.
+
+## Verification
+
+- `.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q` -> 25 passed.
+- `.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q` -> 54 passed.
+- `.\.venv\Scripts\python.exe -m pytest -q` -> 120 passed, 1 existing StarletteDeprecationWarning.
+- `git diff --check` -> no whitespace errors; Windows LF-to-CRLF warnings only.
+
+## Files touched
+
+- `.github/FINAL_AUDIT.md`
+- `CHANGELOG.md`
+- `lessons/0093-repository-final-quality-audit-checklist.html`
+- `lessons/0092-github-pages-offline-html-workflow.html`
+- `reference/0093-repository-final-quality-audit-checklist-cheatsheet.html`
+- `reference/0092-github-pages-offline-html-workflow-cheatsheet.html`
+- `learning-records/0084-repository-final-quality-audit-checklist.md`
+- `README.md`
+- `DEVELOPMENT.md`
+- `index.html`
+- `NOTES.md`
+- `tests/test_course_docs_contract.py`
+- `COURSE_PROGRESS.md`
+
+## Next suggested step
+
+Run documentation, provider, full pytest, and whitespace checks. Continue with Lesson 0094 after user review; a natural next topic is static link and navigation contract deep audit.
+
+# 2026-07-05 Run: Lesson 0092 GitHub Pages Offline HTML Workflow
+
+## Completed
+
+- Completed Lesson 0092: GitHub Pages Offline HTML Workflow.
+- Added `.github/PAGES.md` documenting static HTML reading modes, recommended GitHub Pages source, required static assets, pre-publish checks, common failure modes, and production documentation-site differences.
+- Added documentation contract coverage for Pages publication documentation, README links, DEVELOPMENT links, CHANGELOG linkage, and the new lesson's fixed review structure.
+- Added Lesson 0092, Reference 0092, learning record 0083, updated Lesson 0091 navigation, Reference 0091 navigation, README, DEVELOPMENT.md, main course index, and `NOTES.md`.
+
+## Verification
+
+- `.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q` -> 24 passed.
+- `.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q` -> 54 passed.
+- `.\.venv\Scripts\python.exe -m pytest -q` -> 119 passed, 1 existing StarletteDeprecationWarning.
+- `git diff --check` -> no whitespace errors; Windows LF-to-CRLF warnings only.
+
+## Files touched
+
+- `.github/PAGES.md`
+- `CHANGELOG.md`
+- `lessons/0092-github-pages-offline-html-workflow.html`
+- `lessons/0091-env-example-local-config-hygiene.html`
+- `reference/0092-github-pages-offline-html-workflow-cheatsheet.html`
+- `reference/0091-env-example-local-config-hygiene-cheatsheet.html`
+- `learning-records/0083-github-pages-offline-html-workflow.md`
+- `README.md`
+- `DEVELOPMENT.md`
+- `index.html`
+- `NOTES.md`
+- `tests/test_course_docs_contract.py`
+- `COURSE_PROGRESS.md`
+
+## Next suggested step
+
+Run documentation, provider, full pytest, and whitespace checks. Continue with Lesson 0093 after user review; a natural next topic is repository final quality audit checklist.
+
+# 2026-07-05 Run: Lesson 0091 Env Example Local Config Hygiene
+
+## Completed
+
+- Completed Lesson 0091: Env Example Local Config Hygiene.
+- Strengthened `.env.example` with comments that explain copying it to `.env`, keeping `.env` out of Git, avoiding real secrets, production URLs, private tokens, and customer data, and treating sample values as safe teaching defaults only.
+- Added documentation contract coverage for `.env.example`, `.gitignore`, `first_api/settings.py`, README links, DEVELOPMENT links, CHANGELOG linkage, and the new lesson's fixed review structure.
+- Added Lesson 0091, Reference 0091, learning record 0082, updated Lesson 0090 navigation, Reference 0090 navigation, README, DEVELOPMENT.md, main course index, and `NOTES.md`.
+
+## Verification
+
+- `.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q` -> 23 passed.
+- `.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q` -> 54 passed.
+- `.\.venv\Scripts\python.exe -m pytest -q` -> 118 passed, 1 existing StarletteDeprecationWarning.
+- `git diff --check` -> no whitespace errors; Windows LF-to-CRLF warnings only.
+
+## Files touched
+
+- `.env.example`
+- `CHANGELOG.md`
+- `lessons/0091-env-example-local-config-hygiene.html`
+- `lessons/0090-license-reuse-boundary.html`
+- `reference/0091-env-example-local-config-hygiene-cheatsheet.html`
+- `reference/0090-license-reuse-boundary-cheatsheet.html`
+- `learning-records/0082-env-example-local-config-hygiene.md`
+- `README.md`
+- `DEVELOPMENT.md`
+- `index.html`
+- `NOTES.md`
+- `tests/test_course_docs_contract.py`
+- `COURSE_PROGRESS.md`
+
+## Next suggested step
+
+Run documentation, provider, full pytest, and whitespace checks. Continue with Lesson 0092 after user review; a natural next topic is GitHub Pages or offline HTML publication workflow.
+
+# 2026-07-05 Run: Lesson 0090 License Reuse Boundary
+
+## Completed
+
+- Completed Lesson 0090: License Reuse Boundary.
+- Added root `LICENSE` with MIT License terms for repository reuse, modification, distribution, sublicensing, notice preservation, and no-warranty/no-liability boundaries.
+- Updated `CHANGELOG.md` with license entries under `Unreleased`.
+- Added documentation contract coverage for license content, README links, DEVELOPMENT links, CHANGELOG linkage, and the new lesson's fixed review structure.
+- Added Lesson 0090, Reference 0090, learning record 0081, updated Lesson 0089 navigation, Reference 0089 navigation, README, DEVELOPMENT.md, main course index, and `NOTES.md`.
+
+## Verification
+
+- `.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q` -> 22 passed.
+- `.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q` -> 54 passed.
+- `.\.venv\Scripts\python.exe -m pytest -q` -> 117 passed, 1 existing StarletteDeprecationWarning.
+- `git diff --check` -> no whitespace errors; Windows LF-to-CRLF warnings only.
+
+## Files touched
+
+- `LICENSE`
+- `CHANGELOG.md`
+- `lessons/0090-license-reuse-boundary.html`
+- `lessons/0089-security-policy-workflow.html`
+- `reference/0090-license-reuse-boundary-cheatsheet.html`
+- `reference/0089-security-policy-workflow-cheatsheet.html`
+- `learning-records/0081-license-reuse-boundary.md`
+- `README.md`
+- `DEVELOPMENT.md`
+- `index.html`
+- `NOTES.md`
+- `tests/test_course_docs_contract.py`
+- `COURSE_PROGRESS.md`
+
+## Next suggested step
+
+Run documentation, provider, full pytest, and whitespace checks. Continue with Lesson 0091 after user review; a natural next topic is `.env.example` and local configuration hygiene for GitHub learners.
+
+# 2026-07-05 Run: Lesson 0089 Security Policy Workflow
+
+## Completed
+
+- Completed Lesson 0089: Security Policy Workflow.
+- Added root `SECURITY.md` documenting private vulnerability reporting, supported scope, non-security reports, report fields, maintainer triage, fix and disclosure flow, required verification, and links to conduct, contribution, issue, and release workflow documents.
+- Updated `CHANGELOG.md` with security policy entries under `Unreleased`.
+- Added documentation contract coverage for security policy content, README links, DEVELOPMENT links, CHANGELOG linkage, and the new lesson's fixed review structure.
+- Added Lesson 0089, Reference 0089, learning record 0080, updated Lesson 0088 navigation, Reference 0088 navigation, README, DEVELOPMENT.md, main course index, and `NOTES.md`.
+
+## Verification
+
+- `.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q` -> 21 passed.
+- `.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q` -> 54 passed.
+- `.\.venv\Scripts\python.exe -m pytest -q` -> 116 passed, 1 existing StarletteDeprecationWarning.
+- `git diff --check` -> no whitespace errors; Windows LF-to-CRLF warnings only.
+
+## Files touched
+
+- `SECURITY.md`
+- `CHANGELOG.md`
+- `lessons/0089-security-policy-workflow.html`
+- `lessons/0088-code-of-conduct-workflow.html`
+- `reference/0089-security-policy-workflow-cheatsheet.html`
+- `reference/0088-code-of-conduct-workflow-cheatsheet.html`
+- `learning-records/0080-security-policy-workflow.md`
+- `README.md`
+- `DEVELOPMENT.md`
+- `index.html`
+- `NOTES.md`
+- `tests/test_course_docs_contract.py`
+- `COURSE_PROGRESS.md`
+
+## Next suggested step
+
+Run documentation, provider, full pytest, and whitespace checks. Continue with Lesson 0090 after user review; a natural next topic is LICENSE for open-source reuse boundaries.
+
+# 2026-07-05 Run: Lesson 0088 Code of Conduct Workflow
+
+## Completed
+
+- Completed Lesson 0088: Code of Conduct Workflow.
+- Added root `CODE_OF_CONDUCT.md` documenting beginner-safe collaboration, expected behavior, unacceptable behavior, scope, reporting, maintainer response, teaching review norms, safety boundary, and relationships to repository workflow documents.
+- Updated `CHANGELOG.md` with code of conduct entries under `Unreleased`.
+- Added documentation contract coverage for code of conduct content, README links, DEVELOPMENT links, CHANGELOG linkage, and the new lesson's fixed review structure.
+- Added Lesson 0088, Reference 0088, learning record 0079, updated Lesson 0087 navigation, Reference 0087 navigation, README, DEVELOPMENT.md, main course index, and `NOTES.md`.
+
+## Verification
+
+- `.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q` -> 20 passed.
+- `.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q` -> 54 passed.
+- `.\.venv\Scripts\python.exe -m pytest -q` -> 115 passed, 1 existing StarletteDeprecationWarning.
+- `git diff --check` -> no whitespace errors; Windows LF-to-CRLF warnings only.
+
+## Files touched
+
+- `CODE_OF_CONDUCT.md`
+- `CHANGELOG.md`
+- `lessons/0088-code-of-conduct-workflow.html`
+- `lessons/0087-contributing-guide-workflow.html`
+- `reference/0088-code-of-conduct-workflow-cheatsheet.html`
+- `reference/0087-contributing-guide-workflow-cheatsheet.html`
+- `learning-records/0079-code-of-conduct-workflow.md`
+- `README.md`
+- `DEVELOPMENT.md`
+- `index.html`
+- `NOTES.md`
+- `tests/test_course_docs_contract.py`
+- `COURSE_PROGRESS.md`
+
+## Next suggested step
+
+Run documentation, provider, full pytest, and whitespace checks. Continue with Lesson 0089 after user review; a natural next topic is SECURITY.md for vulnerability reporting and private disclosure boundaries.
+
+# 2026-07-05 Run: Lesson 0087 Contributing Guide Workflow
+
+## Completed
+
+- Completed Lesson 0087: Contributing Guide Workflow.
+- Added root `CONTRIBUTING.md` documenting contribution scope, pre-work checks, branch and commit workflow, fixed lesson structure, documentation checklist, required verification, PR evidence, review ownership, changelog and release notes, and public safety boundaries.
+- Updated `CHANGELOG.md` with contribution workflow entries under `Unreleased`.
+- Added documentation contract coverage for contributor workflow content, README links, DEVELOPMENT links, CHANGELOG linkage, and the new lesson's fixed review structure.
+- Added Lesson 0087, Reference 0087, learning record 0078, updated Lesson 0086 navigation, Reference 0086 navigation, README, DEVELOPMENT.md, main course index, and `NOTES.md`.
+
+## Verification
+
+- `.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q` -> 19 passed.
+- `.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q` -> 54 passed.
+- `.\.venv\Scripts\python.exe -m pytest -q` -> 114 passed, 1 existing StarletteDeprecationWarning.
+- `git diff --check` -> no whitespace errors; Windows LF-to-CRLF warnings only.
+
+## Files touched
+
+- `CONTRIBUTING.md`
+- `CHANGELOG.md`
+- `lessons/0087-contributing-guide-workflow.html`
+- `lessons/0086-changelog-maintenance-workflow.html`
+- `reference/0087-contributing-guide-workflow-cheatsheet.html`
+- `reference/0086-changelog-maintenance-workflow-cheatsheet.html`
+- `learning-records/0078-contributing-guide-workflow.md`
+- `README.md`
+- `DEVELOPMENT.md`
+- `index.html`
+- `NOTES.md`
+- `tests/test_course_docs_contract.py`
+- `COURSE_PROGRESS.md`
+
+## Next suggested step
+
+Run documentation, provider, full pytest, and whitespace checks. Continue with Lesson 0088 after user review; a natural next topic is CODE_OF_CONDUCT or SECURITY policy for public collaboration boundaries.
+
+# 2026-07-05 Run: Lesson 0086 Changelog Maintenance Workflow
+
+## Completed
+
+- Completed Lesson 0086: Changelog Maintenance Workflow.
+- Added root `CHANGELOG.md` as the local release ledger for notable course, source, test, documentation, and GitHub governance changes.
+- Defined `Unreleased`, Added, Changed, Fixed, Tests, Governance, entry rules, release heading format, and the boundary between changelog, GitHub Release Notes, and `COURSE_PROGRESS.md`.
+- Added documentation contract coverage for changelog content, README links, DEVELOPMENT links, and the new lesson's fixed review structure.
+- Added Lesson 0086, Reference 0086, learning record 0077, updated Lesson 0085 navigation, Reference 0085 navigation, README, DEVELOPMENT.md, main course index, and `NOTES.md`.
+
+## Verification
+
+- `.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q` -> 18 passed.
+- `.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q` -> 54 passed.
+- `.\.venv\Scripts\python.exe -m pytest -q` -> 113 passed, 1 existing StarletteDeprecationWarning.
+- `git diff --check` -> no whitespace errors; Windows LF-to-CRLF warnings only.
+
+## Files touched
+
+- `CHANGELOG.md`
+- `lessons/0086-changelog-maintenance-workflow.html`
+- `lessons/0085-github-release-notes-tags-workflow.html`
+- `reference/0086-changelog-maintenance-workflow-cheatsheet.html`
+- `reference/0085-github-release-notes-tags-workflow-cheatsheet.html`
+- `learning-records/0077-changelog-maintenance-workflow.md`
+- `README.md`
+- `DEVELOPMENT.md`
+- `index.html`
+- `NOTES.md`
+- `tests/test_course_docs_contract.py`
+- `COURSE_PROGRESS.md`
+
+## Next suggested step
+
+Run documentation, provider, full pytest, and whitespace checks. Continue with Lesson 0087 after user review; a natural next topic is CONTRIBUTING.md for contributor onboarding.
+
+# 2026-07-05 Run: Lesson 0085 GitHub Release Notes and Tags Workflow
+
+## Completed
+
+- Completed Lesson 0085: GitHub Release Notes and Tags Workflow.
+- Added `.github/RELEASE_PROCESS.md` documenting course batch tag naming, annotated tag rules, Release Notes structure, verification checklist, known warnings, release flow, rollback, and production notes.
+- Added documentation contract coverage for the release process, README links, DEVELOPMENT links, and the new lesson's fixed review structure.
+- Added Lesson 0085, Reference 0085, learning record 0076, updated Lesson 0084 navigation, Reference 0084 navigation, README, DEVELOPMENT.md, main course index, and `NOTES.md`.
+
+## Verification
+
+- `.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q` -> 17 passed.
+- `.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q` -> 54 passed.
+- `.\.venv\Scripts\python.exe -m pytest -q` -> 112 passed, 1 existing StarletteDeprecationWarning.
+- `git diff --check` -> no whitespace errors; Windows LF-to-CRLF warnings only.
+
+## Files touched
+
+- `.github/RELEASE_PROCESS.md`
+- `lessons/0085-github-release-notes-tags-workflow.html`
+- `lessons/0084-github-discussions-course-qa-workflow.html`
+- `reference/0085-github-release-notes-tags-workflow-cheatsheet.html`
+- `reference/0084-github-discussions-course-qa-workflow-cheatsheet.html`
+- `learning-records/0076-github-release-notes-tags-workflow.md`
+- `README.md`
+- `DEVELOPMENT.md`
+- `index.html`
+- `NOTES.md`
+- `tests/test_course_docs_contract.py`
+- `COURSE_PROGRESS.md`
+
+## Next suggested step
+
+Run documentation, provider, full pytest, and whitespace checks. Continue with Lesson 0086 after user review; a natural next topic is CHANGELOG maintenance or repository contribution policy.
+
+# 2026-07-05 Run: Lesson 0084 GitHub Discussions Course Q&A Workflow
+
+## Completed
+
+- Confirmed Lesson 0083 content is normal: nine-section structure, project board field model, status mapping, operating rules, and remote-configuration boundary are all present.
+- Re-ran documentation contract tests and whitespace check for Lesson 0083 before continuing.
+- Completed Lesson 0084: GitHub Discussions Course Q&A Workflow.
+- Added `.github/DISCUSSIONS.md` documenting recommended discussion categories, issue-vs-discussion decision rules, answer quality checklist, conversion flow, and production notes.
+- Added documentation contract coverage for Discussions workflow, README links, DEVELOPMENT links, and the new lesson's fixed review structure.
+- Added Lesson 0084, Reference 0084, learning record 0075, updated Lesson 0083 navigation, Reference 0083 navigation, README, DEVELOPMENT.md, main course index, and `NOTES.md`.
+
+## Verification
+
+- `.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q` -> 16 passed.
+- `.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q` -> 54 passed.
+- `.\.venv\Scripts\python.exe -m pytest -q` -> 111 passed, 1 existing StarletteDeprecationWarning.
+- `git diff --check` -> no whitespace errors; Windows LF-to-CRLF warnings only.
+
+## Files touched
+
+- `.github/DISCUSSIONS.md`
+- `lessons/0084-github-discussions-course-qa-workflow.html`
+- `lessons/0083-github-projects-board-workflow.html`
+- `reference/0084-github-discussions-course-qa-workflow-cheatsheet.html`
+- `reference/0083-github-projects-board-workflow-cheatsheet.html`
+- `learning-records/0075-github-discussions-course-qa-workflow.md`
+- `README.md`
+- `DEVELOPMENT.md`
+- `index.html`
+- `NOTES.md`
+- `tests/test_course_docs_contract.py`
+- `COURSE_PROGRESS.md`
+
+## Next suggested step
+
+Run documentation, provider, full pytest, and whitespace checks. Continue with Lesson 0085 after user review; a natural next topic is GitHub release notes or tags for publishing course batches.
+
 # 2026-07-05 Run: Lesson 0083 GitHub Projects Board Workflow
 
 ## Completed

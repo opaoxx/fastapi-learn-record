@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Env Example Local Config Hygiene Cheat Sheet</title><link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+  <nav class="course-nav" aria-label="速查表导航"><span class="nav-title">Reference 0091</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0091-env-example-local-config-hygiene.html">回到第 91 课</a><a href="./0090-license-reuse-boundary-cheatsheet.html">上一张速查</a><a href="./0092-github-pages-offline-html-workflow-cheatsheet.html">下一张速查</a></span></nav>
+  <header><p class="eyebrow">Reference 0091</p><h1>Env Example Local Config Hygiene 速查</h1><p class="lead">用 <code>.env.example</code> 暴露可提交配置形状，用 <code>.env</code> 保存本地私有覆盖，并用 <code>.gitignore</code> 阻止真实密钥进入仓库。</p></header>
+  <h2>核心文件</h2><pre><code>.env.example
+.gitignore
+first_api/settings.py</code></pre>
+  <h2>配置前缀</h2><pre><code>FIRST_API_</code></pre>
+  <h2>本地复制</h2><pre><code>Copy-Item .env.example .env</code></pre>
+  <h2>安全边界</h2><pre><code>.env.example: committed sample values
+.env: ignored local secrets
+SettingsConfigDict: env_file=".env"
+.gitignore: .env</code></pre>
+  <h2>测试保护</h2><pre><code>test_env_example_documents_local_config_hygiene</code></pre>
+  <nav class="course-nav bottom" aria-label="速查表底部导航"><span class="nav-title">继续学习</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0091-env-example-local-config-hygiene.html">回到第 91 课</a><a href="./0090-license-reuse-boundary-cheatsheet.html">上一张速查</a><a href="./0092-github-pages-offline-html-workflow-cheatsheet.html">下一张速查</a></span></nav>
+</main></body></html>

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>GitHub Pages Offline HTML Workflow Cheat Sheet</title><link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+  <nav class="course-nav" aria-label="速查表导航"><span class="nav-title">Reference 0092</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0092-github-pages-offline-html-workflow.html">回到第 92 课</a><a href="./0091-env-example-local-config-hygiene-cheatsheet.html">上一张速查</a><a href="./0093-repository-final-quality-audit-checklist-cheatsheet.html">下一张速查</a></span></nav>
+  <header><p class="eyebrow">Reference 0092</p><h1>GitHub Pages Offline HTML Workflow 速查</h1><p class="lead">用 <code>.github/PAGES.md</code> 定义离线 HTML 阅读、GitHub 文件视图、Pages 发布源、静态资源和发布前检查。</p></header>
+  <h2>核心文件</h2><pre><code>.github/PAGES.md
+index.html
+assets/course.css
+lessons/
+reference/</code></pre>
+  <h2>推荐 Pages Source</h2><pre><code>Branch: main
+Folder: /
+Entry: index.html</code></pre>
+  <h2>发布前检查</h2><pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q
+.\.venv\Scripts\python.exe -m pytest -q
+git diff --check</code></pre>
+  <h2>常见故障</h2><pre><code>raw HTML source
+missing CSS
+404 lesson link
+broken previous/next navigation
+stale Pages deployment</code></pre>
+  <h2>测试保护</h2><pre><code>test_pages_documentation_describes_static_course_publication</code></pre>
+  <nav class="course-nav bottom" aria-label="速查表底部导航"><span class="nav-title">继续学习</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0092-github-pages-offline-html-workflow.html">回到第 92 课</a><a href="./0091-env-example-local-config-hygiene-cheatsheet.html">上一张速查</a><a href="./0093-repository-final-quality-audit-checklist-cheatsheet.html">下一张速查</a></span></nav>
+</main></body></html>

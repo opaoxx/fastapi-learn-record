@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0092 - GitHub Pages Offline HTML Workflow</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0092</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0091-env-example-local-config-hygiene.html">上一课</a>
+        <a href="../reference/0092-github-pages-offline-html-workflow-cheatsheet.html">速查</a>
+        <a href="./0093-repository-final-quality-audit-checklist.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0092 GitHub Pages：把离线 HTML 课程发布成可访问静态站点</h1>
+      <p class="lead">本节新增 <code>.github/PAGES.md</code>，定义课程 HTML 的离线阅读和 GitHub Pages 发布边界。重点不是炫技建站，而是讲清楚 <code>index.html</code>、<code>assets/</code>、<code>lessons/</code>、<code>reference/</code> 的相对路径如何在本地和 Pages 上保持一致。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>GitHub Pages Offline HTML Workflow
+├─ 阅读模式
+│  ├─ Local file: 本地打开 index.html
+│  ├─ FastAPI app: 运行后端和小前端
+│  ├─ GitHub file view: 常显示 HTML 源码
+│  └─ GitHub Pages: 远程渲染静态站点
+├─ 静态站点资产
+│  ├─ index.html: 课程总入口
+│  ├─ assets/course.css: 共享样式
+│  ├─ lessons/: 完整课程页
+│  └─ reference/: 速查表
+├─ 推荐发布源
+│  ├─ Branch: main
+│  ├─ Folder: /
+│  └─ Entry: index.html
+├─ 发布前检查
+│  ├─ docs contract
+│  ├─ full pytest
+│  ├─ git diff --check
+│  ├─ newest lesson linked
+│  └─ previous/next navigation connected
+└─ 常见故障
+   ├─ raw HTML source
+   ├─ missing CSS
+   ├─ 404 lesson link
+   ├─ broken navigation
+   └─ stale Pages deployment</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>本仓库的课程不是由框架编译出来的单页应用，而是一组普通静态 HTML 文件。浏览器读取 <code>index.html</code>，再通过相对链接进入 <code>lessons/</code> 和 <code>reference/</code>，页面样式由 <code>assets/course.css</code> 提供。</p>
+      <p>GitHub 文件视图不是静态站点托管。你在 GitHub 网页上点击 HTML 文件，通常看到的是源码预览，而不是课程页面。GitHub Pages 才是 GitHub 提供的静态站点发布层，它会通过 HTTP 服务渲染 HTML、CSS 和相对路径。</p>
+      <p>相对路径是本节核心。根目录 <code>index.html</code> 使用 <code>assets/course.css</code>，课程页使用 <code>../assets/course.css</code>，速查页也使用 <code>../assets/course.css</code>。如果 Pages 只发布某个子目录，路径就会断裂。</p>
+      <table>
+        <thead><tr><th>模式</th><th>入口</th><th>适合场景</th><th>典型限制</th></tr></thead>
+        <tbody>
+          <tr><td>本地文件</td><td><code>index.html</code></td><td>离线复习、下载后阅读</td><td>浏览器 file path 行为与 HTTP 略有差异</td></tr>
+          <tr><td>FastAPI app</td><td><code>/app/</code></td><td>测试后端和小前端</td><td>不是课程文档主站</td></tr>
+          <tr><td>GitHub file view</td><td>仓库文件页面</td><td>看源码和 diff</td><td>HTML 常显示源码</td></tr>
+          <tr><td>GitHub Pages</td><td>Pages URL</td><td>公开分享课程站点</td><td>需要远程配置或工作流</td></tr>
+        </tbody>
+      </table>
+      <p>GitHub Pages 是远程状态。提交 <code>.github/PAGES.md</code> 只记录配置契约，不会自动开启 Pages。真正启用需要在仓库 Settings 中选择发布源，或使用 Pages 工作流。</p>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code># GitHub Pages and Offline HTML Workflow</code></pre>
+      <p>标题定义文档职责：解释 Pages 与离线 HTML 阅读，而不是替代 README 或发布脚本。放在 <code>.github/</code> 下，说明它属于 GitHub 仓库治理文档。</p>
+
+      <pre><code>This repository stores course lessons and quick references as static HTML files.</code></pre>
+      <p>首句定位技术形态。课程页和速查表都是静态 HTML，没有构建步骤、没有前端框架路由、没有运行时打包。</p>
+
+      <pre><code>The course can be read offline by opening index.html from a local clone.</code></pre>
+      <p>这行说明最稳定阅读方式：克隆或下载仓库后，直接从本地打开根目录 <code>index.html</code>。这满足用户要求的离线复习阅读。</p>
+
+      <pre><code>GitHub Pages is an optional remote publishing layer; enabling it is repository remote state and is not created by committing this file.</code></pre>
+      <p>该句防止误解。文档只描述流程；Pages 开关、部署状态和 URL 都是 GitHub 远程配置。</p>
+
+      <pre><code>## Reading Modes</code></pre>
+      <p>Reading Modes 对比四种入口。新手常把 GitHub 文件视图误认为发布站点，因此需要明确区分。</p>
+
+      <pre><code>| Local file | index.html | Offline review after cloning or downloading the repository. |</code></pre>
+      <p>本地文件模式不依赖网络和后端服务，最适合期末复习。缺点是某些浏览器对 file URL 的安全策略与 HTTP 不完全一致。</p>
+
+      <pre><code>| FastAPI app | http://127.0.0.1:8000/app/ | Testing the runnable backend and tiny frontend. |</code></pre>
+      <p>FastAPI app 是可运行项目入口，不是课程文档入口。它用于上传文件、任务历史和 API 调用实验。</p>
+
+      <pre><code>| GitHub file view | Repository HTML file page | Inspecting source in GitHub. |</code></pre>
+      <p>GitHub 文件页适合看源码，不适合当课程站点。直接点 HTML 常看到源代码，是正常行为。</p>
+
+      <pre><code>| GitHub Pages | Published site URL | Sharing rendered static course pages. |</code></pre>
+      <p>Pages 模式适合分享给其他学习者。它通过 HTTP 发布静态文件，使浏览器按网页方式渲染课程。</p>
+
+      <pre><code>## Recommended Pages Source</code></pre>
+      <p>推荐发布源是 <code>main</code> 分支根目录。因为本仓库所有相对路径都以仓库根目录为基准设计。</p>
+
+      <pre><code>Branch: main
+Folder: /
+Entry: index.html</code></pre>
+      <p>这三行是 Pages 配置核心。若发布 <code>/docs</code> 子目录，现有 <code>assets/</code>、<code>lessons/</code>、<code>reference/</code> 链接都需要重排。</p>
+
+      <pre><code>## Required Static Assets</code></pre>
+      <p>Required Static Assets 列出完整站点必需文件。只发布单个 lesson 会导致 CSS 和导航链接缺失。</p>
+
+      <pre><code>index.html
+assets/course.css
+all files under lessons/
+all files under reference/</code></pre>
+      <p>这些文件共同构成离线课程站点。<code>index.html</code> 是入口，CSS 是样式，课程和速查是内容主体。</p>
+
+      <pre><code>Do not publish only a single lesson file; lesson navigation depends on shared relative paths.</code></pre>
+      <p>这句解释为什么不能把某节课孤立上传。课程页的上一课、下一课、速查和目录链接都依赖目录结构。</p>
+
+      <pre><code>## Pre-Publish Checklist</code></pre>
+      <p>发布前检查把“站点能打开”转化为可验证流程。至少要跑文档契约、全量测试和空白检查。</p>
+
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q
+.\.venv\Scripts\python.exe -m pytest -q
+git diff --check</code></pre>
+      <p>docs contract 保护导航和固定课程结构；full pytest 防止示例项目被破坏；diff check 防止空白错误进入发布。</p>
+
+      <pre><code>README.md explains that GitHub file view may show raw HTML source.</code></pre>
+      <p>README 必须提前解释 GitHub 文件视图限制，否则新手会以为课程页面坏了。</p>
+
+      <pre><code>## Common Failure Modes</code></pre>
+      <p>故障表面向发布后排查。静态站点最常见问题不是运行时异常，而是路径、资源、部署源和缓存。</p>
+
+      <pre><code>HTML source is shown instead of a page.</code></pre>
+      <p>这通常不是代码错误，而是用户打开了 GitHub 文件视图。解决方式是打开本地文件或 Pages URL。</p>
+
+      <pre><code>Page has no styling.</code></pre>
+      <p>样式丢失通常表示 <code>assets/course.css</code> 未发布，或相对路径因发布目录变化而断裂。</p>
+
+      <pre><code>Lesson link returns 404.</code></pre>
+      <p>404 表示索引链接指向了未提交文件、文件名不一致，或 Pages 部署源不包含该路径。</p>
+
+      <pre><code>## Production Notes</code></pre>
+      <p>生产文档站点通常会使用静态站点生成器、链接检查、搜索、版本化、CDN 和预览部署。本课程故意保留 plain HTML，便于新手理解路径和部署。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>Course HTML files exist
+  -> local learner opens index.html
+  -> browser loads assets/course.css
+  -> learner navigates to lessons/ and reference/
+  -> maintainer wants public rendered site
+  -> configure GitHub Pages:
+       branch main
+       folder /
+  -> Pages publishes repository root
+  -> visitor opens Pages URL
+  -> same relative links resolve over HTTP
+  -> docs contract protects navigation before release</code></pre>
+      <p>这条流程说明本地离线和 Pages 的共同点：文件结构相同、相对路径相同。差异在于协议从 <code>file://</code> 变成 <code>https://</code>，以及 Pages 需要远程配置。</p>
+      <table>
+        <thead><tr><th>访问对象</th><th>从根目录访问</th><th>从 lesson 页访问</th><th>风险</th></tr></thead>
+        <tbody>
+          <tr><td>CSS</td><td><code>assets/course.css</code></td><td><code>../assets/course.css</code></td><td>发布子目录会断样式</td></tr>
+          <tr><td>总目录</td><td><code>index.html</code></td><td><code>../index.html</code></td><td>目录层级错误会返回 404</td></tr>
+          <tr><td>课程页</td><td><code>lessons/0092...</code></td><td><code>./0091...</code></td><td>文件名不一致会断链</td></tr>
+          <tr><td>速查页</td><td><code>reference/0092...</code></td><td><code>../reference/0092...</code></td><td>引用路径漏更新</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混淆点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>GitHub 文件页 vs Pages</td><td>点开 HTML 文件就是网站。</td><td>文件页通常看源码；Pages 才是渲染站点。</td></tr>
+          <tr><td>离线 HTML vs FastAPI app</td><td>课程必须启动后端才能读。</td><td>课程 HTML 可离线读；FastAPI app 用于运行项目实验。</td></tr>
+          <tr><td>发布单文件</td><td>上传一节 lesson 就能分享。</td><td>课程依赖 CSS、目录、速查和前后导航，必须发布完整结构。</td></tr>
+          <tr><td>Pages 配置</td><td>提交 PAGES.md 会自动启用 Pages。</td><td>Pages 是远程设置或 workflow 状态，文档只记录契约。</td></tr>
+          <tr><td>根目录发布</td><td>发布到任意目录都一样。</td><td>当前相对路径按根目录发布设计，换目录要重写链接。</td></tr>
+          <tr><td>测试范围</td><td>静态页不需要测试。</td><td>文档契约测试保护导航、课程结构和公开入口。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>报错/坑点</th><th>原因</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>GitHub 上看到 HTML 源码</td><td>打开的是文件视图。</td><td>使用本地 <code>index.html</code> 或 Pages URL。</td></tr>
+          <tr><td>页面无样式</td><td>CSS 未发布或路径断裂。</td><td>从仓库根目录发布，确认 <code>assets/course.css</code> 存在。</td></tr>
+          <tr><td>课程 404</td><td><code>index.html</code> 链接了不存在的文件。</td><td>提交对应 lesson/reference，并跑 docs contract。</td></tr>
+          <tr><td>上一课/下一课断裂</td><td>只更新了新课，没更新相邻课程。</td><td>同时更新 lesson 和 reference 的前后导航。</td></tr>
+          <tr><td>Pages 仍显示旧内容</td><td>部署未刷新、选错分支或缓存。</td><td>检查 Pages 设置和最新 deployment 状态。</td></tr>
+          <tr><td>发布后 README 误导</td><td>没有解释文件视图与 Pages 差异。</td><td>README 保留 raw HTML source 提示和本地打开方式。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>站点形态</td><td>Plain HTML + CSS，无构建步骤。</td><td>常用 SSG、MDX、搜索、版本化、预览部署。</td></tr>
+          <tr><td>发布方式</td><td>GitHub Pages root 发布或本地打开。</td><td>CI/CD、CDN、缓存刷新、域名和 TLS 管理。</td></tr>
+          <tr><td>验证</td><td>docs contract、pytest、diff check。</td><td>还会有 link checker、visual regression、SEO、accessibility。</td></tr>
+          <tr><td>路径策略</td><td>相对路径便于离线阅读。</td><td>可能使用 base path、路由重写、redirects、canonical URL。</td></tr>
+          <tr><td>内容规模</td><td>96 节课程和速查页，可人工导航。</td><td>需要搜索索引、侧边栏、版本选择和自动目录。</td></tr>
+          <tr><td>运维</td><td>维护者手动检查发布源。</td><td>监控、告警、部署审计和回滚策略。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. 为什么 GitHub 文件视图不等于 GitHub Pages？</summary><p class="answer">文件视图用于查看源码和 diff，HTML 常显示源代码；GitHub Pages 是静态站点托管层，会通过 HTTP 渲染 HTML 和 CSS。</p></details>
+      <details><summary>2. 本仓库推荐从哪里发布 Pages？</summary><p class="answer">推荐从 <code>main</code> 分支根目录 <code>/</code> 发布，入口为 <code>index.html</code>，这样 assets、lessons、reference 的相对路径与离线阅读一致。</p></details>
+      <details><summary>3. 发布静态课程站点必须包含哪些资产？</summary><p class="answer">必须包含 <code>index.html</code>、<code>assets/course.css</code>、所有 <code>lessons/</code> 文件和所有 <code>reference/</code> 文件。</p></details>
+      <details><summary>4. 页面样式丢失通常是什么原因？</summary><p class="answer">通常是 <code>assets/course.css</code> 没发布，或发布目录改变导致相对路径断裂。</p></details>
+      <details><summary>5. 为什么发布前要跑 docs contract？</summary><p class="answer">docs contract 能保护课程固定结构、公开入口和导航链接，防止发布后出现缺课、断链或速查页漏接。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：静态站点托管和后端服务托管有什么区别？</summary><p class="answer">静态站点托管只分发 HTML/CSS/JS/图片等文件，不执行服务器业务逻辑；后端服务托管运行进程，处理请求、数据库、鉴权和状态。</p></details>
+      <details><summary>面试题 2：为什么相对路径对离线 HTML 重要？</summary><p class="answer">相对路径让本地文件和 Pages HTTP 站点共享同一目录结构，不依赖固定域名，便于克隆后离线阅读。</p></details>
+      <details><summary>面试题 3：GitHub Pages 发布常见 404 如何排查？</summary><p class="answer">检查文件是否提交、路径大小写是否一致、Pages 发布源是否包含该目录、index 链接是否正确、部署是否刷新。</p></details>
+      <details><summary>面试题 4：生产文档站点通常比 plain HTML 多什么？</summary><p class="answer">通常有静态站点生成器、搜索、版本化、链接检查、预览部署、CDN、analytics、SEO、accessibility 和回滚策略。</p></details>
+      <details><summary>面试题 5：为什么本课程仍选择 plain HTML？</summary><p class="answer">plain HTML 降低依赖和构建门槛，新手能直接理解文件结构、相对路径、CSS 引用和离线阅读机制。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0091-env-example-local-config-hygiene.html">上一课：.env.example</a>
+        <a href="../reference/0092-github-pages-offline-html-workflow-cheatsheet.html">查看速查</a>
+        <a href="./0093-repository-final-quality-audit-checklist.html">下一课：最终质量审计</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

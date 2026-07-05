@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0086 - Changelog Maintenance Workflow</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0086</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0085-github-release-notes-tags-workflow.html">上一课</a>
+        <a href="./0087-contributing-guide-workflow.html">下一课</a>
+        <a href="../reference/0086-changelog-maintenance-workflow-cheatsheet.html">速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0086 CHANGELOG：把课程仓库变更沉淀成可发布账本</h1>
+      <p class="lead">本节新增 <code>CHANGELOG.md</code>。它不是流水账，而是面向学习者和贡献者的本地发布账本：记录课程、速查、代码、测试和 GitHub 治理的可见变更，并为第 85 节的 GitHub Release Notes 提供可靠素材。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Changelog Maintenance Workflow
+├─ 文档定位
+│  ├─ CHANGELOG.md: 本地可审计变更账本
+│  ├─ GitHub Release Notes: 已发布 tag 摘要
+│  └─ COURSE_PROGRESS.md: 每次制作运行证据
+├─ 变更分类
+│  ├─ Added: 新课程、新速查、新入口
+│  ├─ Changed: 重构、导航、README、流程调整
+│  ├─ Fixed: 断链、错解、契约回归
+│  ├─ Tests: 文档契约、provider HTTP、全量测试
+│  └─ Governance: .github 协作治理规则
+├─ 发布节奏
+│  ├─ 日常变更写入 Unreleased
+│  ├─ 发布时移动到 course-vYYYY.MM.DD-N
+│  ├─ Release Notes 从 changelog 提炼
+│  └─ tag 固定最终快照
+└─ 质量边界
+   ├─ 不记录无意义微小过程
+   ├─ 不替代 COURSE_PROGRESS
+   ├─ 不替代测试结果
+   └─ 不允许与 README/index/release process 脱节</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>Changelog 的本质是“面向外部读者的变更索引”。Git 历史保存所有提交，但 commit 粒度通常服务于开发者；课程学习者关心的是“新增了哪些课、哪些入口变了、哪些测试保护了内容”。因此 changelog 是从 Git 历史中提炼出的语义层。</p>
+      <p>它与 Release Notes 的区别在于时机和载体。<code>CHANGELOG.md</code> 在仓库内持续维护，记录尚未发布的 <code>Unreleased</code> 变更；GitHub Release Notes 在 tag 发布时生成，面向某个固定版本。前者是素材库，后者是发布公告与证据摘要。</p>
+      <p>它与 <code>COURSE_PROGRESS.md</code> 的区别在于读者和密度。进度文件保留运行记录、文件列表、验证命令和下一步建议，适合维护者和后续 agent 续接；changelog 只保留对学习者和贡献者有意义的公共变更。</p>
+      <table>
+        <thead><tr><th>文档</th><th>数据来源</th><th>粒度</th><th>核心问题</th></tr></thead>
+        <tbody>
+          <tr><td>Git commit</td><td>开发操作</td><td>一次代码/文档提交</td><td>这次为什么改？</td></tr>
+          <tr><td>CHANGELOG.md</td><td>人工筛选的公共变更</td><td>一组可见变化</td><td>学习者需要知道什么变了？</td></tr>
+          <tr><td>GitHub Release Notes</td><td>tag + changelog + 验证结果</td><td>一个发布批次</td><td>这个版本交付了什么？</td></tr>
+          <tr><td>COURSE_PROGRESS.md</td><td>每次制作过程</td><td>一次工作运行</td><td>维护者做了什么、如何验证？</td></tr>
+        </tbody>
+      </table>
+      <p>课程仓库的 changelog 不能只照搬库项目的 Added/Changed/Fixed。它还必须记录 Tests 和 Governance，因为本仓库的质量由课程内容、测试契约和 GitHub 协作规则共同构成。只记录代码变更会漏掉真实学习产品的核心交付。</p>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code># Changelog</code></pre>
+      <p>标题使用约定名称。GitHub 和开源社区普遍识别 <code>CHANGELOG.md</code>，新贡献者不用阅读说明也能推断其用途。若命名为 <code>updates.md</code>，可发现性会下降。</p>
+
+      <pre><code>All notable changes to this course repository are recorded here.</code></pre>
+      <p><code>notable changes</code> 是筛选条件。它排除无意义过程噪声，只记录对学习者、贡献者或发布者有价值的变化。若记录所有编辑动作，文件会失去检索价值。</p>
+
+      <pre><code>This project uses the changelog as a local release ledger.</code></pre>
+      <p>这一句定义业务角色：local release ledger。它强调 changelog 是仓库内账本，不是 GitHub Release 页面，也不是 CI 日志。</p>
+
+      <pre><code>GitHub Release Notes summarize a published tag; this file accumulates reviewable changes before and after the release is created.</code></pre>
+      <p>该句建立与第 85 节的依赖关系：Release Notes 摘要已发布 tag；changelog 积累发布前后的可审查变更。没有这层边界，两个文档会重复或互相矛盾。</p>
+
+      <pre><code>## Unreleased</code></pre>
+      <p><code>Unreleased</code> 是缓冲区。所有已经进入仓库但尚未进入 GitHub Release 的公共变更先放这里。发布时再移动到具体版本标题下。</p>
+
+      <pre><code>Use this section for work that has landed in the repository but has not yet been included in a GitHub Release.</code></pre>
+      <p>这行定义写入条件：landed in repository 且 not yet included in a GitHub Release。尚未合入的想法不进 changelog；已经发布的内容不应长期留在 Unreleased。</p>
+
+      <pre><code>### Added</code></pre>
+      <p>Added 记录新增能力或新增学习入口，例如新课程 HTML、速查表、GitHub workflow 文档和 learning record。它回答“仓库多了什么”。</p>
+
+      <pre><code>Add new lesson HTML pages, quick references, GitHub workflow documents, and learning records.</code></pre>
+      <p>该条把课程仓库的新增对象列完整。若只写 code features，会漏掉本项目最重要的 HTML 课程和 reference 页面。</p>
+
+      <pre><code>### Changed</code></pre>
+      <p>Changed 记录已有内容的语义变化，例如重构课程结构、调整导航、更新 README 学习路线。它回答“已有内容如何改变”。</p>
+
+      <pre><code>Record lesson rewrites, navigation updates, README route changes, and workflow documentation updates.</code></pre>
+      <p>这一行避免把“只改文档”视为低价值。课程仓库里 README、index 和 workflow 文档都是学习产品入口，变更必须可追踪。</p>
+
+      <pre><code>### Fixed</code></pre>
+      <p>Fixed 记录修复类变更。典型对象包括断链、错误解释、缺失测试和课程契约回归。它回答“什么错误被纠正”。</p>
+
+      <pre><code>### Tests</code></pre>
+      <p>Tests 是课程仓库特有的重要分类。文档契约测试、provider HTTP 测试、全量 pytest 和 whitespace check 都是发布可信度的一部分。</p>
+
+      <pre><code>### Governance</code></pre>
+      <p>Governance 记录 GitHub 协作规则变化，例如 issue templates、PR template、CODEOWNERS、Projects、Discussions、Release Process。它回答“贡献流程如何改变”。</p>
+
+      <pre><code>## Entry Rules</code></pre>
+      <p>Entry Rules 是写入算法。没有规则时，维护者会在“什么都记”和“什么都不记”之间摆动，最终使 changelog 失真。</p>
+
+      <pre><code>Write changelog entries for learner-visible changes, course structure changes, source behavior changes, test contract changes, and GitHub workflow changes.</code></pre>
+      <p>这条规则给出五类必须记录的公共变更。它覆盖学习者视角、结构视角、代码视角、质量视角和协作视角。</p>
+
+      <pre><code>Do not record every tiny typo unless it changes meaning, navigation, or public contract behavior.</code></pre>
+      <p>这条规则防止噪声。拼写修正只有在改变含义、导航或公共契约时才值得进入 changelog，否则应留在 commit history。</p>
+
+      <pre><code>Move relevant Unreleased entries into a release heading when a tag is published.</code></pre>
+      <p>这是发布转换规则。tag 发布后，Unreleased 中对应条目应移动到 <code>course-vYYYY.MM.DD-N</code> 标题下，形成版本化历史。</p>
+
+      <pre><code>Never use the changelog as a substitute for COURSE_PROGRESS.md.</code></pre>
+      <p>该行保护文档分层。changelog 不保存完整工作过程；COURSE_PROGRESS 保留执行证据。混用会导致一个太吵，另一个缺证据。</p>
+
+      <pre><code>## Release Heading Format</code></pre>
+      <p>Release Heading Format 保证每个发布批次可排序、可搜索、可对照 tag。标题必须与第 85 节的 tag 命名一致。</p>
+
+      <pre><code>## course-vYYYY.MM.DD-N - YYYY-MM-DD</code></pre>
+      <p>左侧是 tag，右侧是日期。tag 用于 Git/GitHub 精确定位，日期用于人类快速浏览。若二者缺一，检索体验会下降。</p>
+
+      <pre><code>## Changelog vs Release Notes vs Course Progress</code></pre>
+      <p>该表是本节最关键的边界表。它防止维护者把三个文档写成重复内容，也防止发布时缺少任一层证据。</p>
+
+      <pre><code>Large production repositories often generate changelogs from conventional commits, pull request labels, release automation, or issue tracker metadata.</code></pre>
+      <p>Production Notes 补充企业差异。生产环境常用自动生成和标签驱动；本教学仓库选择手写，是为了让新手看见变更筛选背后的判断过程。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>Repository change lands
+  -> decide whether it is notable
+       learner-visible?
+       course structure changed?
+       source behavior changed?
+       test contract changed?
+       GitHub workflow changed?
+  -> classify entry
+       Added / Changed / Fixed / Tests / Governance
+  -> write under Unreleased
+  -> before release
+       compare CHANGELOG with git diff and COURSE_PROGRESS
+       run provider HTTP, docs contract, full pytest, git diff --check
+  -> publish tag
+       move entries from Unreleased to course-vYYYY.MM.DD-N
+       create GitHub Release Notes from curated entries
+  -> after release
+       keep new changes in Unreleased again</code></pre>
+      <p>这条流程的核心是“先筛选，再分类，再发布”。changelog 不应该在发布当天临时凭记忆补写，而应随可见变更逐步维护。这样 Release Notes 只需提炼，不需要重新考古。</p>
+      <table>
+        <thead><tr><th>输入变更</th><th>分类</th><th>是否进 changelog</th><th>原因</th></tr></thead>
+        <tbody>
+          <tr><td>新增 0086 课程和速查</td><td>Added</td><td>是</td><td>学习者可见的新内容</td></tr>
+          <tr><td>修复 index 中某课链接</td><td>Fixed</td><td>是</td><td>影响公共导航契约</td></tr>
+          <tr><td>更新 docs contract 覆盖新文档</td><td>Tests</td><td>是</td><td>影响发布质量门禁</td></tr>
+          <tr><td>增加 CONTRIBUTING 流程</td><td>Governance</td><td>是</td><td>影响贡献者入口</td></tr>
+          <tr><td>微调一句不改变含义的标点</td><td>无</td><td>否</td><td>应留在 Git history，不污染公共账本</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混淆点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>CHANGELOG vs Git log</td><td>Git log 已经有历史，不需要 changelog。</td><td>Git log 是开发粒度；changelog 是面向读者的语义摘要。</td></tr>
+          <tr><td>CHANGELOG vs Release Notes</td><td>二者写一个就够。</td><td>CHANGELOG 是仓库内持续账本；Release Notes 是 tag 发布页摘要。</td></tr>
+          <tr><td>CHANGELOG vs COURSE_PROGRESS</td><td>都记录做了什么，可以合并。</td><td>前者面向外部可见变更，后者面向维护过程证据。</td></tr>
+          <tr><td>Unreleased</td><td>所有计划都放进去。</td><td>只放已经落地但尚未发布的仓库变更。</td></tr>
+          <tr><td>Fixed</td><td>只有代码 bug 才是 fixed。</td><td>断链、错解、缺失测试、文档契约回归也属于 fixed。</td></tr>
+          <tr><td>Governance</td><td>协作流程不是课程内容。</td><td>GitHub 协作规则决定贡献质量，是本系列后半段核心学习内容。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>表现</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>把 changelog 写成日报</td><td>条目充满“今天做了什么”，读者无法判断版本影响。</td><td>只记录 notable changes，把执行过程放到 COURSE_PROGRESS。</td></tr>
+          <tr><td>发布后忘记清空 Unreleased</td><td>同一条变更在下个 Release Notes 中重复出现。</td><td>发布 tag 时把相关条目移动到版本标题下。</td></tr>
+          <tr><td>分类过细</td><td>维护者不知道写到哪里。</td><td>教学仓库先保留 Added、Changed、Fixed、Tests、Governance 五类。</td></tr>
+          <tr><td>分类过粗</td><td>所有内容都写在 Changed，扫描困难。</td><td>新增能力写 Added，修复写 Fixed，质量门禁写 Tests，协作规则写 Governance。</td></tr>
+          <tr><td>与 Release Notes 不一致</td><td>GitHub Release 说新增课程，但 changelog 没有记录。</td><td>发布前对照 git diff、COURSE_PROGRESS 和 CHANGELOG。</td></tr>
+          <tr><td>忽略测试变更</td><td>文档契约加强没有进入发布说明。</td><td>把 test contract 视为课程质量能力，单独记录到 Tests。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>生成方式</td><td>手工维护，强调判断过程可读。</td><td>常由 Conventional Commits、PR labels、release bot 自动生成。</td></tr>
+          <tr><td>分类</td><td>Added、Changed、Fixed、Tests、Governance。</td><td>可能有 Security、Deprecated、Removed、Breaking Changes、Migration。</td></tr>
+          <tr><td>读者</td><td>新手学习者、课程贡献者、维护者。</td><td>客户、SDK 用户、运维、合规、安全团队。</td></tr>
+          <tr><td>验证证据</td><td>链接到 pytest、docs contract、diff check。</td><td>还会关联制品签名、SBOM、漏洞扫描、部署流水线。</td></tr>
+          <tr><td>发布风险</td><td>主要是学习路径错误、断链、解释失真。</td><td>还包括生产事故、兼容性破坏、数据迁移失败、安全披露。</td></tr>
+          <tr><td>自动化</td><td>以文档契约测试保护结构。</td><td>可接入 release-drafter、semantic-release、changesets、CI gates。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. Changelog 的核心职责是什么？</summary><p class="answer">把 Git 历史中的公共可见变更提炼成读者可扫描的语义账本，帮助学习者和贡献者理解仓库在每个阶段交付了什么。</p></details>
+      <details><summary>2. 为什么 <code>Unreleased</code> 只放已经落地的变更？</summary><p class="answer">因为 changelog 是事实账本，不是计划清单。未落地想法应进入 issue、discussion 或项目看板，而不是 changelog。</p></details>
+      <details><summary>3. Changelog 与 Release Notes 的区别是什么？</summary><p class="answer">Changelog 是仓库内持续维护的变更账本；Release Notes 是针对某个已发布 tag 的远程发布说明，通常从 changelog 和验证结果提炼而来。</p></details>
+      <details><summary>4. 为什么测试契约变化要进入 changelog？</summary><p class="answer">课程仓库的质量由测试保护。文档契约、provider HTTP 或全量测试变化会影响学习材料的可信度，因此属于公共质量变更。</p></details>
+      <details><summary>5. 发布 tag 时 changelog 要做什么？</summary><p class="answer">把对应 <code>Unreleased</code> 条目移动到 <code>course-vYYYY.MM.DD-N - YYYY-MM-DD</code> 标题下，并用这些条目提炼 GitHub Release Notes。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：为什么不能只依赖 Git commit history 当 changelog？</summary><p class="answer">commit history 是开发者操作日志，粒度细且上下文分散；changelog 是面向用户或学习者的语义摘要，按影响范围和发布批次组织。</p></details>
+      <details><summary>面试题 2：如何设计一个开源项目 changelog？</summary><p class="answer">先确定读者和发布节奏，再定义 Unreleased、版本标题、分类、写入规则和发布迁移规则。分类应覆盖功能、修复、测试、文档、安全或治理等公共影响。</p></details>
+      <details><summary>面试题 3：Changelog 中哪些内容不应该记录？</summary><p class="answer">不应记录未落地计划、无意义过程、内部临时操作、未改变含义的微小标点修正、不能帮助读者判断版本影响的噪声。</p></details>
+      <details><summary>面试题 4：Release 自动化和手写 changelog 如何取舍？</summary><p class="answer">成熟生产项目适合基于 commit、PR label 和 issue 元数据自动生成；教学或早期项目适合手写，以保证语义清晰并暴露维护判断。</p></details>
+      <details><summary>面试题 5：课程仓库为什么需要 Governance 分类？</summary><p class="answer">因为贡献入口、PR 证据、CODEOWNERS、Projects、Discussions、Release Process 会直接影响协作质量和学习体验，是课程产品的一部分。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0085-github-release-notes-tags-workflow.html">上一课：GitHub Releases</a>
+        <a href="./0087-contributing-guide-workflow.html">下一课：CONTRIBUTING</a>
+        <a href="../reference/0086-changelog-maintenance-workflow-cheatsheet.html">查看速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

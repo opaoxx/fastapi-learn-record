@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0094 - Static Link Navigation Contract Audit</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0094</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0093-repository-final-quality-audit-checklist.html">上一课</a>
+        <a href="../reference/0094-static-link-navigation-contract-audit-cheatsheet.html">速查</a>
+        <a href="./0095-release-candidate-versioned-publishing-readiness.html">下一课</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0094 静态链接与导航契约：把课程站点断链风险纳入自动化测试</h1>
+      <p class="lead">本节新增 <code>.github/LINK_AUDIT.md</code>，并扩展文档契约测试，对 <code>index.html</code>、<code>lessons/</code>、<code>reference/</code> 中的本地相对链接做仓库内解析。目标是让 96 节课程在离线阅读、GitHub Pages 发布和 GitHub 推广场景下都保持可达、可回退、可复查。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Static Link Navigation Contract Audit
+├─ 审计对象
+│  ├─ index.html
+│  ├─ lessons/*.html
+│  └─ reference/*.html
+├─ 链接分类
+│  ├─ local relative link: 纳入测试
+│  ├─ http/https: 外部链接，排除
+│  ├─ mailto: 邮件链接，排除
+│  └─ #fragment: 页内锚点，排除
+├─ 导航契约
+│  ├─ index -> lesson/reference
+│  ├─ lesson -> index/prev/next/reference
+│  └─ reference -> index/lesson/prev/next
+├─ 解析算法
+│  ├─ 读取 HTML a[href]
+│  ├─ 去掉 query/fragment
+│  ├─ 以当前文件目录解析相对路径
+│  ├─ 禁止跳出仓库
+│  └─ target.exists() 判定文件存在
+└─ 质量收益
+   ├─ 新课发布不漏目录
+   ├─ 重命名不留断链
+   ├─ Pages 发布不丢路径
+   └─ 离线阅读体验稳定</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>静态 HTML 课程站点没有前端路由器，也没有服务端动态生成目录。用户能否连续学习，完全取决于每个 <code>&lt;a href&gt;</code> 是否指向真实文件。因此链接不是装饰元素，而是课程站点的公共接口。</p>
+      <p>链接审计的底层问题是路径解析。浏览器解析 <code>href</code> 时，会以当前 HTML 文件所在目录作为基准目录。根目录 <code>index.html</code> 指向 <code>lessons/0094...</code>；课程页位于 <code>lessons/</code>，返回目录要写 <code>../index.html</code>；速查页位于 <code>reference/</code>，回课程要写 <code>../lessons/...</code>。</p>
+      <p>链接检查必须区分仓库内链接和仓库外链接。仓库内相对路径可以用文件系统验证；<code>https://</code> 外部地址需要网络可用性、重定向和状态码检查，不适合混进离线课程契约测试；<code>#fragment</code> 属于页内定位，和文件存在性不是同一类问题。</p>
+      <table>
+        <thead><tr><th>链接类型</th><th>示例</th><th>是否纳入本节测试</th><th>原因</th></tr></thead>
+        <tbody>
+          <tr><td>本地相对文件</td><td><code>../index.html</code></td><td>是</td><td>可用文件系统确定存在性</td></tr>
+          <tr><td>同目录文件</td><td><code>./0093-...</code></td><td>是</td><td>相邻导航依赖该路径</td></tr>
+          <tr><td>外部 HTTP</td><td><code>https://example.com</code></td><td>否</td><td>受网络、重定向、限流影响</td></tr>
+          <tr><td>邮件链接</td><td><code>mailto:...</code></td><td>否</td><td>不是文件路径</td></tr>
+          <tr><td>页内锚点</td><td><code>#section</code></td><td>否</td><td>属于 DOM 锚点，不是文件存在性</td></tr>
+        </tbody>
+      </table>
+      <p>生产级文档站点通常使用 link checker、crawler、redirect map 和预览部署。本课程选择把第一层问题压到最小：只验证仓库内静态文件链接。这一层足够保护新手最容易遇到的 404、速查缺失、上一课断链和目录漏项。</p>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>from urllib.parse import urlsplit</code></pre>
+      <p>引入 <code>urlsplit</code> 用于拆分 <code>href</code>。链接可能带 <code>?query</code> 或 <code>#fragment</code>，文件系统检查只应使用 path 部分。</p>
+
+      <pre><code>def iter_static_course_html_pages() -> list[Path]:</code></pre>
+      <p>该函数集中定义静态课程页扫描范围。范围写成函数，避免多个测试各自复制 <code>index.html</code>、<code>lessons</code>、<code>reference</code> 的扫描逻辑。</p>
+
+      <pre><code>return [Path("index.html"), *Path("lessons").glob("*.html"), *Path("reference").glob("*.html")]</code></pre>
+      <p>第一项是课程总入口；后两项收集所有课程页和速查页。若未来新增 lesson/reference，测试会自动纳入，不需要手动补路径。</p>
+
+      <pre><code>def is_repository_local_href(href: str) -> bool:</code></pre>
+      <p>该函数判断链接是否应该由仓库文件系统负责。抽成函数可以避免在测试主体里堆条件判断。</p>
+
+      <pre><code>return not href.startswith(("http://", "https://", "mailto:", "#"))</code></pre>
+      <p>排除外部 HTTP、邮件和纯页内锚点。若不排除外部链接，离线测试会被网络状态污染；若不排除 <code>#</code>，会把页内锚点误判成文件路径。</p>
+
+      <pre><code>parsed_path = urlsplit(href).path</code></pre>
+      <p>只保留 URL path。例如 <code>lesson.html#section</code> 的文件部分是 <code>lesson.html</code>，fragment 不参与文件存在判断。</p>
+
+      <pre><code>target = (page.parent / parsed_path).resolve()</code></pre>
+      <p>以当前页面所在目录解析相对路径。课程页中的 <code>../index.html</code> 与目录页中的 <code>lessons/...</code> 基准目录不同，必须按页面位置解析。</p>
+
+      <pre><code>target.relative_to(root)</code></pre>
+      <p>验证目标仍在仓库根目录内。否则 <code>../../outside.html</code> 这类路径可能跳出仓库，虽然在某些本地机器存在，但不属于课程站点。</p>
+
+      <pre><code>assert not broken_links</code></pre>
+      <p>最终断言没有断链。失败信息保留来源页面、原始 href 和解析目标，便于维护者直接定位漏改位置。</p>
+
+      <pre><code># Static Link and Navigation Audit</code></pre>
+      <p><code>.github/LINK_AUDIT.md</code> 的标题定义文档职责：它不是最终发布总审计，而是专门管理静态链接、导航模式和路径规则。</p>
+
+      <pre><code>The course is a plain HTML learning site, so navigation quality is part of the public API.</code></pre>
+      <p>该句给出设计原则：静态课程的导航质量等同于公共 API 质量。断链不是排版小问题，而是学习路径中断。</p>
+
+      <pre><code>The audit checks local relative links only.</code></pre>
+      <p>这行明确测试边界。边界越清楚，测试越稳定；不稳定的外部网络检查应放到单独的发布工具，而不是基础文档契约测试。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>pytest starts
+  -> load tests/test_course_docs_contract.py
+  -> collect static HTML pages:
+       index.html
+       lessons/*.html
+       reference/*.html
+  -> parse each page with HTMLParser
+  -> collect every a[href]
+  -> skip external/http/mail/fragment links
+  -> strip query and fragment from local href
+  -> resolve target relative to current page directory
+  -> confirm target stays inside repository root
+  -> confirm target file exists
+  -> fail with source page + href + target when broken</code></pre>
+      <p>这条链路把浏览器点击行为转换为文件系统验证。它不启动服务、不访问网络、不依赖 GitHub Pages，因此适合每次课程更新后快速执行。</p>
+      <table>
+        <thead><tr><th>来源页面</th><th>href</th><th>解析基准</th><th>目标</th></tr></thead>
+        <tbody>
+          <tr><td><code>index.html</code></td><td><code>lessons/0094...</code></td><td>仓库根目录</td><td><code>lessons/0094...</code></td></tr>
+          <tr><td><code>lessons/0094...</code></td><td><code>../index.html</code></td><td><code>lessons/</code></td><td><code>index.html</code></td></tr>
+          <tr><td><code>lessons/0094...</code></td><td><code>../reference/0094...</code></td><td><code>lessons/</code></td><td><code>reference/0094...</code></td></tr>
+          <tr><td><code>reference/0094...</code></td><td><code>../lessons/0094...</code></td><td><code>reference/</code></td><td><code>lessons/0094...</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>链接存在 vs 页面可读</td><td>文件存在就代表内容质量没问题。</td><td>链接测试只保护可达性；内容质量仍由九段式结构和人工审核保护。</td></tr>
+          <tr><td>相对路径 vs 绝对路径</td><td>写本机绝对路径最稳。</td><td>绝对本机路径只在作者电脑有效，GitHub 和其他学习者无法使用。</td></tr>
+          <tr><td>GitHub blob URL vs 仓库内路径</td><td>内部导航可以直接链接 GitHub blob。</td><td>课程 HTML 应使用相对路径，才能离线阅读并兼容 Pages。</td></tr>
+          <tr><td>外部链接检查</td><td>所有链接都应该在一个测试里检查。</td><td>外部链接受网络影响，应与仓库内静态路径检查分离。</td></tr>
+          <tr><td>上一课/下一课</td><td>只要 index 有入口就够。</td><td>长课阅读依赖相邻导航，上一课必须在新增新课时同步补下一课。</td></tr>
+          <tr><td>query/fragment</td><td><code>page.html#x</code> 是另一个文件。</td><td>文件存在性只看 <code>page.html</code>，fragment 属于页面内部定位。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>报错/坑点</th><th>根因</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td><code>broken local HTML links</code></td><td>新增课程后未创建目标文件或文件名写错。</td><td>按失败信息定位来源页面，补文件或修正 <code>href</code>。</td></tr>
+          <tr><td>链接跳出仓库</td><td>使用了过多 <code>../</code> 或本机路径。</td><td>只使用仓库内相对路径，避免指向工作区外文件。</td></tr>
+          <tr><td>GitHub Pages 404</td><td>本地路径大小写与实际文件不一致，或发布源不包含目标。</td><td>保持文件名小写稳定，按 root 发布，并跑链接契约测试。</td></tr>
+          <tr><td>速查页回不到课程</td><td>reference 页忘记写 <code>../lessons/...</code>。</td><td>每张速查必须有“回到课程”链接。</td></tr>
+          <tr><td>上一节没有下一节</td><td>只改了新课，没有回填上一课导航。</td><td>新增 lesson/reference 时同步更新前一个 lesson/reference。</td></tr>
+          <tr><td>测试误判外部链接</td><td>没有排除 <code>http</code>、<code>https</code>、<code>mailto</code>。</td><td>在本地链接判断函数中排除非文件链接。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>链接检查范围</td><td>仓库内 HTML 相对路径。</td><td>全站 crawler、外链状态码、重定向、canonical URL。</td></tr>
+          <tr><td>运行方式</td><td>pytest 文件系统检查，无需服务。</td><td>预览部署、真实 HTTP 检查、CDN 缓存验证。</td></tr>
+          <tr><td>失败处理</td><td>直接修复文件名、目录或相邻导航。</td><td>可能需要 redirect map、版本兼容、旧 URL 保留。</td></tr>
+          <tr><td>路径策略</td><td>相对路径优先，兼容离线和 Pages。</td><td>可能引入 base path、路由重写、多版本路径。</td></tr>
+          <tr><td>可视验证</td><td>重点是链接存在和学习路径闭合。</td><td>还要覆盖视觉回归、可访问性、SEO 和搜索索引。</td></tr>
+          <tr><td>责任归属</td><td>课程维护者手动维护文件和测试。</td><td>文档平台、CI、发布系统和 owner 审核共同负责。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. 为什么静态 HTML 课程必须做链接契约测试？</summary><p class="answer">静态课程没有运行时路由兜底，所有学习路径都依赖显式 href。链接契约测试能在发布前发现缺课、缺速查、目录漏项和相邻导航断裂。</p></details>
+      <details><summary>2. 本节链接测试为什么只检查仓库内相对链接？</summary><p class="answer">仓库内相对链接可通过文件系统稳定验证；外部链接受网络、重定向、限流影响，混进基础测试会降低确定性。</p></details>
+      <details><summary>3. 为什么解析链接时要以当前页面目录为基准？</summary><p class="answer">浏览器解析相对路径时使用当前文档所在目录。index、lesson、reference 位于不同层级，同一个 href 写法在不同目录下含义不同。</p></details>
+      <details><summary>4. 为什么不能在课程 HTML 中写本机绝对路径？</summary><p class="answer">本机绝对路径只在作者电脑存在，克隆到其他机器或发布到 GitHub Pages 后会失效，破坏离线学习和公开分享。</p></details>
+      <details><summary>5. 新增一节课时最容易漏掉哪些链接？</summary><p class="answer">最容易漏掉上一课的下一课链接、上一张速查的下一张速查链接、index 的课程入口、index 的速查入口，以及新课到速查页的链接。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：如何给静态文档站设计断链检测？</summary><p class="answer">先划分内部链接和外部链接。内部链接用 HTML parser 收集 href，以来源页面目录解析路径并检查文件存在；外部链接用独立 crawler 或发布任务检查，避免污染基础单元测试。</p></details>
+      <details><summary>面试题 2：为什么静态站点更依赖构建期或测试期链接检查？</summary><p class="answer">静态站点发布后不会动态查询路由表，也没有服务端兜底生成页面。文件缺失或路径错误会直接变成 404，因此要在发布前发现。</p></details>
+      <details><summary>面试题 3：相对路径和 base path 冲突时如何处理？</summary><p class="answer">教学离线站优先保持相对路径；生产站如果引入 base path，需要统一配置生成器、资源路径和路由重写，并用预览部署验证。</p></details>
+      <details><summary>面试题 4：为什么不要用正则解析 HTML 链接？</summary><p class="answer">HTML 属性顺序、空白、引号和实体都可能变化。标准 HTMLParser 至少能按标签和属性语义提取 href，比正则扫文本更稳。</p></details>
+      <details><summary>面试题 5：断链测试失败信息应该包含什么？</summary><p class="answer">至少包含来源页面、原始 href、解析后的目标路径和失败原因。这样维护者能直接定位是写错 href、漏提交文件还是跳出仓库。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0093-repository-final-quality-audit-checklist.html">上一课：最终质量审计</a>
+        <a href="../reference/0094-static-link-navigation-contract-audit-cheatsheet.html">查看速查</a>
+        <a href="./0095-release-candidate-versioned-publishing-readiness.html">下一课：Release Candidate</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

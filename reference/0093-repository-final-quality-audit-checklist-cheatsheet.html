@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Repository Final Quality Audit Checklist Cheat Sheet</title><link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+  <nav class="course-nav" aria-label="速查表导航"><span class="nav-title">Reference 0093</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0093-repository-final-quality-audit-checklist.html">回到第 93 课</a><a href="./0092-github-pages-offline-html-workflow-cheatsheet.html">上一张速查</a><a href="./0094-static-link-navigation-contract-audit-cheatsheet.html">下一张速查</a></span></nav>
+  <header><p class="eyebrow">Reference 0093</p><h1>Repository Final Quality Audit Checklist 速查</h1><p class="lead">用 <code>.github/FINAL_AUDIT.md</code> 做 96 节课程完结前的仓库级发布审计。</p></header>
+  <h2>审计对象</h2><pre><code>lessons/0001-0096
+reference/
+index.html
+README.md
+DEVELOPMENT.md
+CHANGELOG.md
+learning-records/
+.github/ governance docs
+first_api/
+tests/</code></pre>
+  <h2>课程结构门禁</h2><pre><code>no lesson numbering gaps
+matching quick reference
+nine-section structure
+Final Review + CSDN Deep Dive
+previous/next navigation
+lesson -> reference
+reference -> lesson</code></pre>
+  <h2>发布前命令</h2><pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q
+.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q
+.\.venv\Scripts\python.exe -m pytest -q
+git diff --check</code></pre>
+  <h2>No Secrets</h2><pre><code>no .env
+no real API key
+no private token
+no production provider URL
+no customer data
+no private logs
+safe .env.example only</code></pre>
+  <h2>测试保护</h2><pre><code>test_final_audit_documents_release_quality_gate
+test_rebuilt_foundation_lessons_use_exam_review_structure</code></pre>
+  <nav class="course-nav bottom" aria-label="速查表底部导航"><span class="nav-title">继续学习</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0093-repository-final-quality-audit-checklist.html">回到第 93 课</a><a href="./0092-github-pages-offline-html-workflow-cheatsheet.html">上一张速查</a><a href="./0094-static-link-navigation-contract-audit-cheatsheet.html">下一张速查</a></span></nav>
+</main></body></html>

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Full Course Completion Release Runbook Cheat Sheet</title><link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+  <nav class="course-nav" aria-label="速查表导航"><span class="nav-title">Reference 0096</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0096-full-course-completion-release-runbook.html">回到第 96 课</a><a href="./0095-release-candidate-versioned-publishing-readiness-cheatsheet.html">上一张速查</a></span></nav>
+  <header><p class="eyebrow">Reference 0096</p><h1>Full Course Completion Release Runbook 速查</h1><p class="lead">用 <code>.github/COURSE_COMPLETION.md</code> 完成 96 节课程最终收官发布检查。</p></header>
+  <h2>完结定义</h2><pre><code>lessons 0001-0096
+no numbering gaps
+nine-section structure
+matching reference pages
+index links complete
+no secrets
+verification evidence recorded</code></pre>
+  <h2>最终运行顺序</h2><pre><code>FINAL_AUDIT
+LINK_AUDIT
+RELEASE_CANDIDATE
+RELEASE_PROCESS
+PAGES
+verification commands
+CHANGELOG / Release Notes
+COURSE_PROGRESS evidence</code></pre>
+  <h2>验证命令</h2><pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q
+.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q
+.\.venv\Scripts\python.exe -m pytest -q
+git diff --check</code></pre>
+  <h2>阻断条件</h2><pre><code>missing lesson
+missing quick reference
+broken local HTML link
+test failure
+secret leak
+unclear release range
+undocumented known warning</code></pre>
+  <h2>完结后</h2><pre><code>do not rewrite completed release silently
+publish patch releases for corrections
+keep GitHub workflow documents active
+preserve 96-lesson baseline</code></pre>
+  <nav class="course-nav bottom" aria-label="速查表底部导航"><span class="nav-title">课程完结</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0096-full-course-completion-release-runbook.html">回到第 96 课</a><a href="./0095-release-candidate-versioned-publishing-readiness-cheatsheet.html">上一张速查</a></span></nav>
+</main></body></html>

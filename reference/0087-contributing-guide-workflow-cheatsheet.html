@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Contributing Guide Workflow Cheat Sheet</title><link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+  <nav class="course-nav" aria-label="速查表导航"><span class="nav-title">Reference 0087</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0087-contributing-guide-workflow.html">回到第 87 课</a><a href="./0086-changelog-maintenance-workflow-cheatsheet.html">上一张速查</a><a href="./0088-code-of-conduct-workflow-cheatsheet.html">下一张速查</a></span></nav>
+  <header><p class="eyebrow">Reference 0087</p><h1>Contributing Guide Workflow 速查</h1><p class="lead">用 <code>CONTRIBUTING.md</code> 把贡献范围、开始前检查、课程标准、验证命令、PR 证据和 review 所有权串成闭环。</p></header>
+  <h2>核心文件</h2><pre><code>CONTRIBUTING.md</code></pre>
+  <h2>贡献前检查</h2><pre><code>README.md
+DEVELOPMENT.md
+CHANGELOG.md
+existing issues
+existing discussions
+scoped issue</code></pre>
+  <h2>必跑验证</h2><pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q
+.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q
+.\.venv\Scripts\python.exe -m pytest -q
+git diff --check</code></pre>
+  <h2>PR 必备证据</h2><pre><code>summary
+why it changed
+change type
+verification output
+course documentation checklist
+risk notes
+linked issue or discussion</code></pre>
+  <h2>测试保护</h2><pre><code>test_contributing_guide_documents_contributor_workflow</code></pre>
+  <nav class="course-nav bottom" aria-label="速查表底部导航"><span class="nav-title">继续学习</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0087-contributing-guide-workflow.html">回到第 87 课</a><a href="./0086-changelog-maintenance-workflow-cheatsheet.html">上一张速查</a><a href="./0088-code-of-conduct-workflow-cheatsheet.html">下一张速查</a></span></nav>
+</main></body></html>

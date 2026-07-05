@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Release Candidate Versioned Publishing Readiness Cheat Sheet</title><link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+  <nav class="course-nav" aria-label="速查表导航"><span class="nav-title">Reference 0095</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0095-release-candidate-versioned-publishing-readiness.html">回到第 95 课</a><a href="./0094-static-link-navigation-contract-audit-cheatsheet.html">上一张速查</a><a href="./0096-full-course-completion-release-runbook-cheatsheet.html">下一张速查</a></span></nav>
+  <header><p class="eyebrow">Reference 0095</p><h1>Release Candidate Versioned Publishing Readiness 速查</h1><p class="lead">用 <code>.github/RELEASE_CANDIDATE.md</code> 管理课程发布候选、冻结、验证证据和 tag 就绪。</p></header>
+  <h2>RC 进入条件</h2><pre><code>lesson range explicit
+lesson/reference/index aligned
+COURSE_PROGRESS evidence
+CHANGELOG Unreleased accurate
+FINAL_AUDIT reviewed
+LINK_AUDIT reviewed</code></pre>
+  <h2>冻结规则</h2><pre><code>no new lesson topics
+no filename rename without link updates
+no public API change without tests and lessons
+no real secrets
+small traceable fixes only</code></pre>
+  <h2>验证命令</h2><pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q
+.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q
+.\.venv\Scripts\python.exe -m pytest -q
+git diff --check</code></pre>
+  <h2>发布就绪</h2><pre><code>tag: course-vYYYY.MM.DD-N
+use annotated tag
+prepare Release Notes
+record known warnings
+link rollback rules</code></pre>
+  <h2>退出条件</h2><pre><code>all checks pass
+known warnings documented
+release range explicit
+no broken links
+no missing references
+no secret leaks</code></pre>
+  <nav class="course-nav bottom" aria-label="速查表底部导航"><span class="nav-title">继续学习</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0095-release-candidate-versioned-publishing-readiness.html">回到第 95 课</a><a href="./0094-static-link-navigation-contract-audit-cheatsheet.html">上一张速查</a><a href="./0096-full-course-completion-release-runbook-cheatsheet.html">下一张速查</a></span></nav>
+</main></body></html>

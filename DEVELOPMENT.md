@@ -38,6 +38,32 @@ Issue label triage is documented in `.github/ISSUE_TRIAGE.md`; use type, area, p
 
 GitHub Projects board workflow is documented in `.github/PROJECT_BOARD.md`; keep project Status, Priority, Area, Type, and Lesson fields aligned with issue labels and course maintenance records.
 
+GitHub Discussions workflow is documented in `.github/DISCUSSIONS.md`; route exploratory learner questions to Discussions and convert concrete repository work back into templated issues.
+
+GitHub release publishing is documented in `.github/RELEASE_PROCESS.md`; use annotated tags and release notes to publish verified course batches.
+
+Changelog maintenance is documented in `CHANGELOG.md`; keep notable learner-visible, test-contract, and GitHub governance changes in `Unreleased` until a course tag is published.
+
+Contributor workflow is documented in `CONTRIBUTING.md`; use it as the contributor-facing path from discussion or issue to branch, verification, pull request, review, changelog, and release readiness.
+
+Public collaboration safety is documented in `CODE_OF_CONDUCT.md`; keep beginner-safe discussions, evidence-based review, reporting, maintainer response, and public data-safety boundaries aligned with contribution workflow.
+
+Security reporting is documented in `SECURITY.md`; keep vulnerability details, secrets, private logs, personal data, and working attack steps out of public issues, discussions, pull requests, and comments.
+
+Repository reuse rights are documented in `LICENSE`; keep the copyright notice, permission notice, and license link discoverable when publishing course batches or reuse guidance.
+
+Local configuration shape is documented in `.env.example`; keep committed values safe for teaching, keep real `.env` files ignored, and never commit production secrets, private provider URLs, tokens, or customer data.
+
+Static course publication is documented in `.github/PAGES.md`; keep `index.html`, `assets/course.css`, `lessons/`, and `reference/` aligned for both offline reading and optional GitHub Pages publishing.
+
+Repository final quality audit is documented in `.github/FINAL_AUDIT.md`; use it before tagging, publishing, or promoting the completed 96-lesson course through GitHub Pages.
+
+Static link and navigation audit is documented in `.github/LINK_AUDIT.md`; keep local HTML links in `index.html`, `lessons/`, and `reference/` resolvable before publishing new course pages.
+
+Release-candidate readiness is documented in `.github/RELEASE_CANDIDATE.md`; enter it before creating annotated tags, GitHub Release Notes, or Pages promotion for a course batch.
+
+Full course completion is documented in `.github/COURSE_COMPLETION.md`; use it after Lesson 0096 exists and before announcing the 96-lesson baseline as complete.
+
 ## Lesson Change Checklist
 
 Every new lesson should include:

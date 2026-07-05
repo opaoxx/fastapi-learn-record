@@ -14,6 +14,19 @@
 - Issue 结构化反馈入口：见 [.github/ISSUE_TEMPLATE/](.github/ISSUE_TEMPLATE/)
 - Issue 标签分流流程：见 [.github/ISSUE_TRIAGE.md](.github/ISSUE_TRIAGE.md)
 - GitHub Projects 看板流程：见 [.github/PROJECT_BOARD.md](.github/PROJECT_BOARD.md)
+- GitHub Discussions 问答流程：见 [.github/DISCUSSIONS.md](.github/DISCUSSIONS.md)
+- GitHub Release 批次发布流程：见 [.github/RELEASE_PROCESS.md](.github/RELEASE_PROCESS.md)
+- 课程变更账本：见 [CHANGELOG.md](CHANGELOG.md)
+- 贡献者工作流：见 [CONTRIBUTING.md](CONTRIBUTING.md)
+- 公开协作行为准则：见 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+- 安全漏洞私下披露流程：见 [SECURITY.md](SECURITY.md)
+- 开源复用授权边界：见 [LICENSE](LICENSE)
+- 本地配置样例：见 [.env.example](.env.example)
+- 静态 HTML 与 GitHub Pages 发布流程：见 [.github/PAGES.md](.github/PAGES.md)
+- 96 节课程完结前最终质量审计：见 [.github/FINAL_AUDIT.md](.github/FINAL_AUDIT.md)
+- 静态链接与导航审计：见 [.github/LINK_AUDIT.md](.github/LINK_AUDIT.md)
+- 发布候选检查清单：见 [.github/RELEASE_CANDIDATE.md](.github/RELEASE_CANDIDATE.md)
+- 96 节课程完结发布 Runbook：见 [.github/COURSE_COMPLETION.md](.github/COURSE_COMPLETION.md)
 
 ## GitHub 学习入口
 

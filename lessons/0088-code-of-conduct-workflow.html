@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0088 - Code of Conduct Workflow</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0088</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0087-contributing-guide-workflow.html">上一课</a>
+        <a href="./0089-security-policy-workflow.html">下一课</a>
+        <a href="../reference/0088-code-of-conduct-workflow-cheatsheet.html">速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0088 CODE_OF_CONDUCT：为新手友好技术社区建立安全协作边界</h1>
+      <p class="lead">本节新增 <code>CODE_OF_CONDUCT.md</code>。它不是空泛礼仪声明，而是公开学习社区的安全层：规定期望行为、不可接受行为、适用范围、举报证据、维护者响应、技术 review 规范，以及 secrets、私有日志、个人数据和安全问题的公开边界。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>Code of Conduct Workflow
+├─ 定位
+│  ├─ 保护 beginner-safe learning space
+│  ├─ 保护技术讨论质量
+│  ├─ 保护公开协作安全
+│  └─ 支撑 maintainer 可执行治理
+├─ 行为规则
+│  ├─ Expected Behavior: 尊重、耐心、证据、精确
+│  ├─ Unacceptable Behavior: 骚扰、羞辱、泄露、扰乱、绕过流程
+│  ├─ Teaching Norms: 批判代码和证据，不攻击人
+│  └─ Safety Boundary: 不公开 secrets/private logs/personal data
+├─ 处理流程
+│  ├─ Save evidence
+│  ├─ Use private maintainer contact path
+│  ├─ Avoid public escalation
+│  ├─ Maintainer proportional response
+│  └─ Preserve reporter privacy
+└─ 文档关系
+   ├─ CONTRIBUTING: 如何提交合格工作
+   ├─ DEVELOPMENT: 本地质量门禁
+   ├─ DISCUSSIONS: 探索性学习交流
+   ├─ ISSUE_TRIAGE: 可执行任务分流
+   └─ RELEASE_PROCESS: 已验证发布流程</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>行为准则的底层目标不是“让所有人说话好听”，而是降低公开协作中的社会风险。技术社区的核心资产是知识、证据和互信；一旦新手因为羞辱不敢提问，或维护者因为骚扰无法 review，项目质量会直接下降。</p>
+      <p>课程仓库尤其需要行为准则，因为它面向初学者。初学者的问题往往不够精准、复现材料不完整、概念边界模糊。健康社区应把这些情况视为教学输入，而不是攻击对象。强 review 可以指出错误，但必须把矛头指向代码、文档、证据和推理链。</p>
+      <p>Code of Conduct 与 CONTRIBUTING 的区别在于治理层级。CONTRIBUTING 规定“如何提交工作”，Code of Conduct 规定“协作中什么行为可接受”。一个解决流程质量，一个解决参与安全。二者缺一，仓库都会失衡。</p>
+      <table>
+        <thead><tr><th>文档</th><th>约束对象</th><th>核心问题</th><th>失败后果</th></tr></thead>
+        <tbody>
+          <tr><td>CONTRIBUTING.md</td><td>贡献流程</td><td>如何提交合格 PR？</td><td>PR 缺证据、范围失控</td></tr>
+          <tr><td>CODE_OF_CONDUCT.md</td><td>协作行为</td><td>如何保证安全讨论？</td><td>新手流失、维护者受压、讨论失控</td></tr>
+          <tr><td>SECURITY.md</td><td>漏洞披露</td><td>安全问题如何私下报告？</td><td>漏洞细节公开扩散</td></tr>
+          <tr><td>ISSUE_TRIAGE.md</td><td>任务分流</td><td>问题如何进入执行队列？</td><td>issue 队列被噪声污染</td></tr>
+          <tr><td>DISCUSSIONS.md</td><td>学习交流</td><td>探索性问题如何沉淀知识？</td><td>开放问题挤压可执行任务</td></tr>
+        </tbody>
+      </table>
+      <p>行为准则必须具备可执行性。只写“请友善”不足以治理复杂场景；必须写明不可接受行为、举报要包含什么证据、维护者可以采取哪些动作、如何保护报告人隐私、哪些内容不能出现在公开渠道。</p>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code># Code of Conduct</code></pre>
+      <p>标题采用 GitHub 社区常见文件名。根目录 <code>CODE_OF_CONDUCT.md</code> 是公开协作规则入口，贡献者、学习者和维护者都能直接发现。</p>
+
+      <pre><code>This course repository is intended to be a beginner-safe technical learning space.</code></pre>
+      <p>首句明确受保护对象：beginner-safe technical learning space。这里的“安全”不是降低技术要求，而是保证新手可以在不被羞辱的情况下学习高质量技术。</p>
+
+      <pre><code>The goal is not only to keep conversations polite.</code></pre>
+      <p>这行排除浅层理解。行为准则不是礼貌清单，而是学习质量、心理安全、公开协作安全和 review 可执行性的共同保护层。</p>
+
+      <pre><code>## Expected Behavior</code></pre>
+      <p>Expected Behavior 定义正向标准。只列禁止项会让规则显得惩罚导向；先列期望行为可以告诉贡献者怎样做才是合格协作。</p>
+
+      <pre><code>Be respectful, patient, and precise when discussing beginner questions.</code></pre>
+      <p>这条针对课程仓库最常见场景：新手问题。尊重和耐心保护学习动机，precise 保护技术质量，三者必须同时存在。</p>
+
+      <pre><code>Critique code, documentation, claims, and evidence rather than attacking people.</code></pre>
+      <p>这是技术 review 的核心边界。可以强烈否定错误实现，但不能把错误上升为对人的攻击。否则 review 会从质量控制变成关系冲突。</p>
+
+      <pre><code>Link lessons, source files, tests, issues, discussions, or pull requests when making technical claims.</code></pre>
+      <p>这条把行为准则和本课程的证据文化绑定。技术判断要有可追溯依据，而不是用资历、语气或情绪压人。</p>
+
+      <pre><code>## Unacceptable Behavior</code></pre>
+      <p>Unacceptable Behavior 定义红线。没有红线，维护者无法解释为什么要隐藏评论、暂停 review 或限制参与。</p>
+
+      <pre><code>Mocking beginner questions or using shame as a teaching method.</code></pre>
+      <p>这条是教学社区关键规则。羞辱可能短期让人闭嘴，但长期会破坏学习空间和问题反馈质量。</p>
+
+      <pre><code>Publishing private information, credentials, tokens, private logs, personal data, or proprietary source code.</code></pre>
+      <p>这条是公开平台安全底线。行为准则必须覆盖隐私和密钥边界，因为很多新手会把完整日志或配置直接贴出来。</p>
+
+      <pre><code>Pressuring maintainers to bypass tests, review, branch protection, or documented release rules.</code></pre>
+      <p>这条保护工程治理。绕过测试、review 和发布规则不是“加快进度”，而是在破坏仓库质量契约。</p>
+
+      <pre><code>Submitting AI-generated or copied material without checking accuracy, licensing, and fit with the course standard.</code></pre>
+      <p>该条处理现代贡献风险。AI 生成内容和复制材料都可能存在事实错误、许可证问题或风格不合格，必须人工审查。</p>
+
+      <pre><code>## Scope</code></pre>
+      <p>Scope 定义适用范围。行为准则覆盖 issues、discussions、PR、reviews、commits、release notes、documentation examples 和明确服务于仓库的公开渠道。</p>
+
+      <pre><code>Private behavior may affect repository participation when it directly threatens learner safety, maintainer safety, or the integrity of the project.</code></pre>
+      <p>这行说明边界外行为何时进入治理范围。它不是审查私人生活，而是当外部行为直接威胁项目安全时，维护者可以处理参与权限。</p>
+
+      <pre><code>## Reporting</code></pre>
+      <p>Reporting 定义报告流程。安全事件不应在公开评论区拉扯升级，应保存证据并寻找私下维护者路径。</p>
+
+      <pre><code>Do not escalate the conflict in public.</code></pre>
+      <p>公开升级会扩大伤害、污染讨论、暴露隐私。正确做法是保存证据并转入维护者处理。</p>
+
+      <pre><code>Save links, screenshots, timestamps, and the affected repository area.</code></pre>
+      <p>证据必须可检查。没有链接、时间和位置，维护者只能根据情绪判断，容易误判。</p>
+
+      <pre><code>If no private channel exists, open a short issue asking for a maintainer contact path without posting sensitive details.</code></pre>
+      <p>这是教学仓库的现实兜底。仓库可能尚未配置私密报告入口，因此允许创建简短 issue 请求联系路径，但禁止公开敏感细节。</p>
+
+      <pre><code>## Maintainer Response</code></pre>
+      <p>Maintainer Response 给出处理动作集合。维护者需要从轻到重的梯度，而不是只有“无视”和“封禁”两种选项。</p>
+
+      <pre><code>Ask participants to clarify, edit, or move a comment.</code></pre>
+      <p>轻量处理适合误发、跑题或措辞不当。先纠正渠道或表达，保留学习空间。</p>
+
+      <pre><code>Pause review until behavior or safety concerns are resolved.</code></pre>
+      <p>review 可以被安全问题阻断。代码正确不代表 PR 可以合并；协作风险也属于项目风险。</p>
+
+      <pre><code>Maintainers should prefer proportionate action, preserve evidence when possible, and avoid exposing private reporter details.</code></pre>
+      <p>这行规定维护者约束：比例原则、证据保全、报告人隐私。行为准则不仅约束贡献者，也约束维护者。</p>
+
+      <pre><code>## Teaching and Review Norms</code></pre>
+      <p>该节把行为准则落到技术教学场景。强 review 不是问题，缺证据、讽刺、围攻和人身排序才是问题。</p>
+
+      <pre><code>Strong review is welcome. Contempt is not.</code></pre>
+      <p>这句是本节核心边界。可以严格，可以要求补测试，可以拒绝 PR；但不能把轻蔑当作教学手段。</p>
+
+      <pre><code>## Safety Boundary</code></pre>
+      <p>Safety Boundary 单独列出公开渠道禁发内容。与第 87 节 CONTRIBUTING 的安全边界一致，并为后续 SECURITY.md 留出接口。</p>
+
+      <pre><code>If a report involves a security issue, avoid public reproduction details and ask maintainers for a private disclosure path.</code></pre>
+      <p>安全问题不能在公开 issue 中贴完整利用细节。第 88 节先建立边界，后续可用 SECURITY.md 进一步细化披露流程。</p>
+
+      <pre><code>## Relationship to Other Documents</code></pre>
+      <p>最后用关系表把行为准则接入仓库治理系统。它不是孤立文件，而是包在 CONTRIBUTING、DEVELOPMENT、DISCUSSIONS、ISSUE_TRIAGE、RELEASE_PROCESS 外层的安全协议。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>Public collaboration event
+  -> classify behavior
+       normal technical disagreement
+       channel confusion
+       unsafe content
+       harassment or repeated disruption
+       secrets/privacy/security exposure
+  -> choose response
+       clarify / edit / move
+       hide / lock
+       pause review
+       reject or close
+       restrict participation
+  -> preserve evidence
+       link
+       screenshot
+       timestamp
+       affected area
+  -> protect privacy
+       avoid public escalation
+       avoid exposing reporter details
+  -> restore workflow
+       issue triage
+       discussion answer
+       PR review
+       release readiness</code></pre>
+      <p>流程的关键是先分类，再响应。正常技术分歧应回到证据和测试；渠道混乱应移动到 issue 或 discussion；安全和隐私问题则必须停止公开扩散，转入私下处理。</p>
+      <table>
+        <thead><tr><th>场景</th><th>分类</th><th>推荐处理</th><th>不应做什么</th></tr></thead>
+        <tbody>
+          <tr><td>新手提问不完整</td><td>正常学习输入</td><td>耐心追问复现、链接相关课程</td><td>嘲讽或贴标签</td></tr>
+          <tr><td>PR 评论跑题争吵</td><td>渠道和行为问题</td><td>要求回到具体代码和证据</td><td>让争吵继续污染 review</td></tr>
+          <tr><td>公开贴 API key</td><td>安全边界问题</td><td>隐藏内容并提示轮换密钥</td><td>引用或复制密钥细节</td></tr>
+          <tr><td>绕过测试催促合并</td><td>治理破坏</td><td>暂停合并，要求补验证</td><td>为了速度跳过质量门禁</td></tr>
+          <tr><td>报告骚扰</td><td>行为准则事件</td><td>保存证据，私下处理，保护报告人</td><td>要求报告人在公开区辩论</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混淆点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>行为准则 vs 礼貌</td><td>行为准则只是要求说话客气。</td><td>它保护学习安全、技术证据、公开协作和维护者治理能力。</td></tr>
+          <tr><td>强 review vs 不友善</td><td>严格指出问题就是不友善。</td><td>严格 review 是必要的；攻击人、羞辱、围攻才违反规则。</td></tr>
+          <tr><td>CONTRIBUTING vs CODE_OF_CONDUCT</td><td>有贡献指南就够。</td><td>贡献指南管流程，行为准则管协作安全。</td></tr>
+          <tr><td>公开举报</td><td>遇到问题应该公开贴全证据。</td><td>应保存证据并找私下路径，避免扩大伤害和泄露隐私。</td></tr>
+          <tr><td>安全问题</td><td>为了复现应贴完整 exploit。</td><td>安全细节应私下披露，公开渠道只请求维护者联系路径。</td></tr>
+          <tr><td>维护者权限</td><td>维护者只能处理代码问题。</td><td>维护者也要维护参与安全、讨论秩序和项目完整性。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>表现</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>规则过空</td><td>只写“请友善”，维护者无法执行。</td><td>列出期望行为、不可接受行为、举报证据和处理动作。</td></tr>
+          <tr><td>规则过重</td><td>所有轻微误会都升级为惩罚。</td><td>使用比例原则，从澄清、编辑、移动到限制参与逐级处理。</td></tr>
+          <tr><td>公开处理隐私事件</td><td>报告人和敏感信息二次暴露。</td><td>保存证据，私下处理，公开区只保留必要说明。</td></tr>
+          <tr><td>把技术争论当违规</td><td>有效 review 被压制。</td><td>区分证据驱动的严格 review 和人身攻击。</td></tr>
+          <tr><td>忽略 AI 内容风险</td><td>复制错误或侵权材料进入课程。</td><td>要求检查准确性、许可证和课程标准适配。</td></tr>
+          <tr><td>未链接其他治理文档</td><td>行为准则孤立，贡献者不知道下一步。</td><td>链接 CONTRIBUTING、DEVELOPMENT、DISCUSSIONS、ISSUE_TRIAGE、RELEASE_PROCESS。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead>
+        <tbody>
+          <tr><td>目标</td><td>保护新手提问、学习质量和公开协作安全。</td><td>还要覆盖员工、客户、生态合作方和品牌风险。</td></tr>
+          <tr><td>处理团队</td><td>通常由仓库维护者兼职处理。</td><td>可能有社区团队、法务、安全、HR 或信任安全团队。</td></tr>
+          <tr><td>举报路径</td><td>可能先用维护者私下联系路径。</td><td>通常有专用邮箱、表单、SLA、案件系统和审计记录。</td></tr>
+          <tr><td>安全披露</td><td>先提示不要公开漏洞细节。</td><td>配套 SECURITY.md、漏洞赏金、embargo 和 CVE 流程。</td></tr>
+          <tr><td>执行动作</td><td>编辑、隐藏、暂停 review、关闭 PR、限制参与。</td><td>还可能涉及账号封禁、合同措施、法律升级和跨平台协作。</td></tr>
+          <tr><td>文档成熟度</td><td>自定义轻量规则，贴合课程仓库。</td><td>常采用标准行为准则模板并配套正式执行政策。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. Code of Conduct 的核心职责是什么？</summary><p class="answer">定义公开协作中的安全行为边界，保护学习质量、心理安全、证据驱动讨论和维护者治理能力。</p></details>
+      <details><summary>2. 为什么不能把行为准则理解成“说话客气”？</summary><p class="answer">因为它还覆盖隐私、密钥、安全问题、公开升级、review 中断、维护者响应和参与限制等项目治理问题。</p></details>
+      <details><summary>3. 遇到不安全行为时报告者应提供哪些信息？</summary><p class="answer">应提供发生了什么、发生在哪里、谁受影响、是否涉及隐私或安全风险、可检查的链接或证据。</p></details>
+      <details><summary>4. 强 review 与违反行为准则的边界在哪里？</summary><p class="answer">强 review 针对代码、文档、证据和推理链；违规行为攻击个人、羞辱新手、围攻或用轻蔑替代证据。</p></details>
+      <details><summary>5. 为什么安全问题不应在公开 issue 中贴完整细节？</summary><p class="answer">公开复现细节可能扩大攻击风险。正确做法是请求维护者私下披露路径，并避免公开 secrets、漏洞利用步骤或敏感数据。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：开源项目为什么需要 Code of Conduct？</summary><p class="answer">它为公开协作提供可执行安全边界，降低骚扰、泄露、讨论失控和维护者压力，让技术 review 能回到证据和质量。</p></details>
+      <details><summary>面试题 2：Code of Conduct 与 CONTRIBUTING.md 如何分工？</summary><p class="answer">CONTRIBUTING.md 规定如何提交合格贡献；CODE_OF_CONDUCT.md 规定协作行为和安全边界。前者管流程，后者管参与环境。</p></details>
+      <details><summary>面试题 3：维护者处理行为准则事件应遵守什么原则？</summary><p class="answer">应遵守比例原则、证据保全、报告人隐私保护和最小公开扩散原则，根据严重程度选择澄清、编辑、隐藏、暂停 review、关闭或限制参与。</p></details>
+      <details><summary>面试题 4：为什么技术社区要保护新手问题？</summary><p class="answer">新手问题是课程质量反馈的重要来源。羞辱会减少反馈并降低学习参与度；耐心追问和证据链接能把低清晰度问题转化为教学材料。</p></details>
+      <details><summary>面试题 5：生产级社区治理还需要哪些补充？</summary><p class="answer">通常还需要 SECURITY.md、专用举报渠道、正式执行政策、社区团队、法务支持、安全披露流程、SLA、审计记录和跨平台处理能力。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0087-contributing-guide-workflow.html">上一课：CONTRIBUTING</a>
+        <a href="./0089-security-policy-workflow.html">下一课：SECURITY</a>
+        <a href="../reference/0088-code-of-conduct-workflow-cheatsheet.html">查看速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

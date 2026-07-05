@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0085 - GitHub Release Notes and Tags Workflow</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0085</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0084-github-discussions-course-qa-workflow.html">上一课</a>
+        <a href="./0086-changelog-maintenance-workflow.html">下一课</a>
+        <a href="../reference/0085-github-release-notes-tags-workflow-cheatsheet.html">速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0085 GitHub Releases：用 Tag 与 Release Notes 固化课程批次交付</h1>
+      <p class="lead">本节新增 <code>.github/RELEASE_PROCESS.md</code>，把课程批次发布从“改完就算”升级为可追溯交付：用 annotated tag 固定历史位置，用 GitHub Release Notes 记录变更范围、验证证据、已知警告和回滚路径。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>GitHub Release Notes and Tags Workflow
+├─ 发布对象
+│  ├─ lessons/: 完整课程 HTML
+│  ├─ reference/: 速查表
+│  ├─ first_api/: 可运行代码
+│  ├─ tests/: 行为与文档契约
+│  └─ .github/: 协作治理规则
+├─ Git Tag
+│  ├─ 指向某个 commit 的命名引用
+│  ├─ lightweight tag: 只有引用
+│  ├─ annotated tag: 带作者、时间、说明、可签名元数据
+│  └─ course-vYYYY.MM.DD-N: 课程批次命名
+├─ GitHub Release
+│  ├─ 基于 tag 的远程发布记录
+│  ├─ Release Notes 说明 changed lessons / references / workflow
+│  ├─ Verification 保存测试证据
+│  └─ Known Warnings 记录非阻塞警告
+├─ 发布质量门禁
+│  ├─ provider HTTP
+│  ├─ docs contract
+│  ├─ full pytest
+│  └─ git diff --check
+└─ 回滚策略
+   ├─ 不静默移动已发布 tag
+   ├─ 用后续 commit 修正
+   ├─ 发布 patch release
+   └─ 在 COURSE_PROGRESS.md 记录远程状态变更</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>Git 的核心模型是内容寻址对象数据库。commit 表示一次完整快照及其父提交；branch 是可移动引用，通常随开发继续向前；tag 是给某个对象命名的引用，适合标记稳定里程碑。课程仓库需要 tag，因为学习者需要知道“这批课程、代码、测试在某一刻完全一致”。</p>
+      <p>lightweight tag 本质上只是一个名字指向对象，缺少发布者、发布时间和说明。annotated tag 是独立 tag object，包含 tagger、message，可进一步 GPG/SSH 签名。课程批次发布属于交付事件，不只是临时书签，因此应优先使用 annotated tag。</p>
+      <p>GitHub Release 是 GitHub 托管层建立在 tag 之上的发布页面。tag 负责不可变定位，Release Notes 负责解释“为什么这个点值得发布”。二者不可互相替代：只有 tag 没有说明，学习者不知道改了什么；只有 Release 文案没有 tag，无法精确复现源码状态。</p>
+      <table><thead><tr><th>概念</th><th>底层含义</th><th>适用场景</th><th>风险点</th></tr></thead><tbody>
+        <tr><td>Branch</td><td>可移动引用</td><td>日常开发、PR 合并</td><td>不能表示稳定发布点</td></tr>
+        <tr><td>Commit Hash</td><td>内容寻址快照</td><td>精确定位代码状态</td><td>对新手不可读，不表达业务语义</td></tr>
+        <tr><td>Lightweight Tag</td><td>命名引用</td><td>本地临时标记</td><td>缺少发布元数据</td></tr>
+        <tr><td>Annotated Tag</td><td>带元数据的 tag object</td><td>正式发布、课程批次</td><td>发布后不应静默移动</td></tr>
+        <tr><td>GitHub Release</td><td>基于 tag 的远程发布记录</td><td>面向学习者说明变更与验证</td><td>不能替代测试和 review</td></tr>
+      </tbody></table>
+      <p>发布流程的核心不是“生成一个版本号”，而是把变更范围、验证证据和回滚路径变成公开契约。对课程项目而言，Release Notes 至少要说明 changed lessons、changed references、code/workflow changes、verification、known warnings、reading notes、rollback。</p>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code># GitHub Release Process</code></pre>
+      <p>标题定义文件职责：这不是普通备忘录，而是发布流程规范。放在 <code>.github/</code> 下，表示它属于仓库协作治理的一部分，与 CI、PR 模板、分支保护、Discussions 同层。</p>
+      <pre><code>This document defines how maintainers publish course batches with Git tags and GitHub Releases.</code></pre>
+      <p>首句绑定业务对象：发布的不是 Python 包，而是 course batches。若写成泛泛的 release process，会让学习者误以为这是生产部署流程；这里明确是课程批次交付。</p>
+      <pre><code>GitHub Releases are remote state.</code></pre>
+      <p>该句是边界声明。Release 页面、发布资产、远程 tag 都在 GitHub 端；本地 Markdown 不能自动创建 Release。忽略这个边界，会误以为提交文件就完成了远程发布。</p>
+      <pre><code>## Release Purpose</code></pre>
+      <p>Purpose 先解释“为什么发布”。没有目的约束时，Release Notes 容易退化为流水账，无法支撑学习者判断是否需要更新、从哪一课继续读、哪些测试证明内容可用。</p>
+      <pre><code>Releases turn a set of lesson, reference, code, test, and workflow changes into a traceable learning checkpoint.</code></pre>
+      <p>这一行列出发布批次的完整组成：lesson、reference、code、test、workflow。课程仓库的交付单元不是单一代码包，而是学习资料和可运行项目的一致快照。</p>
+      <pre><code>## Tag Naming</code></pre>
+      <p>Tag Naming 规定命名空间。课程项目不用语义化版本号 <code>v1.2.3</code> 强行模拟库 API 兼容性，而使用日期批次号表达学习资料的发布节奏。</p>
+      <pre><code>course-vYYYY.MM.DD-N</code></pre>
+      <p><code>course</code> 区分课程发布与未来可能出现的应用版本；<code>YYYY.MM.DD</code> 便于按时间排序；<code>N</code> 解决同一天多次发布。若没有 <code>N</code>，同日补丁发布会发生命名冲突。</p>
+      <pre><code>Use annotated tags for course batch releases:</code></pre>
+      <p>这里选择 annotated tag。正式课程发布需要 tagger、message 和可签名能力；lightweight tag 缺少审计元数据，不适合公开交付。</p>
+      <pre><code>Never move a published tag silently.</code></pre>
+      <p>这是发布治理底线。学习者和贡献者可能已经基于 tag 下载、引用或复现。如果静默移动 tag，同一个版本名会指向不同内容，破坏可追溯性。</p>
+      <pre><code>git tag -a course-v2026.07.05-1 -m "Course batch 2026.07.05-1"</code></pre>
+      <p><code>-a</code> 创建 annotated tag；<code>-m</code> 写入 tag message。若漏掉 <code>-a</code>，Git 会创建 lightweight tag，发布元数据不足。</p>
+      <pre><code>git push origin course-v2026.07.05-1</code></pre>
+      <p>tag 不会随普通 <code>git push</code> 自动全部推送，必须显式推送 tag 或使用 <code>--tags</code>。教学环境推荐显式推送单个 tag，避免把本地临时 tag 一并发布。</p>
+      <pre><code>## Release Notes Structure</code></pre>
+      <p>Release Notes Structure 是发布文案模板。它让每次发布都能回答三个问题：改了什么、怎么验证、出问题怎么退。</p>
+      <pre><code>## Changed Lessons
+## Changed References
+## Code and Workflow Changes
+## Verification
+## Known Warnings
+## Upgrade or Reading Notes
+## Rollback</code></pre>
+      <p>这些章节按依赖顺序排列：先给学习内容范围，再给工程变更，再给证据与风险。若把 Verification 放在末尾且无结构，读者很难快速判断发布可信度。</p>
+      <pre><code>## Verification Checklist</code></pre>
+      <p>Verification Checklist 把发布前检查从“记得跑一下测试”变成可复用命令清单。课程项目必须保护代码行为和文档契约，不能只跑单一测试。</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q</code></pre>
+      <p>provider HTTP 是当前项目高风险业务模块，覆盖 provider retry、metrics、runbook training 等核心逻辑。先跑它能快速发现后端业务退化。</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q</code></pre>
+      <p>docs contract 保护课程入口、九段结构、GitHub 治理文档链接。课程仓库里文档就是产品，因此文档测试与代码测试同级。</p>
+      <pre><code>.\.venv\Scripts\python.exe -m pytest -q</code></pre>
+      <p>full pytest 捕获跨模块回归。只跑目标测试会漏掉 OpenAPI、前端集成、系统 API、文件 API 等相邻行为。</p>
+      <pre><code>git diff --check</code></pre>
+      <p>该命令检查尾随空格、空白错误和补丁格式问题。Release 前必须执行，因为这些问题会污染公开仓库质量。</p>
+      <pre><code>## Release Flow</code></pre>
+      <p>Release Flow 把命令串成调用链：先完成批次内容，再更新入口文档，再验证，再审查 diff，最后创建 tag 和 GitHub Release。顺序不能颠倒。</p>
+      <pre><code>finish lesson batch
+-> update lessons, references, README, DEVELOPMENT, NOTES, COURSE_PROGRESS, index
+-> run targeted tests
+-> run docs contract
+-> run full pytest
+-> run git diff --check
+-> review git status and diff
+-> create annotated tag
+-> push branch and tag
+-> create GitHub Release from tag
+-> paste release notes with verification evidence</code></pre>
+      <p>流程中的每一步都对应可审计证据。若跳过 <code>review git status and diff</code>，可能把无关文件或半成品课程带入发布；若先打 tag 再测试，tag 可能固定了失败状态。</p>
+      <pre><code>## Rollback</code></pre>
+      <p>Rollback 说明发布错误后的处理方式。GitHub Release 不是本地草稿，发布后要面向已下载或引用该版本的学习者负责。</p>
+      <pre><code>Do not move the published tag silently.</code></pre>
+      <p>重复强调不可静默移动 tag，是因为这是最常见的版本治理事故。正确做法是新提交、新 tag、新 Release，并在旧 Release 标注 superseded。</p>
+      <pre><code>## Production Notes</code></pre>
+      <p>Production Notes 区分教学仓库和企业生产。真实组织还需要签名 tag、审批、制品校验、依赖扫描、SBOM、部署门禁；本课程只保留与学习交付直接相关的最小闭环。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>Course batch completed
+  -> local files updated
+       lessons/0085...
+       reference/0085...
+       .github/RELEASE_PROCESS.md
+       README / DEVELOPMENT / NOTES / COURSE_PROGRESS / index
+  -> local verification
+       provider HTTP
+       docs contract
+       full pytest
+       git diff --check
+  -> Git object model
+       commit stores repository snapshot
+       annotated tag points to commit with metadata
+  -> GitHub remote
+       branch receives commit
+       tag receives immutable release marker
+       Release page attaches notes to tag
+  -> learner
+       reads release notes
+       opens index.html
+       checks changed lessons and references
+       can reproduce exact state from tag</code></pre>
+      <p>数据流的核心是“先产生可验证快照，再给快照命名，再解释快照”。Release Notes 不是源码的一部分，但它必须引用源码、课程、测试和检查结果。否则发布页面只是公告，不是工程证据。</p>
+      <table><thead><tr><th>阶段</th><th>输入</th><th>输出</th><th>失败后果</th></tr></thead><tbody>
+        <tr><td>内容完成</td><td>课程、速查、代码、文档</td><td>工作区 diff</td><td>缺入口、缺导航、缺记录</td></tr>
+        <tr><td>验证</td><td>pytest、docs contract、diff check</td><td>发布证据</td><td>带缺陷发布，学习者复现失败</td></tr>
+        <tr><td>打 tag</td><td>已验证 commit</td><td>annotated tag</td><td>版本名指向错误快照</td></tr>
+        <tr><td>GitHub Release</td><td>tag + release notes</td><td>公开发布页</td><td>学习者不知道变更范围和风险</td></tr>
+        <tr><td>回滚/补丁</td><td>错误报告</td><td>后续修复 tag</td><td>静默改 tag 破坏信任</td></tr>
+      </tbody></table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table><thead><tr><th>易混淆点</th><th>错误理解</th><th>正确理解</th></tr></thead><tbody>
+        <tr><td>tag vs branch</td><td>tag 和 branch 都是名字，随便用。</td><td>branch 面向继续开发，会移动；tag 面向稳定里程碑，不应移动。</td></tr>
+        <tr><td>annotated tag vs lightweight tag</td><td>效果一样，都是版本号。</td><td>annotated tag 有独立对象、元数据和签名能力，适合正式发布。</td></tr>
+        <tr><td>Release vs Changelog</td><td>Release Notes 就是流水账。</td><td>Release Notes 是某个 tag 的发布说明，必须绑定验证证据和回滚路径。</td></tr>
+        <tr><td>测试通过 vs 可发布</td><td>pytest 通过就能发。</td><td>还要确认 README、index、速查、进度记录、文档契约和 GitHub 治理文档同步。</td></tr>
+        <tr><td>移动 tag</td><td>tag 错了强推一下即可。</td><td>公开 tag 是外部契约，修复应使用新 commit 和新 patch release。</td></tr>
+        <tr><td>Known Warnings</td><td>警告都可以忽略。</td><td>只有明确非阻塞且已记录的警告可接受；真正错误必须阻断发布。</td></tr>
+      </tbody></table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table><thead><tr><th>报错/坑点</th><th>原因</th><th>解决方案</th></tr></thead><tbody>
+        <tr><td><code>fatal: tag already exists</code></td><td>本地已有同名 tag。</td><td>确认是否已发布。未发布可删除本地 tag 后重建；已发布则创建新序号 tag。</td></tr>
+        <tr><td><code>Updates were rejected because the tag already exists in the remote</code></td><td>远程已有同名 tag，Git 拒绝覆盖。</td><td>不要强推覆盖公开 tag。改用新 patch release。</td></tr>
+        <tr><td>Release Notes 写了课程但 index 没链接</td><td>发布说明和离线入口不同步。</td><td>更新 <code>index.html</code> 并让 docs contract 覆盖新入口。</td></tr>
+        <tr><td>只推了 branch 没推 tag</td><td>普通 push 不自动发布指定 tag。</td><td>执行 <code>git push origin course-vYYYY.MM.DD-N</code>。</td></tr>
+        <tr><td>Windows LF-to-CRLF warning</td><td>Git 工作区换行转换提示。</td><td>若 <code>git diff --check</code> 无 whitespace error，可记录为 Known Warnings。</td></tr>
+        <tr><td>发布后发现测试失败</td><td>tag 前未跑完整质量门禁。</td><td>新增修复 commit，重新跑测试，发布新 tag，并标注旧 Release superseded。</td></tr>
+      </tbody></table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table><thead><tr><th>维度</th><th>教学环境</th><th>生产环境</th></tr></thead><tbody>
+        <tr><td>版本命名</td><td><code>course-vYYYY.MM.DD-N</code>，强调课程批次。</td><td>常用 SemVer、CalVer、产品线版本或部署版本。</td></tr>
+        <tr><td>tag 类型</td><td>annotated tag，说明发布批次。</td><td>通常要求签名 tag、受保护 tag、发布审批。</td></tr>
+        <tr><td>Release Notes</td><td>课程、速查、代码、测试、阅读路径。</td><td>用户影响、迁移指南、兼容性、安全修复、制品校验。</td></tr>
+        <tr><td>质量门禁</td><td>pytest、docs contract、diff check。</td><td>CI/CD、SAST、依赖扫描、许可证扫描、SBOM、制品签名。</td></tr>
+        <tr><td>回滚</td><td>新 commit + 新 tag + superseded 说明。</td><td>还包括部署回滚、数据库迁移回滚、流量切换和事故复盘。</td></tr>
+        <tr><td>发布资产</td><td>主要是源码与 HTML 学习资料。</td><td>可能包含 wheel、Docker image、binary、checksum、attestation。</td></tr>
+      </tbody></table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. 为什么课程批次发布优先使用 annotated tag？</summary><p class="answer">因为 annotated tag 有独立 tag object，包含发布者、时间、message，并可签名。课程批次是公开交付事件，需要审计元数据，不适合只用 lightweight tag。</p></details>
+      <details><summary>2. <code>course-vYYYY.MM.DD-N</code> 中 <code>N</code> 的作用是什么？</summary><p class="answer">解决同一天多次发布的命名冲突。<code>N</code> 从 1 开始递增，使同日补丁或二次发布仍有唯一 tag。</p></details>
+      <details><summary>3. Release Notes 必须包含哪些验证证据？</summary><p class="answer">至少包含 provider HTTP、docs contract、full pytest、git diff --check 的结果，并说明 Known Warnings，例如非阻塞的 Windows LF-to-CRLF 提示。</p></details>
+      <details><summary>4. 为什么不能静默移动已发布 tag？</summary><p class="answer">因为外部学习者可能已经基于该 tag 下载、引用或复现。静默移动会让同一版本名指向不同内容，破坏可追溯性和信任。</p></details>
+      <details><summary>5. 发布流程中为什么要先测试再打 tag？</summary><p class="answer">tag 会固定某个历史快照。如果先打 tag 后测试，可能把失败状态标记为发布版本，后续需要额外补丁发布修正。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：Git tag 和 GitHub Release 的关系是什么？</summary><p class="answer">tag 是 Git 对象数据库中的命名引用，用于定位 commit；GitHub Release 是 GitHub 基于 tag 提供的发布页面，用 Release Notes、资产和说明解释该 tag 的交付意义。</p></details>
+      <details><summary>面试题 2：为什么生产发布不建议重写已经推送的 tag？</summary><p class="answer">tag 一旦公开就可能被 CI、部署、依赖方、学习者或审计系统引用。重写 tag 会导致同一版本不可复现，正确策略是追加修复提交并发布新 tag。</p></details>
+      <details><summary>面试题 3：Release Notes 和 commit message 的职责有什么不同？</summary><p class="answer">commit message 解释一次提交为什么发生；Release Notes 面向用户或学习者解释一组提交形成的交付批次、影响范围、验证结果、风险和回滚方式。</p></details>
+      <details><summary>面试题 4：课程仓库为什么要把 docs contract 纳入发布门禁？</summary><p class="answer">因为课程仓库的文档是核心产品。docs contract 能保护九段结构、入口链接、GitHub 工作流说明和学习路径，防止代码可运行但课程不可读。</p></details>
+      <details><summary>面试题 5：一个可靠发布流程至少包含哪些阶段？</summary><p class="answer">完成变更、更新入口文档、运行目标测试、运行文档契约、运行全量测试、检查 diff、审查变更范围、创建 annotated tag、推送 tag、创建 Release Notes、记录回滚策略。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0084-github-discussions-course-qa-workflow.html">上一课：GitHub Discussions</a>
+        <a href="./0086-changelog-maintenance-workflow.html">下一课：CHANGELOG</a>
+        <a href="../reference/0085-github-release-notes-tags-workflow-cheatsheet.html">查看速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>
