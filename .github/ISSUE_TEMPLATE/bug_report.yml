@@ -1,0 +1,52 @@
+name: Bug report
+description: Report a reproducible problem in code, tests, lessons, or repository workflow.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form when something is broken and can be reproduced.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Problem summary
+      description: State the broken behavior in one or two precise sentences.
+      placeholder: The provider metrics lesson link points to a missing file.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: List the exact commands, clicks, or file paths needed to reproduce the problem.
+      placeholder: |
+        1. Open index.html
+        2. Click Lesson 0081
+        3. Observe the missing page
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: Describe the correct behavior or expected learning outcome.
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include error messages, failing assertions, broken links, or screenshots when relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Verification already tried
+      description: Paste relevant test commands, browser checks, or GitHub workflow results.
+      placeholder: |
+        .\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q
+        git diff --check
+    validations:
+      required: false

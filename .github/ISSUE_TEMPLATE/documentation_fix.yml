@@ -1,0 +1,39 @@
+name: Documentation fix
+description: Report stale, unclear, missing, or inconsistent documentation.
+title: "[Docs]: "
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form when documentation needs correction but the application behavior is not broken.
+  - type: input
+    id: file
+    attributes:
+      label: Affected file
+      description: Point to the lesson, reference, README, workflow, or learning record.
+      placeholder: lessons/0081-github-issue-templates.html
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: Documentation issue
+      description: Describe what is inaccurate, shallow, duplicated, missing, or hard to follow.
+    validations:
+      required: true
+  - type: textarea
+    id: suggested-fix
+    attributes:
+      label: Suggested fix
+      description: Propose the exact correction, additional section, or link update.
+    validations:
+      required: false
+  - type: checkboxes
+    id: course-standard
+    attributes:
+      label: Course standard impact
+      options:
+        - label: The nine-section lesson structure may need to be checked.
+        - label: The quick reference page may need to be updated.
+        - label: index.html, README.md, NOTES.md, or COURSE_PROGRESS.md may need to be updated.

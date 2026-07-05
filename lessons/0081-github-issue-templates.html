@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0081 - GitHub Issue Templates</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0081</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0080-github-codeowners-review-ownership.html">上一课</a>
+        <a href="./0082-github-issue-triage-labels-workflow.html">下一课</a>
+        <a href="../reference/0081-github-issue-templates-cheatsheet.html">速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0081 GitHub Issue Templates：把问题入口改造成可复现、可分派、可维护的协作协议</h1>
+      <p class="lead">本节新增 <code>.github/ISSUE_TEMPLATE/</code>，用 GitHub Issue Forms 把 bug report、lesson request、documentation fix 三类输入结构化。PR template 约束“提交代码前交代什么”，CODEOWNERS 约束“谁来审查”，Issue Templates 约束“问题进入仓库时必须提供什么证据”。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>GitHub Issue Templates
+├── 目标
+│   ├── 把模糊反馈变成可执行任务
+│   ├── 把复现证据前置到 issue 创建入口
+│   ├── 把课程需求、文档缺陷、代码 bug 分流
+│   └── 降低维护者二次追问成本
+├── 文件结构
+│   ├── .github/ISSUE_TEMPLATE/bug_report.yml
+│   ├── .github/ISSUE_TEMPLATE/lesson_request.yml
+│   ├── .github/ISSUE_TEMPLATE/documentation_fix.yml
+│   └── .github/ISSUE_TEMPLATE/config.yml
+├── 表单关键字段
+│   ├── name / description / title / labels
+│   ├── body[].type
+│   ├── body[].id
+│   ├── body[].attributes
+│   └── body[].validations.required
+├── 仓库协作链路
+│   ├── Issue template: 收集结构化问题输入
+│   ├── Labels: 分类与筛选
+│   ├── CODEOWNERS: PR 阶段路由审查者
+│   ├── PR template: 收集修复证据
+│   └── CI + branch protection: 合并前自动门禁
+└── 课程仓库三类入口
+    ├── Bug report: 可复现的错误
+    ├── Lesson request: 新课或深度重构需求
+    └── Documentation fix: 过期、浅、错、漏的文档问题</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>Issue 是开源仓库的任务输入单元。低质量 issue 通常只写“这里有问题”“看不懂”“报错了”，维护者必须反复追问环境、步骤、期望、实际结果、影响文件和验证命令。Issue Template 的核心价值不是美化页面，而是把维护者需要的最小上下文转化为创建 issue 时的强约束字段。</p>
+      <p>GitHub 支持 Markdown 模板和 Issue Forms。Markdown 模板是自由文本预填充，适合轻量仓库；Issue Forms 使用 YAML 描述表单字段，能定义输入框、文本域、下拉框、复选框和必填校验。对于课程仓库，Issue Forms 更适合，因为课程反馈既有 bug，也有学习缺口和文档质量问题，必须在入口处先分类。</p>
+      <p>本节的三个模板分别对应三种不同任务语义。Bug report 强调可复现性，核心字段是 steps、expected、actual；Lesson request 强调学习差距，核心字段是 learning gap、required depth、expected output；Documentation fix 强调文档准确性，核心字段是 affected file、documentation issue、suggested fix。字段不是随意命名，而是由后续维护动作倒推得到。</p>
+      <table>
+        <thead><tr><th>模板类型</th><th>底层问题</th><th>必须收集的证据</th><th>后续动作</th></tr></thead>
+        <tbody>
+          <tr><td>Bug report</td><td>代码、测试、页面或流程可复现失败。</td><td>复现步骤、期望结果、实际结果、验证命令。</td><td>复现、定位、修复、回归测试。</td></tr>
+          <tr><td>Lesson request</td><td>学习者无法理解、实现或应试某个知识点。</td><td>关联课程、学习缺口、所需深度、输出类型。</td><td>补课、审稿、重构、追加速查。</td></tr>
+          <tr><td>Documentation fix</td><td>文档过期、浅、错、漏或导航不一致。</td><td>受影响文件、问题描述、建议修复、课程标准影响。</td><td>改文档、同步索引、补契约测试。</td></tr>
+        </tbody>
+      </table>
+      <p>Issue Template 与 PR Template 的差异必须分清：Issue Template 面向“问题进入仓库前”，负责把输入变成可分派任务；PR Template 面向“改动进入主分支前”，负责让贡献者交代实现、验证和风险。前者降低需求澄清成本，后者降低审查成本。</p>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>name: Bug report</code></pre>
+      <p><code>name</code> 是 GitHub issue 创建页显示的模板名称。名称必须短而明确，否则新手不知道该选哪个入口。这里不用“Problem”这种泛词，而是直接写 <code>Bug report</code>，表示只处理可复现异常。</p>
+
+      <pre><code>description: Report a reproducible problem in code, tests, lessons, or repository workflow.</code></pre>
+      <p><code>description</code> 是模板说明。它把 bug 的范围限定到 code、tests、lessons、repository workflow。若不限定范围，学习建议、需求讨论、文档错字都会混进 bug 队列，后续 triage 成本上升。</p>
+
+      <pre><code>title: "[Bug]: "
+labels: ["bug"]</code></pre>
+      <p><code>title</code> 预填标题前缀，便于 issue 列表扫描。<code>labels</code> 自动打上分类标签，让维护者可以按 bug 筛选。生产仓库中标签必须预先存在，否则自动打标可能失败或表现不符合预期。</p>
+
+      <pre><code>body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form when something is broken and can be reproduced.</code></pre>
+      <p><code>body</code> 是表单字段数组。第一个字段是 <code>markdown</code>，只展示说明，不收集输入。它强调“broken and reproducible”，把不可复现的主观感受挡在 bug 模板之外。</p>
+
+      <pre><code>  - type: textarea
+    id: summary
+    attributes:
+      label: Problem summary
+      description: State the broken behavior in one or two precise sentences.
+      placeholder: The provider metrics lesson link points to a missing file.
+    validations:
+      required: true</code></pre>
+      <p><code>textarea</code> 适合多句描述。<code>id</code> 是字段稳定标识，后续自动化脚本或导出工具可依赖它。<code>validations.required: true</code> 使问题摘要必填；没有摘要的 bug 无法进入维护队列。</p>
+
+      <pre><code>  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: List the exact commands, clicks, or file paths needed to reproduce the problem.
+      placeholder: |
+        1. Open index.html
+        2. Click Lesson 0081
+        3. Observe the missing page
+    validations:
+      required: true</code></pre>
+      <p>复现步骤是 bug report 的核心字段。没有 steps，维护者只能猜测环境和路径。<code>placeholder: |</code> 使用 YAML 多行字符串，保留编号格式；如果缩进错误，GitHub 可能无法解析表单。</p>
+
+      <pre><code>  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: Describe the correct behavior or expected learning outcome.
+    validations:
+      required: true</code></pre>
+      <p><code>expected</code> 描述正确结果。它让维护者区分“程序真的错了”和“用户期望与设计不一致”。课程仓库还要写 expected learning outcome，因为文档 bug 可能表现为学习路径不完整。</p>
+
+      <pre><code>  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include error messages, failing assertions, broken links, or screenshots when relevant.
+    validations:
+      required: true</code></pre>
+      <p><code>actual</code> 记录真实结果。报错文本、失败断言、断链和截图都属于实际证据。若缺少 actual，维护者无法判断严重程度，也无法设计回归测试。</p>
+
+      <pre><code>  - type: textarea
+    id: verification
+    attributes:
+      label: Verification already tried
+      description: Paste relevant test commands, browser checks, or GitHub workflow results.
+      placeholder: |
+        .\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q
+        git diff --check
+    validations:
+      required: false</code></pre>
+      <p><code>verification</code> 不强制必填，因为新手可能还不会跑测试；但 placeholder 给出本仓库高价值命令。教学环境允许用户只提交可复现现象，生产环境通常会要求版本、环境、日志、trace id 和影响范围。</p>
+
+      <pre><code>name: Lesson request
+labels: ["course", "lesson-request"]</code></pre>
+      <p>课程需求模板使用两个标签：<code>course</code> 表示课程域，<code>lesson-request</code> 表示新增或加深内容的需求。与 bug 分离后，维护者可以按“教学内容债务”集中处理。</p>
+
+      <pre><code>  - type: input
+    id: lesson-range
+    attributes:
+      label: Related lesson or range
+      placeholder: Lesson 0081, Lessons 0077-0080, GitHub issue workflow
+    validations:
+      required: true</code></pre>
+      <p><code>input</code> 适合短文本。lesson-range 必填是为了把反馈绑定到课程位置。若没有范围，重构请求会变成泛泛意见，无法进入具体文件修改。</p>
+
+      <pre><code>  - type: textarea
+    id: learning-gap
+    attributes:
+      label: Learning gap
+      description: Explain what a learner still cannot understand, implement, or answer after reading the current material.
+    validations:
+      required: true</code></pre>
+      <p><code>learning-gap</code> 是课程仓库最关键字段。它不问“想加什么”，而问“读完后仍然不能做什么”。这种问法能把需求从偏好转成能力缺口，更适合期末复习与面试导向课程。</p>
+
+      <pre><code>  - type: dropdown
+    id: output-type
+    attributes:
+      label: Expected output
+      options:
+        - New lesson HTML + quick reference
+        - Existing lesson audit and refactor
+        - Reference page only
+        - README or workflow documentation update
+    validations:
+      required: true</code></pre>
+      <p><code>dropdown</code> 限定输出类型，避免 issue 讨论发散。新增课程、复核重构、只补速查、只改 README/流程文档是四类不同工作量，提前区分有助于排期。</p>
+
+      <pre><code>name: Documentation fix
+labels: ["documentation"]</code></pre>
+      <p>文档修复模板只打 <code>documentation</code> 标签，不与 <code>bug</code> 混用。文档问题可能影响学习效果，但不一定意味着代码行为错误。</p>
+
+      <pre><code>  - type: input
+    id: file
+    attributes:
+      label: Affected file
+      placeholder: lessons/0081-github-issue-templates.html
+    validations:
+      required: true</code></pre>
+      <p>文档问题必须绑定文件路径。课程仓库文件多，若只说“这一节浅了”，维护者难以定位。路径字段也是后续 PR 检查 reference、index、NOTES 是否同步的入口。</p>
+
+      <pre><code>  - type: checkboxes
+    id: course-standard
+    attributes:
+      label: Course standard impact
+      options:
+        - label: The nine-section lesson structure may need to be checked.
+        - label: The quick reference page may need to be updated.
+        - label: index.html, README.md, NOTES.md, or COURSE_PROGRESS.md may need to be updated.</code></pre>
+      <p>复选框把课程质量标准显式化。文档修复经常不是单文件改动：lesson 改了可能要同步 reference，新增页可能要同步 index，公开入口变化可能要补契约测试。把影响面写进模板能降低遗漏率。</p>
+
+      <pre><code>blank_issues_enabled: false</code></pre>
+      <p><code>config.yml</code> 控制 issue 创建入口。禁用 blank issue 是为了避免无结构反馈绕过表单。教学仓库可以保留结构化入口；大型生产仓库也常禁用空白 issue，迫使报告人选择正确模板。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>User clicks New issue
+  -> GitHub reads .github/ISSUE_TEMPLATE/config.yml
+  -> Blank issue is disabled
+  -> User chooses one form:
+       bug_report.yml
+       lesson_request.yml
+       documentation_fix.yml
+  -> GitHub renders YAML body fields
+  -> Required fields block incomplete submissions
+  -> Created issue receives title prefix and labels
+  -> Maintainer triages by label and field content
+  -> Fix becomes a pull request
+  -> PR template collects implementation evidence
+  -> CI and branch protection decide merge readiness</code></pre>
+      <p>Issue Forms 位于协作链路最前端。它不修复问题，也不验证代码；它把输入变得可读、可筛选、可复现。后续 PR、CI、CODEOWNERS、branch protection 才负责修复、验证、审查和合并。</p>
+      <table>
+        <thead><tr><th>阶段</th><th>输入</th><th>处理</th><th>输出</th></tr></thead>
+        <tbody>
+          <tr><td>创建 issue</td><td>用户选择模板。</td><td>GitHub 渲染 YAML 表单。</td><td>结构化字段。</td></tr>
+          <tr><td>提交校验</td><td>required 字段。</td><td>GitHub 阻止缺失必填项。</td><td>最低质量 issue。</td></tr>
+          <tr><td>维护者分流</td><td>labels + field ids。</td><td>按 bug、course、documentation 分类。</td><td>可排期任务。</td></tr>
+          <tr><td>修复交付</td><td>issue 上下文。</td><td>创建 PR 并填写 PR template。</td><td>可审查改动。</td></tr>
+          <tr><td>合并门禁</td><td>PR diff + tests。</td><td>CI、CODEOWNERS、branch protection。</td><td>合并或阻断。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>Issue Template 与 PR Template</td><td>都是模板，作用重复。</td><td>Issue Template 收集问题输入；PR Template 收集修复提交证据。</td></tr>
+          <tr><td>Markdown 模板与 Issue Forms</td><td>只是写法不同。</td><td>Issue Forms 有字段类型、必填校验和结构化数据，更适合开源协作。</td></tr>
+          <tr><td>label</td><td>只是装饰。</td><td>label 是 triage、筛选、自动化和维护优先级的基础信号。</td></tr>
+          <tr><td>required</td><td>字段越多越专业。</td><td>只强制维护者必须知道的信息；过度必填会降低提交率。</td></tr>
+          <tr><td>bug 与 docs</td><td>文档错也是 bug，统一入口即可。</td><td>可复现行为错误和文档质量问题的处理链路不同，应分流。</td></tr>
+          <tr><td>blank issue</td><td>开放空白入口更友好。</td><td>课程仓库更需要结构化反馈；空白入口会制造大量不可执行描述。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>表现</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>YAML 缩进错误</td><td>GitHub 无法渲染 issue form 或字段丢失。</td><td>保持两个空格层级；多行 placeholder 使用 <code>|</code> 并正确缩进。</td></tr>
+          <tr><td>字段 id 不稳定</td><td>后续自动化无法可靠读取字段。</td><td>使用语义化短横线或小写 id，如 <code>learning-gap</code>、<code>output-type</code>。</td></tr>
+          <tr><td>必填字段过多</td><td>新手放弃提交，或随便填充无效内容。</td><td>只对摘要、复现、期望、实际、学习缺口等关键字段 required。</td></tr>
+          <tr><td>模板分类过细</td><td>用户不知道该选哪个模板。</td><td>先保留 bug、lesson request、documentation fix 三类高频入口。</td></tr>
+          <tr><td>标签不存在或命名混乱</td><td>issue 无法自动进入预期分类。</td><td>在生产仓库预先创建标签，并保持 README/维护文档中的名称一致。</td></tr>
+          <tr><td>config 链接误导</td><td>contact link 指向错误页面。</td><td>生产仓库应替换为真实文档站、讨论区或安全报告入口。</td></tr>
+          <tr><td>只加模板不加测试</td><td>后续误删字段无人发现。</td><td>使用文档契约测试保护模板文件、关键字段、labels 和 required 字段。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学仓库</th><th>生产仓库</th></tr></thead>
+        <tbody>
+          <tr><td>模板数量</td><td>保留三类高频入口，帮助新手理解协作模型。</td><td>可能增加 incident、security、feature、performance、design proposal 等模板。</td></tr>
+          <tr><td>字段强制</td><td>只强制复现、学习缺口、受影响文件等核心字段。</td><td>可能强制版本、环境、日志、trace id、影响范围、回滚方案。</td></tr>
+          <tr><td>自动化</td><td>用文档契约测试保护模板存在与关键字段。</td><td>可结合 GitHub Actions、triage bot、project board、SLA 标签自动流转。</td></tr>
+          <tr><td>安全入口</td><td>本节不处理安全漏洞披露。</td><td>安全问题通常走 private vulnerability reporting 或专门安全流程。</td></tr>
+          <tr><td>标签治理</td><td>bug、course、lesson-request、documentation 足够教学使用。</td><td>需要 severity、priority、area、team、status、release-blocker 等多维标签。</td></tr>
+          <tr><td>用户群体</td><td>新手学习者，模板要解释字段含义。</td><td>内部工程师、客户、外部贡献者并存，模板要兼顾权限和隐私。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. Issue Template 解决的核心问题是什么？</summary><p class="answer">它把模糊反馈结构化为可复现、可分类、可分派的任务输入，降低维护者反复追问上下文的成本。</p></details>
+      <details><summary>2. 为什么本节选择 Issue Forms 而不是普通 Markdown 模板？</summary><p class="answer">Issue Forms 能定义字段类型、必填校验、下拉框、复选框和稳定字段 id，更适合课程仓库的结构化反馈与后续契约测试。</p></details>
+      <details><summary>3. Bug report 中最关键的三个证据字段是什么？</summary><p class="answer">复现步骤、期望行为、实际行为。三者共同决定问题是否能被稳定复现和验证修复。</p></details>
+      <details><summary>4. Lesson request 为什么要问 learning gap？</summary><p class="answer">因为课程需求的本质是能力缺口。问学习者“读完后仍不能理解、实现或回答什么”，比泛泛问“想加什么”更可执行。</p></details>
+      <details><summary>5. 禁用 blank issue 的目的是什么？</summary><p class="answer">防止用户绕过结构化字段提交不可执行描述，使仓库问题入口保持最低信息质量。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：Issue Template、PR Template、CODEOWNERS、CI 分别解决什么问题？</summary><p class="answer">Issue Template 结构化问题输入；PR Template 结构化修复证据；CODEOWNERS 路由人工审查责任；CI 自动验证代码与文档契约。四者分别对应输入、交付、审查、验证。</p></details>
+      <details><summary>面试题 2：为什么高质量 bug report 必须包含 expected 和 actual？</summary><p class="answer">expected 定义正确行为，actual 描述真实结果。没有 expected 无法判断用户期望是否合理；没有 actual 无法定位失败表现或编写回归测试。</p></details>
+      <details><summary>面试题 3：Issue Forms 的 required 字段应该如何设计？</summary><p class="answer">只强制维护者必须依赖的信息，例如摘要、复现步骤、期望、实际、学习缺口、影响文件。过度必填会制造无效填充，降低反馈质量。</p></details>
+      <details><summary>面试题 4：为什么 label 是工程协作信号而不是装饰？</summary><p class="answer">label 支撑筛选、分派、优先级、自动化、项目看板和统计分析。没有稳定 label，issue 队列会退化为无法治理的文本列表。</p></details>
+      <details><summary>面试题 5：教学仓库的 issue 模板和生产仓库有什么差异？</summary><p class="answer">教学仓库强调学习路径、课程深度和文档同步；生产仓库更强调环境版本、影响范围、严重级别、日志、监控、回滚、安全与 SLA。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0080-github-codeowners-review-ownership.html">上一课：GitHub CODEOWNERS</a>
+        <a href="./0082-github-issue-triage-labels-workflow.html">下一课：GitHub Issue Triage</a>
+        <a href="../reference/0081-github-issue-templates-cheatsheet.html">查看速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

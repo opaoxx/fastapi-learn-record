@@ -1,0 +1,20 @@
+# CODEOWNERS teaching template.
+# Replace these placeholder teams with real GitHub users or organization teams
+# before relying on automatic review requests.
+
+* @course-maintainers
+
+/first_api/ @backend-maintainers
+/tests/ @quality-maintainers
+
+/lessons/ @course-maintainers
+/reference/ @course-maintainers
+/learning-records/ @course-maintainers
+
+/README.md @repository-maintainers
+/DEVELOPMENT.md @repository-maintainers
+/COURSE-STANDARD.md @course-maintainers
+/NOTES.md @course-maintainers
+/COURSE_PROGRESS.md @course-maintainers
+
+/.github/ @repository-maintainers

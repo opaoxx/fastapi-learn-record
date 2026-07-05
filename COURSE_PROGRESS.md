@@ -1,5 +1,265 @@
 # Course Progress
 
+# 2026-07-05 Run: Lesson 0083 GitHub Projects Board Workflow
+
+## Completed
+
+- Completed Lesson 0083: GitHub Projects Board Workflow.
+- Added `.github/PROJECT_BOARD.md` documenting the recommended GitHub Projects board for the course repository.
+- Defined required project fields: Status, Priority, Area, Type, and Lesson.
+- Added recommended views: Triage Queue, Ready Work, Course Docs, GitHub Workflow, and Done Review.
+- Added status mapping from `status:*` issue labels to Projects Status values, plus operating rules, automation boundaries, and production notes.
+- Added documentation contract coverage for the project board workflow, README links, DEVELOPMENT links, and the new lesson's fixed review structure.
+- Added Lesson 0083, Reference 0083, learning record 0074, updated Lesson 0082 navigation, Reference 0082 navigation, README, DEVELOPMENT.md, main course index, and `NOTES.md`.
+
+## Verification
+
+- `.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q` -> 15 passed.
+- `.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q` -> 54 passed.
+- `.\.venv\Scripts\python.exe -m pytest -q` -> 110 passed, 1 existing StarletteDeprecationWarning.
+- `git diff --check` -> no whitespace errors; Windows LF-to-CRLF warnings only.
+
+## Files touched
+
+- `.github/PROJECT_BOARD.md`
+- `lessons/0083-github-projects-board-workflow.html`
+- `lessons/0082-github-issue-triage-labels-workflow.html`
+- `reference/0083-github-projects-board-workflow-cheatsheet.html`
+- `reference/0082-github-issue-triage-labels-workflow-cheatsheet.html`
+- `learning-records/0074-github-projects-board-workflow.md`
+- `README.md`
+- `DEVELOPMENT.md`
+- `index.html`
+- `NOTES.md`
+- `tests/test_course_docs_contract.py`
+- `COURSE_PROGRESS.md`
+
+## Next suggested step
+
+Run documentation, provider, full pytest, and whitespace checks. Continue with Lesson 0084 after user review; a natural next topic is GitHub Discussions for course Q&A and long-form learner support.
+
+# 2026-07-05 Run: Lesson 0082 GitHub Issue Triage Labels Workflow
+
+## Completed
+
+- Completed Lesson 0082: GitHub Issue Triage Labels Workflow.
+- Added `.github/ISSUE_TRIAGE.md` documenting type, area, priority, and status label dimensions.
+- Added priority rules, status flow, triage checklist, course-specific examples, and production notes for label governance.
+- Added documentation contract coverage for issue triage labels, README links, DEVELOPMENT links, and the new lesson's fixed review structure.
+- Added Lesson 0082, Reference 0082, learning record 0073, updated Lesson 0081 navigation, Reference 0081 navigation, README, DEVELOPMENT.md, main course index, and `NOTES.md`.
+
+## Verification
+
+- `.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q` -> 14 passed.
+- `.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q` -> 54 passed.
+- `.\.venv\Scripts\python.exe -m pytest -q` -> 109 passed, 1 existing StarletteDeprecationWarning.
+- `git diff --check` -> no whitespace errors; Windows LF-to-CRLF warnings only.
+
+## Files touched
+
+- `.github/ISSUE_TRIAGE.md`
+- `lessons/0082-github-issue-triage-labels-workflow.html`
+- `lessons/0081-github-issue-templates.html`
+- `reference/0082-github-issue-triage-labels-workflow-cheatsheet.html`
+- `reference/0081-github-issue-templates-cheatsheet.html`
+- `learning-records/0073-github-issue-triage-labels-workflow.md`
+- `README.md`
+- `DEVELOPMENT.md`
+- `index.html`
+- `NOTES.md`
+- `tests/test_course_docs_contract.py`
+- `COURSE_PROGRESS.md`
+
+## Next suggested step
+
+Run documentation, provider, full pytest, and whitespace checks. Continue with Lesson 0083 after user review; a natural next topic is GitHub Discussions or Projects board workflow after issue triage labels are defined.
+
+# 2026-07-05 Run: Lesson 0081 GitHub Issue Templates
+
+## Completed
+
+- Completed Lesson 0081: GitHub Issue Templates.
+- Added `.github/ISSUE_TEMPLATE/` with Issue Forms for bug reports, lesson requests, and documentation fixes.
+- Added `.github/ISSUE_TEMPLATE/config.yml` to disable blank issues and keep feedback structured.
+- Added documentation contract coverage for issue templates, README links, DEVELOPMENT links, and the new lesson's fixed review structure.
+- Added Lesson 0081, Reference 0081, learning record 0072, updated Lesson 0080 navigation, Reference 0080 navigation, README, DEVELOPMENT.md, main course index, and `NOTES.md`.
+
+## Verification
+
+- `.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q` -> 13 passed.
+- `.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q` -> 54 passed.
+- `.\.venv\Scripts\python.exe -m pytest -q` -> 108 passed, 1 existing StarletteDeprecationWarning.
+- `git diff --check` -> no whitespace errors; Windows LF-to-CRLF warnings only.
+
+## Files touched
+
+- `.github/ISSUE_TEMPLATE/bug_report.yml`
+- `.github/ISSUE_TEMPLATE/lesson_request.yml`
+- `.github/ISSUE_TEMPLATE/documentation_fix.yml`
+- `.github/ISSUE_TEMPLATE/config.yml`
+- `lessons/0081-github-issue-templates.html`
+- `lessons/0080-github-codeowners-review-ownership.html`
+- `reference/0081-github-issue-templates-cheatsheet.html`
+- `reference/0080-github-codeowners-review-ownership-cheatsheet.html`
+- `learning-records/0072-github-issue-templates.md`
+- `README.md`
+- `DEVELOPMENT.md`
+- `index.html`
+- `NOTES.md`
+- `tests/test_course_docs_contract.py`
+- `COURSE_PROGRESS.md`
+
+## Next suggested step
+
+Run documentation, provider, full pytest, and whitespace checks. Continue with Lesson 0082 after user review; a natural next topic is GitHub issue triage labels and project board workflow.
+
+# 2026-07-05 Run: Lesson 0080 GitHub CODEOWNERS Review Ownership
+
+## Completed
+
+- Completed Lesson 0080: GitHub CODEOWNERS Review Ownership.
+- Added `.github/CODEOWNERS` as a teaching template for repository review ownership.
+- The CODEOWNERS template maps backend code, tests, lessons, references, learning records, root docs, and GitHub governance files to placeholder owner teams.
+- Added documentation contract coverage for the CODEOWNERS file, README links, DEVELOPMENT links, and the new lesson's fixed review structure.
+- Added Lesson 0080, Reference 0080, learning record 0071, updated Lesson 0079 navigation, Reference 0079 navigation, README, DEVELOPMENT.md, main course index, and `NOTES.md`.
+
+## Files touched
+
+- `.github/CODEOWNERS`
+- `tests/test_course_docs_contract.py`
+- `lessons/0079-github-pull-request-template.html`
+- `lessons/0080-github-codeowners-review-ownership.html`
+- `reference/0079-github-pull-request-template-cheatsheet.html`
+- `reference/0080-github-codeowners-review-ownership-cheatsheet.html`
+- `README.md`
+- `DEVELOPMENT.md`
+- `index.html`
+- `NOTES.md`
+- `learning-records/0071-github-codeowners-review-ownership.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Continue with Lesson 0081 after user review. A natural next topic is GitHub issue templates, so bug reports, lesson requests, and documentation fixes enter the repository with enough structure.
+
+# 2026-07-05 Run: Lesson 0079 GitHub Pull Request Template
+
+## Completed
+
+- Completed Lesson 0079: GitHub Pull Request Template.
+- Added `.github/PULL_REQUEST_TEMPLATE.md` as the repository pull request checklist.
+- The template asks contributors for summary, change type, verification evidence, course documentation checklist, and risk notes.
+- Added documentation contract coverage for the PR template, README links, DEVELOPMENT links, and the new lesson's fixed review structure.
+- Added Lesson 0079, Reference 0079, learning record 0070, updated Lesson 0078 navigation, Reference 0078 navigation, README, DEVELOPMENT.md, main course index, and `NOTES.md`.
+
+## Files touched
+
+- `.github/PULL_REQUEST_TEMPLATE.md`
+- `tests/test_course_docs_contract.py`
+- `lessons/0078-github-branch-protection-required-checks.html`
+- `lessons/0079-github-pull-request-template.html`
+- `reference/0078-github-branch-protection-required-checks-cheatsheet.html`
+- `reference/0079-github-pull-request-template-cheatsheet.html`
+- `README.md`
+- `DEVELOPMENT.md`
+- `index.html`
+- `NOTES.md`
+- `learning-records/0070-github-pull-request-template.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Continue with Lesson 0080 after user review. A natural next topic is CODEOWNERS or issue templates, so ownership and contribution intake are explicit after PR templates and branch protection are in place.
+
+# 2026-07-05 Run: Lesson 0078 GitHub Branch Protection Required Checks
+
+## Completed
+
+- Completed Lesson 0078: GitHub Branch Protection Required Checks.
+- Added `.github/BRANCH_PROTECTION.md` to document the `main` branch protection policy and required status check name.
+- Documented `pytest and documentation contracts` as the required check produced by the Course CI workflow.
+- Added documentation contract coverage for the branch protection policy, README links, DEVELOPMENT links, and the new lesson's fixed review structure.
+- Added Lesson 0078, Reference 0078, learning record 0069, updated Lesson 0077 navigation, Reference 0077 navigation, README, DEVELOPMENT.md, main course index, and `NOTES.md`.
+
+## Files touched
+
+- `.github/BRANCH_PROTECTION.md`
+- `tests/test_course_docs_contract.py`
+- `lessons/0077-github-actions-ci-workflow.html`
+- `lessons/0078-github-branch-protection-required-checks.html`
+- `reference/0077-github-actions-ci-workflow-cheatsheet.html`
+- `reference/0078-github-branch-protection-required-checks-cheatsheet.html`
+- `README.md`
+- `DEVELOPMENT.md`
+- `index.html`
+- `NOTES.md`
+- `learning-records/0069-github-branch-protection-required-checks.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Continue with Lesson 0079 after user review. A natural next topic is GitHub pull request templates or CODEOWNERS, so new contributors know what evidence to provide when CI and branch protection are active.
+
+# 2026-07-05 Run: Lesson 0077 GitHub Actions CI Workflow
+
+## Completed
+
+- Completed Lesson 0077: GitHub Actions CI Workflow.
+- Added `.github/workflows/ci.yml` as the repository-level CI workflow.
+- The workflow runs provider HTTP tests, documentation contract tests, the full pytest suite, and committed diff whitespace checks.
+- Added documentation contract coverage to ensure the CI workflow keeps the required quality gates.
+- Added Lesson 0077, Reference 0077, learning record 0068, updated Lesson 0076 navigation, Reference 0076 navigation, README, DEVELOPMENT.md, main course index, and `NOTES.md`.
+
+## Files touched
+
+- `.github/workflows/ci.yml`
+- `tests/test_course_docs_contract.py`
+- `lessons/0076-github-development-workflow.html`
+- `lessons/0077-github-actions-ci-workflow.html`
+- `reference/0076-github-development-workflow-cheatsheet.html`
+- `reference/0077-github-actions-ci-workflow-cheatsheet.html`
+- `README.md`
+- `DEVELOPMENT.md`
+- `index.html`
+- `NOTES.md`
+- `learning-records/0068-github-actions-ci-workflow.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Continue with Lesson 0078 after user review. A natural next topic is GitHub branch protection and required status checks, explaining how CI results become merge-blocking project governance.
+
+# 2026-07-05 Run: Quality Audit Lessons 0071-0076
+
+## Completed
+
+- Continued the user-requested quality review without producing new lessons.
+- Re-audited Lessons 0071-0076 against the required "Final Review + CSDN Deep Dive" standard.
+- Lightly refactored each lesson with explicit review reinforcement blocks:
+  - Lesson 0071 now emphasizes validation vs repair, complete error collection, and safe mathematical consistency checks.
+  - Lesson 0072 now clarifies practice sessions as traceable orchestration packages rather than duplicated business logic.
+  - Lesson 0073 now distinguishes Markdown export from session execution and documents visibility boundaries for cards, answer keys, and reports.
+  - Lesson 0074 now frames release checklists as machine-readable quality gates with per-check evidence.
+  - Lesson 0075 now treats README as a GitHub-facing public interface protected by documentation contract tests.
+  - Lesson 0076 now treats `DEVELOPMENT.md` as a maintainable collaboration contract for code, lesson, documentation, and release work.
+- Expanded the documentation contract test so audited Lessons 0065-0076 must retain both "复核补强" and "逐行精读补充" content.
+
+## Files touched
+
+- `lessons/0071-provider-metrics-grading-summary-validation.html`
+- `lessons/0072-provider-metrics-practice-session-package.html`
+- `lessons/0073-provider-metrics-practice-session-markdown.html`
+- `lessons/0074-provider-metrics-practice-release-checklist.html`
+- `lessons/0075-github-readme-learning-entry.html`
+- `lessons/0076-github-development-workflow.html`
+- `tests/test_course_docs_contract.py`
+- `NOTES.md`
+- `COURSE_PROGRESS.md`
+
+## Next task
+
+Wait for user review. If approved, continue with the next requested audit batch or resume forward production from Lesson 0077.
+
 # 2026-07-05 Run: Quality Audit Lessons 0065-0070
 
 ## Completed

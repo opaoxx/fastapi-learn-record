@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>GitHub Actions CI Workflow Cheat Sheet</title><link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+  <nav class="course-nav" aria-label="速查表导航"><span class="nav-title">Reference 0077</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0077-github-actions-ci-workflow.html">回到第 77 课</a><a href="./0076-github-development-workflow-cheatsheet.html">上一张速查</a><a href="./0078-github-branch-protection-required-checks-cheatsheet.html">下一张速查</a></span></nav>
+  <header><p class="eyebrow">Reference 0077</p><h1>GitHub Actions CI Workflow 速查</h1><p class="lead">把本地维护命令变成 GitHub PR 质量门禁。</p></header>
+  <h2>核心文件</h2><pre><code>.github/workflows/ci.yml</code></pre>
+  <h2>触发器</h2><pre><code>push: main
+pull_request: main</code></pre>
+  <h2>关键步骤</h2><pre><code>actions/checkout@v4
+actions/setup-python@v5
+python -m pip install -r requirements.txt
+python -m pytest tests/test_provider_http.py -q
+python -m pytest tests/test_course_docs_contract.py -q
+python -m pytest -q
+git diff --check</code></pre>
+  <h2>设计要点</h2><ul><li>CI 是编排层，pytest 是检查工具。</li><li>runner 是独立临时环境，不能依赖本地虚拟环境。</li><li>文档契约测试必须进入 CI，因为课程文档是交付物。</li><li>生产环境通常还会增加 lint、type check、security scan、build 和 required checks。</li></ul>
+  <h2>测试保护</h2><pre><code>test_github_actions_ci_runs_course_quality_gates</code></pre>
+  <nav class="course-nav bottom" aria-label="速查表底部导航"><span class="nav-title">继续学习</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0077-github-actions-ci-workflow.html">回到第 77 课</a><a href="./0076-github-development-workflow-cheatsheet.html">上一张速查</a><a href="./0078-github-branch-protection-required-checks-cheatsheet.html">下一张速查</a></span></nav>
+</main></body></html>

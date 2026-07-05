@@ -64,6 +64,16 @@
           <tr><td><code>reference/provider-metrics-index.html</code></td><td>排障训练读者</td><td>provider metrics 文档入口</td></tr>
         </tbody>
       </table>
+      <p>复核补强：README 在 GitHub 仓库里不是装饰文案，而是人类读者的公共 API。课程仓库的 README 必须像接口一样稳定：入口链接、运行命令、测试命令和专题导航都应该被测试保护，避免重构时悄悄失效。</p>
+      <table>
+        <thead><tr><th>README 契约</th><th>读者收益</th><th>缺失风险</th></tr></thead>
+        <tbody>
+          <tr><td>课程总目录</td><td>知道从哪里开始学</td><td>只能在目录树里盲找 HTML。</td></tr>
+          <tr><td>运行入口</td><td>能启动 FastAPI 项目</td><td>课程停留在阅读，无法实践。</td></tr>
+          <tr><td>测试命令</td><td>能验证本地环境和改动</td><td>新手不知道如何确认项目没坏。</td></tr>
+          <tr><td>专题文档入口</td><td>能快速进入 runbook 训练包</td><td>高级内容埋在深层目录，不可发现。</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
@@ -100,6 +110,8 @@ assert "[Provider Metrics 文档入口](reference/provider-metrics-index.html)" 
 assert "fastapi dev first_api/main.py" in readme
 assert "python -m pytest -q" in readme</code></pre>
       <p>这些断言保护 README 的关键导航和命令。未来如果有人删掉课程入口、运行命令或测试命令，文档契约测试会失败。</p>
+      <p>逐行精读补充：测试断言的是 Markdown 链接原文，而不是只断言裸路径。这样可以同时保护“链接目标”和“读者看到的入口名称”，避免 README 变成只对维护者可懂的路径堆砌。</p>
+      <p>README 测试没有要求完整全文相等，是为了允许文案继续迭代。它只锁定关键公共契约：学习入口、运行入口、专题入口和测试命令必须长期存在。</p>
     </section>
 
     <section>

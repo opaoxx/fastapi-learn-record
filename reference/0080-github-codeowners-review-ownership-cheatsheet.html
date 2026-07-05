@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>GitHub CODEOWNERS Review Ownership Cheat Sheet</title><link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+  <nav class="course-nav" aria-label="速查表导航"><span class="nav-title">Reference 0080</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0080-github-codeowners-review-ownership.html">回到第 80 课</a><a href="./0079-github-pull-request-template-cheatsheet.html">上一张速查</a><a href="./0081-github-issue-templates-cheatsheet.html">下一张速查</a></span></nav>
+  <header><p class="eyebrow">Reference 0080</p><h1>GitHub CODEOWNERS Review Ownership 速查</h1><p class="lead">把文件路径映射到合适 reviewer，让 PR 自动请求责任人审查。</p></header>
+  <h2>核心文件</h2><pre><code>.github/CODEOWNERS</code></pre>
+  <h2>核心规则</h2><pre><code>* @course-maintainers
+/first_api/ @backend-maintainers
+/tests/ @quality-maintainers
+/lessons/ @course-maintainers
+/reference/ @course-maintainers
+/.github/ @repository-maintainers</code></pre>
+  <h2>生产替换</h2><p>把占位 team 替换成真实 GitHub 用户或组织 team，否则自动 review request 不会可靠生效。</p>
+  <h2>联动机制</h2><pre><code>PR changed files
+-> CODEOWNERS path match
+-> automatic review request
+-> branch protection requires code owner review</code></pre>
+  <h2>测试保护</h2><pre><code>test_codeowners_maps_repository_ownership</code></pre>
+  <nav class="course-nav bottom" aria-label="速查表底部导航"><span class="nav-title">继续学习</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0080-github-codeowners-review-ownership.html">回到第 80 课</a><a href="./0079-github-pull-request-template-cheatsheet.html">上一张速查</a><a href="./0081-github-issue-templates-cheatsheet.html">下一张速查</a></span></nav>
+</main></body></html>

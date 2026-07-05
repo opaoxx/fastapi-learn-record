@@ -64,6 +64,16 @@
           <tr><td>Grading Report</td><td><code>report_markdown</code></td><td>复盘作答结果</td></tr>
         </tbody>
       </table>
+      <p>复核补强：本节要防止一个常见误区：Markdown 包不是重新执行训练，而是对已有 session 的发布投影。导出层如果重新构造 session，会破坏“同一份结构化数据导出多种格式”的工程边界。</p>
+      <table>
+        <thead><tr><th>发布块</th><th>可见内容</th><th>隐藏内容或边界</th></tr></thead>
+        <tbody>
+          <tr><td>Findings</td><td>已解释的指标现象</td><td>不重新读取 counter 或 provider。</td></tr>
+          <tr><td>Exercise Cards</td><td>题目、题号、severity 锚点</td><td>不泄露 <code>expected_next_action</code>。</td></tr>
+          <tr><td>Answer Key</td><td>标准答案</td><td>不参与评分计算。</td></tr>
+          <tr><td>Grading Report</td><td>评分结果和反馈</td><td>不保存原始 response 文本。</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
@@ -113,6 +123,8 @@ if not isinstance(cards, list):
 )
 return "\n".join(lines)</code></pre>
       <p>最后追加答案键和评分报告。返回值保留末尾换行，因为列表最后一个元素是空字符串，<code>join</code> 后自然以换行结束，便于直接写入 Markdown 文件。</p>
+      <p>逐行精读补充：<code>str(session["findings_markdown"]).rstrip()</code> 不是为了吞掉坏类型，而是为了组合已经生成的 Markdown 片段。真正的 session 结构完整性应由 0072 的构造函数和后续发布检查保护。</p>
+      <p>cards 类型被显式校验为 list，但单张 card 字段仍用索引读取。这样可以把“cards 整体结构错”和“某张题卡字段缺失”区分开：前者给 ValueError，后者暴露 KeyError，定位更具体。</p>
     </section>
 
     <section>

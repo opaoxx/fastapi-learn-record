@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>GitHub Issue Triage Labels Workflow Cheat Sheet</title><link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+  <nav class="course-nav" aria-label="速查表导航"><span class="nav-title">Reference 0082</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0082-github-issue-triage-labels-workflow.html">回到第 82 课</a><a href="./0081-github-issue-templates-cheatsheet.html">上一张速查</a><a href="./0083-github-projects-board-workflow-cheatsheet.html">下一张速查</a></span></nav>
+  <header><p class="eyebrow">Reference 0082</p><h1>GitHub Issue Triage Labels Workflow 速查</h1><p class="lead">用 type、area、priority、status 把 issue 队列治理成可筛选任务流。</p></header>
+  <h2>核心文件</h2><pre><code>.github/ISSUE_TRIAGE.md</code></pre>
+  <h2>标签维度</h2><pre><code>type:bug | type:lesson | type:docs | type:workflow
+area:api | area:tests | area:lessons | area:reference | area:github
+priority:p0 | priority:p1 | priority:p2 | priority:p3
+status:needs-repro | status:needs-design | status:ready | status:blocked | status:done</code></pre>
+  <h2>状态流</h2><pre><code>new issue
+-> status:needs-repro
+-> status:needs-design
+-> status:ready
+-> pull request opened
+-> status:blocked
+-> status:done</code></pre>
+  <h2>Triage 不变量</h2><ul><li>Exactly one type label.</li><li>At least one area label.</li><li>Exactly one priority label.</li><li>Exactly one status label.</li></ul>
+  <h2>测试保护</h2><pre><code>test_issue_triage_documents_label_workflow</code></pre>
+  <nav class="course-nav bottom" aria-label="速查表底部导航"><span class="nav-title">继续学习</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0082-github-issue-triage-labels-workflow.html">回到第 82 课</a><a href="./0081-github-issue-templates-cheatsheet.html">上一张速查</a><a href="./0083-github-projects-board-workflow-cheatsheet.html">下一张速查</a></span></nav>
+</main></body></html>

@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>GitHub Pull Request Template Cheat Sheet</title><link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+  <nav class="course-nav" aria-label="速查表导航"><span class="nav-title">Reference 0079</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0079-github-pull-request-template.html">回到第 79 课</a><a href="./0078-github-branch-protection-required-checks-cheatsheet.html">上一张速查</a><a href="./0080-github-codeowners-review-ownership-cheatsheet.html">下一张速查</a></span></nav>
+  <header><p class="eyebrow">Reference 0079</p><h1>GitHub Pull Request Template 速查</h1><p class="lead">让每个 PR 都带上变更意图、测试证据、课程文档清单和风险说明。</p></header>
+  <h2>核心文件</h2><pre><code>.github/PULL_REQUEST_TEMPLATE.md</code></pre>
+  <h2>模板结构</h2><pre><code>Summary
+Change Type
+Verification
+Course Documentation Checklist
+Risk Notes</code></pre>
+  <h2>必填验证命令</h2><pre><code>.\.venv\Scripts\python.exe -m pytest tests\test_provider_http.py -q
+.\.venv\Scripts\python.exe -m pytest tests\test_course_docs_contract.py -q
+.\.venv\Scripts\python.exe -m pytest -q
+git diff --check</code></pre>
+  <h2>课程改动必查</h2><ul><li><code>lessons/</code></li><li><code>reference/</code></li><li><code>index.html</code></li><li><code>NOTES.md</code></li><li><code>COURSE_PROGRESS.md</code></li><li><code>tests/test_course_docs_contract.py</code></li></ul>
+  <h2>测试保护</h2><pre><code>test_pull_request_template_guides_course_contributors</code></pre>
+  <nav class="course-nav bottom" aria-label="速查表底部导航"><span class="nav-title">继续学习</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0079-github-pull-request-template.html">回到第 79 课</a><a href="./0078-github-branch-protection-required-checks-cheatsheet.html">上一张速查</a><a href="./0080-github-codeowners-review-ownership-cheatsheet.html">下一张速查</a></span></nav>
+</main></body></html>

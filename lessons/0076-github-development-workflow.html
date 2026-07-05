@@ -13,6 +13,7 @@
       <span class="nav-links">
         <a href="../index.html">课程目录</a>
         <a href="./0075-github-readme-learning-entry.html">上一课</a>
+        <a href="./0077-github-actions-ci-workflow.html">下一课</a>
         <a href="../reference/0076-github-development-workflow-cheatsheet.html">速查</a>
       </span>
     </nav>
@@ -56,6 +57,16 @@
           <tr><td><code>DEVELOPMENT.md</code></td><td>维护者、贡献者</td><td>改代码、改课程、改文档、发布前检查</td></tr>
           <tr><td><code>COURSE-STANDARD.md</code></td><td>课程作者</td><td>课程质量原则和写作标准</td></tr>
           <tr><td><code>tests/test_course_docs_contract.py</code></td><td>自动化测试</td><td>保护文档入口和课程结构</td></tr>
+        </tbody>
+      </table>
+      <p>复核补强：<code>DEVELOPMENT.md</code> 的价值是把“怎么安全改这个仓库”从个人经验变成团队契约。课程仓库同时有代码和讲义，维护者必须知道改一节课会牵动 lesson、reference、index、record、notes、progress 和测试。</p>
+      <table>
+        <thead><tr><th>维护契约</th><th>保护对象</th><th>不写清楚的后果</th></tr></thead>
+        <tbody>
+          <tr><td>Code Change Checklist</td><td>实现与测试一致</td><td>功能改了但测试遗漏，回归风险上升。</td></tr>
+          <tr><td>Lesson Change Checklist</td><td>课程导航和记录完整</td><td>新增课程变成孤岛页面。</td></tr>
+          <tr><td>Documentation Change Checklist</td><td>README、索引和参考页同步</td><td>GitHub 入口与真实内容脱节。</td></tr>
+          <tr><td>Release Readiness</td><td>发布前验证闭环</td><td>带着断链、空白错误或过期说明交付。</td></tr>
         </tbody>
       </table>
     </section>
@@ -102,6 +113,8 @@ assert "git diff --check" in workflow
 assert "① 本节核心知识框架" in workflow
 assert "⑨ 面试高频真题+解析" in workflow</code></pre>
       <p>这些断言保护维护流程的关键骨架。未来如果有人删除测试命令或九段结构，文档契约测试会失败。</p>
+      <p>逐行精读补充：测试同时断言命令和九段式结构，是因为本仓库的质量边界有两类：代码必须能跑、课程必须完整。只测 pytest 命令会漏掉课程写作标准，只测九段结构又无法保护维护者的验证流程。</p>
+      <p>这里没有测试 DEVELOPMENT 的每一行文字，避免文档被锁死。契约测试只保护不可丢的骨架：检查清单名称、关键命令、发布准备和课程固定结构。</p>
     </section>
 
     <section>
@@ -193,6 +206,7 @@ assert "⑨ 面试高频真题+解析" in workflow</code></pre>
       <span class="nav-links">
         <a href="../index.html">课程目录</a>
         <a href="./0075-github-readme-learning-entry.html">上一课：GitHub README Learning Entry</a>
+        <a href="./0077-github-actions-ci-workflow.html">下一课：GitHub Actions CI Workflow</a>
         <a href="../reference/0076-github-development-workflow-cheatsheet.html">查看速查</a>
       </span>
     </nav>

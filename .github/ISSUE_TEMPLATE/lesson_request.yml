@@ -1,0 +1,43 @@
+name: Lesson request
+description: Propose a new lesson, review topic, or deeper course explanation.
+title: "[Lesson]: "
+labels: ["course", "lesson-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form when the course needs a new lesson or an existing topic needs deeper coverage.
+  - type: input
+    id: lesson-range
+    attributes:
+      label: Related lesson or range
+      description: Use a lesson number, range, or topic name.
+      placeholder: Lesson 0081, Lessons 0077-0080, GitHub issue workflow
+    validations:
+      required: true
+  - type: textarea
+    id: learning-gap
+    attributes:
+      label: Learning gap
+      description: Explain what a learner still cannot understand, implement, or answer after reading the current material.
+    validations:
+      required: true
+  - type: textarea
+    id: required-depth
+    attributes:
+      label: Required depth
+      description: List concepts, code paths, runtime flows, pitfalls, and interview points that must be covered.
+      placeholder: Principle, code walkthrough, full flow, common errors, production differences, exercises, interview questions.
+    validations:
+      required: true
+  - type: dropdown
+    id: output-type
+    attributes:
+      label: Expected output
+      options:
+        - New lesson HTML + quick reference
+        - Existing lesson audit and refactor
+        - Reference page only
+        - README or workflow documentation update
+    validations:
+      required: true

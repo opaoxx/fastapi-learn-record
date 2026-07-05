@@ -113,6 +113,13 @@ def test_rebuilt_foundation_lessons_use_exam_review_structure() -> None:
         Path("lessons/0074-provider-metrics-practice-release-checklist.html"),
         Path("lessons/0075-github-readme-learning-entry.html"),
         Path("lessons/0076-github-development-workflow.html"),
+        Path("lessons/0077-github-actions-ci-workflow.html"),
+        Path("lessons/0078-github-branch-protection-required-checks.html"),
+        Path("lessons/0079-github-pull-request-template.html"),
+        Path("lessons/0080-github-codeowners-review-ownership.html"),
+        Path("lessons/0081-github-issue-templates.html"),
+        Path("lessons/0082-github-issue-triage-labels-workflow.html"),
+        Path("lessons/0083-github-projects-board-workflow.html"),
     ]
     required_sections = [
         "① 本节核心知识框架",
@@ -201,7 +208,7 @@ def test_provider_metrics_runbook_links_docs_lessons_and_tests() -> None:
     assert "../tests/test_course_docs_contract.py" in parser.links
 
 
-def test_provider_metrics_training_lessons_include_quality_audit_reinforcement() -> None:
+def test_audited_late_lessons_include_quality_audit_reinforcement() -> None:
     lesson_paths = [
         Path("lessons/0065-provider-metrics-findings-markdown-report.html"),
         Path("lessons/0066-provider-metrics-runbook-exercise-cards.html"),
@@ -209,6 +216,12 @@ def test_provider_metrics_training_lessons_include_quality_audit_reinforcement()
         Path("lessons/0068-provider-metrics-exercise-grading-anchors.html"),
         Path("lessons/0069-provider-metrics-grading-summary.html"),
         Path("lessons/0070-provider-metrics-grading-summary-markdown.html"),
+        Path("lessons/0071-provider-metrics-grading-summary-validation.html"),
+        Path("lessons/0072-provider-metrics-practice-session-package.html"),
+        Path("lessons/0073-provider-metrics-practice-session-markdown.html"),
+        Path("lessons/0074-provider-metrics-practice-release-checklist.html"),
+        Path("lessons/0075-github-readme-learning-entry.html"),
+        Path("lessons/0076-github-development-workflow.html"),
     ]
 
     for lesson_path in lesson_paths:
@@ -229,6 +242,13 @@ def test_root_readme_guides_github_learners_to_course_and_runbook() -> None:
     assert "[Lesson 0072 - Practice Session Package](lessons/0072-provider-metrics-practice-session-package.html)" in readme
     assert "[Lesson 0073 - Practice Session Markdown](lessons/0073-provider-metrics-practice-session-markdown.html)" in readme
     assert "[Lesson 0074 - Practice Release Checklist](lessons/0074-provider-metrics-practice-release-checklist.html)" in readme
+    assert "[.github/workflows/ci.yml](.github/workflows/ci.yml)" in readme
+    assert "[.github/BRANCH_PROTECTION.md](.github/BRANCH_PROTECTION.md)" in readme
+    assert "[.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md)" in readme
+    assert "[.github/CODEOWNERS](.github/CODEOWNERS)" in readme
+    assert "[.github/ISSUE_TEMPLATE/](.github/ISSUE_TEMPLATE/)" in readme
+    assert "[.github/ISSUE_TRIAGE.md](.github/ISSUE_TRIAGE.md)" in readme
+    assert "[.github/PROJECT_BOARD.md](.github/PROJECT_BOARD.md)" in readme
     assert "fastapi dev first_api/main.py" in readme
     assert "python -m pytest -q" in readme
     assert "python -m pytest tests/test_course_docs_contract.py -q" in readme
@@ -241,9 +261,198 @@ def test_development_workflow_documents_course_maintenance_contract() -> None:
     assert "Lesson Change Checklist" in workflow
     assert "Documentation Change Checklist" in workflow
     assert "GitHub Release Readiness" in workflow
+    assert ".github/workflows/ci.yml" in workflow
+    assert ".github/BRANCH_PROTECTION.md" in workflow
+    assert ".github/PULL_REQUEST_TEMPLATE.md" in workflow
+    assert ".github/CODEOWNERS" in workflow
+    assert ".github/ISSUE_TEMPLATE/" in workflow
+    assert ".github/ISSUE_TRIAGE.md" in workflow
+    assert ".github/PROJECT_BOARD.md" in workflow
     assert ".\\.venv\\Scripts\\python.exe -m pytest tests\\test_provider_http.py -q" in workflow
     assert ".\\.venv\\Scripts\\python.exe -m pytest tests\\test_course_docs_contract.py -q" in workflow
     assert ".\\.venv\\Scripts\\python.exe -m pytest -q" in workflow
     assert "git diff --check" in workflow
     assert "① 本节核心知识框架" in workflow
     assert "⑨ 面试高频真题+解析" in workflow
+
+
+def test_github_actions_ci_runs_course_quality_gates() -> None:
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "Course CI" in workflow
+    assert "push:" in workflow
+    assert "pull_request:" in workflow
+    assert "actions/checkout@v4" in workflow
+    assert "actions/setup-python@v5" in workflow
+    assert 'python-version: "3.11"' in workflow
+    assert "python -m pip install -r requirements.txt" in workflow
+    assert "python -m pytest tests/test_provider_http.py -q" in workflow
+    assert "python -m pytest tests/test_course_docs_contract.py -q" in workflow
+    assert "python -m pytest -q" in workflow
+    assert "git diff --check" in workflow
+
+
+def test_branch_protection_documents_required_status_check() -> None:
+    protection = Path(".github/BRANCH_PROTECTION.md").read_text(encoding="utf-8")
+
+    assert "Branch Protection Required Checks" in protection
+    assert "main" in protection
+    assert "Require a pull request before merging" in protection
+    assert "Require status checks to pass before merging" in protection
+    assert "Require branches to be up to date before merging" in protection
+    assert "Require conversation resolution before merging" in protection
+    assert "Block force pushes" in protection
+    assert "Block branch deletion" in protection
+    assert "pytest and documentation contracts" in protection
+    assert ".github/workflows/ci.yml" in protection
+
+
+def test_pull_request_template_guides_course_contributors() -> None:
+    template = Path(".github/PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+
+    assert "Pull Request Checklist" in template
+    assert "Summary" in template
+    assert "What changed" in template
+    assert "Why it changed" in template
+    assert "Change Type" in template
+    assert "Code behavior" in template
+    assert "Lesson or reference page" in template
+    assert "README, DEVELOPMENT, or GitHub documentation" in template
+    assert "Tests or CI" in template
+    assert "Verification" in template
+    assert ".\\.venv\\Scripts\\python.exe -m pytest tests\\test_provider_http.py -q" in template
+    assert ".\\.venv\\Scripts\\python.exe -m pytest tests\\test_course_docs_contract.py -q" in template
+    assert ".\\.venv\\Scripts\\python.exe -m pytest -q" in template
+    assert "git diff --check" in template
+    assert "Course Documentation Checklist" in template
+    assert "index.html" in template
+    assert "NOTES.md" in template
+    assert "COURSE_PROGRESS.md" in template
+    assert "documentation contract tests" in template
+    assert "Risk Notes" in template
+
+
+def test_codeowners_maps_repository_ownership() -> None:
+    owners = Path(".github/CODEOWNERS").read_text(encoding="utf-8")
+
+    assert "CODEOWNERS teaching template" in owners
+    assert "Replace these placeholder teams with real GitHub users" in owners
+    assert "* @course-maintainers" in owners
+    assert "/first_api/ @backend-maintainers" in owners
+    assert "/tests/ @quality-maintainers" in owners
+    assert "/lessons/ @course-maintainers" in owners
+    assert "/reference/ @course-maintainers" in owners
+    assert "/learning-records/ @course-maintainers" in owners
+    assert "/README.md @repository-maintainers" in owners
+    assert "/DEVELOPMENT.md @repository-maintainers" in owners
+    assert "/COURSE-STANDARD.md @course-maintainers" in owners
+    assert "/NOTES.md @course-maintainers" in owners
+    assert "/COURSE_PROGRESS.md @course-maintainers" in owners
+    assert "/.github/ @repository-maintainers" in owners
+
+
+def test_issue_templates_collect_course_maintenance_requests() -> None:
+    bug = Path(".github/ISSUE_TEMPLATE/bug_report.yml").read_text(encoding="utf-8")
+    lesson = Path(".github/ISSUE_TEMPLATE/lesson_request.yml").read_text(encoding="utf-8")
+    docs = Path(".github/ISSUE_TEMPLATE/documentation_fix.yml").read_text(encoding="utf-8")
+    config = Path(".github/ISSUE_TEMPLATE/config.yml").read_text(encoding="utf-8")
+
+    assert "name: Bug report" in bug
+    assert 'labels: ["bug"]' in bug
+    assert "id: steps" in bug
+    assert "id: expected" in bug
+    assert "id: actual" in bug
+    assert ".\\.venv\\Scripts\\python.exe -m pytest tests\\test_course_docs_contract.py -q" in bug
+    assert "git diff --check" in bug
+
+    assert "name: Lesson request" in lesson
+    assert 'labels: ["course", "lesson-request"]' in lesson
+    assert "id: lesson-range" in lesson
+    assert "id: learning-gap" in lesson
+    assert "id: required-depth" in lesson
+    assert "id: output-type" in lesson
+    assert "New lesson HTML + quick reference" in lesson
+    assert "Existing lesson audit and refactor" in lesson
+
+    assert "name: Documentation fix" in docs
+    assert 'labels: ["documentation"]' in docs
+    assert "id: file" in docs
+    assert "id: course-standard" in docs
+    assert "The nine-section lesson structure may need to be checked." in docs
+    assert "index.html, README.md, NOTES.md, or COURSE_PROGRESS.md" in docs
+
+    assert "blank_issues_enabled: false" in config
+    assert "Course reading entry" in config
+
+
+def test_issue_triage_documents_label_workflow() -> None:
+    triage = Path(".github/ISSUE_TRIAGE.md").read_text(encoding="utf-8")
+
+    assert "Issue Triage Workflow" in triage
+    assert "Label Taxonomy" in triage
+    assert "`type:bug`" in triage
+    assert "`type:lesson`" in triage
+    assert "`type:docs`" in triage
+    assert "`type:workflow`" in triage
+    assert "`area:api`" in triage
+    assert "`area:tests`" in triage
+    assert "`area:lessons`" in triage
+    assert "`area:reference`" in triage
+    assert "`area:github`" in triage
+    assert "`priority:p0`" in triage
+    assert "`priority:p1`" in triage
+    assert "`priority:p2`" in triage
+    assert "`priority:p3`" in triage
+    assert "`status:needs-repro`" in triage
+    assert "`status:needs-design`" in triage
+    assert "`status:ready`" in triage
+    assert "`status:blocked`" in triage
+    assert "`status:done`" in triage
+    assert "Assign exactly one type label." in triage
+    assert "Assign at least one area label." in triage
+    assert "Assign one priority label." in triage
+    assert "Assign one status label." in triage
+    assert "Create the labels in GitHub repository settings" in triage
+
+
+def test_project_board_documents_execution_workflow() -> None:
+    board = Path(".github/PROJECT_BOARD.md").read_text(encoding="utf-8")
+
+    assert "GitHub Projects Board Workflow" in board
+    assert "Board Purpose" in board
+    assert "Required Fields" in board
+    assert "Status" in board
+    assert "`Intake`" in board
+    assert "`Needs Repro`" in board
+    assert "`Needs Design`" in board
+    assert "`Ready`" in board
+    assert "`In Progress`" in board
+    assert "`In Review`" in board
+    assert "`Blocked`" in board
+    assert "`Done`" in board
+    assert "Priority" in board
+    assert "`P0`" in board
+    assert "`P1`" in board
+    assert "`P2`" in board
+    assert "`P3`" in board
+    assert "Area" in board
+    assert "`API`" in board
+    assert "`Tests`" in board
+    assert "`Lessons`" in board
+    assert "`Reference`" in board
+    assert "`GitHub`" in board
+    assert "Type" in board
+    assert "`Bug`" in board
+    assert "`Lesson`" in board
+    assert "`Docs`" in board
+    assert "`Workflow`" in board
+    assert "Triage Queue" in board
+    assert "Ready Work" in board
+    assert "Course Docs" in board
+    assert "GitHub Workflow" in board
+    assert "Done Review" in board
+    assert "`status:needs-repro`" in board
+    assert "`status:ready`" in board
+    assert "`status:done`" in board
+    assert "project item Status field must agree" in board
+    assert "GitHub Projects configuration is remote state" in board

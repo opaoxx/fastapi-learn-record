@@ -68,6 +68,16 @@
           <tr><td>评估层</td><td>学习结果如何衡量</td><td>summary + validation + report</td></tr>
         </tbody>
       </table>
+      <p>复核补强：practice session 的本质是“端到端可追溯包”，不是一个更大的工具函数。它把每一层产物都返回出来，是为了让学习者能从最终 report 反查到 cards、findings 和 samples，形成完整证据链。</p>
+      <table>
+        <thead><tr><th>编排原则</th><th>本节做法</th><th>错误做法</th></tr></thead>
+        <tbody>
+          <tr><td>单一事实源</td><td>复用前面每节的 helper</td><td>在编排层复制 severity、评分或 Markdown 规则。</td></tr>
+          <tr><td>可复现</td><td>使用固定 scenario samples</td><td>读取实时 counter 导致练习结果随环境变化。</td></tr>
+          <tr><td>可诊断</td><td>返回中间产物</td><td>只返回最终报告，无法定位是哪一层错。</td></tr>
+          <tr><td>发布前门禁</td><td>validation 通过才渲染 report</td><td>坏 summary 也渲染成看似可信的报告。</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
@@ -106,6 +116,8 @@ report_markdown = (
     "report_markdown": report_markdown,
 }</code></pre>
       <p>返回完整会话包。每个字段都是前面某一层的稳定产物，方便测试、文档和调试。若只返回 report_markdown，读者无法追溯评分结果来自哪些样本和题卡。</p>
+      <p>逐行精读补充：<code>report_markdown</code> 使用条件表达式生成，体现“先验收，再展示”的发布思路。这里没有抛异常，是因为 session 包仍然需要携带 <code>validation</code> 和中间产物，方便调用方展示错误或调试。</p>
+      <p>本函数没有接收 samples 参数，是教学场景的刻意取舍：练习样本固定，作答输入可变。生产环境若要支持多场景训练，应把 scenario id、题库版本和 batch id 引入 session 元数据，而不是直接读取运行时全局状态。</p>
     </section>
 
     <section>

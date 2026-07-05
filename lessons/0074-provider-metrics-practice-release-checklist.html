@@ -65,6 +65,16 @@
           <tr><td>Markdown Sections</td><td>保证发布结构</td><td>GitHub 页面难以阅读</td></tr>
         </tbody>
       </table>
+      <p>复核补强：发布检查的核心不是“再跑一遍业务”，而是把发布条件变成机器可读门禁。<code>ready</code> 只是汇总结果，真正有价值的是每个 check 的 <code>id</code>、<code>passed</code> 和 <code>evidence</code>，它们能直接转成 PR 评论或 CI 输出。</p>
+      <table>
+        <thead><tr><th>门禁维度</th><th>检查方式</th><th>阻止的问题</th></tr></thead>
+        <tbody>
+          <tr><td>内容存在</td><td>检查 findings、cards、answer key、report</td><td>材料缺页但仍被发布。</td></tr>
+          <tr><td>数据可信</td><td>要求 validation 为 <code>{"valid": True, "errors": []}</code></td><td>错误 summary 被包装成正式复盘。</td></tr>
+          <tr><td>文档结构</td><td>检查四个固定 Markdown 章节</td><td>GitHub 页面缺少学习闭环。</td></tr>
+          <tr><td>失败可解释</td><td>返回逐项 evidence</td><td>只知道不能发布，不知道哪里坏。</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
@@ -118,6 +128,8 @@
     "checks": checks,
 }</code></pre>
       <p><code>ready</code> 汇总所有检查项，<code>checks</code> 保留逐项证据。生产中这类结构可直接进入 CI 报告、PR comment 或发布审批页面。</p>
+      <p>逐行精读补充：<code>all(check["passed"] for check in checks)</code> 明确采用“全项通过”策略，而不是给检查项设置权重。教学发布包的每个环节都服务学习闭环，缺任意一项都会破坏复盘完整性。</p>
+      <p>本函数多处使用 <code>session.get(...)</code>，是因为 release checklist 面对的正是“不完整包”。它应把缺失转为失败检查项，而不是在第一个缺失字段处中断整个发布诊断。</p>
     </section>
 
     <section>

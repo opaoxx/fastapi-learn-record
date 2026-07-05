@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0082 - GitHub Issue Triage Labels Workflow</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0082</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0081-github-issue-templates.html">上一课</a>
+        <a href="./0083-github-projects-board-workflow.html">下一课</a>
+        <a href="../reference/0082-github-issue-triage-labels-workflow-cheatsheet.html">速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0082 GitHub Issue Triage：用标签体系把反馈队列变成可治理任务流</h1>
+      <p class="lead">本节新增 <code>.github/ISSUE_TRIAGE.md</code>，把上一节 Issue Forms 收到的结构化反馈继续映射为 type、area、priority、status 四类标签。Issue Template 解决“输入是否完整”，Issue Triage 解决“任务如何分派、排期、推进、关闭”。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>GitHub Issue Triage Labels Workflow
+├── 输入层
+│   ├── bug_report.yml
+│   ├── lesson_request.yml
+│   └── documentation_fix.yml
+├── 标签维度
+│   ├── type: 工作类型
+│   │   ├── type:bug
+│   │   ├── type:lesson
+│   │   ├── type:docs
+│   │   └── type:workflow
+│   ├── area: 影响范围
+│   │   ├── area:api
+│   │   ├── area:tests
+│   │   ├── area:lessons
+│   │   ├── area:reference
+│   │   └── area:github
+│   ├── priority: 处理优先级
+│   │   ├── priority:p0
+│   │   ├── priority:p1
+│   │   ├── priority:p2
+│   │   └── priority:p3
+│   └── status: 当前流转状态
+│       ├── status:needs-repro
+│       ├── status:needs-design
+│       ├── status:ready
+│       ├── status:blocked
+│       └── status:done
+├── 运行链路
+│   ├── issue 表单收集事实
+│   ├── triage 标签表达任务语义
+│   ├── PR template 收集修复证据
+│   ├── CODEOWNERS 路由审查责任
+│   └── CI + branch protection 阻断不合格合并
+└── 核心目标
+    ├── 让新反馈可筛选
+    ├── 让维护者知道先做什么
+    ├── 让贡献者知道何时可开工
+    └── 让关闭 issue 有明确完成定义</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>Issue triage 是把“用户提交的问题”转化为“仓库可执行任务”的过程。模板只保证输入字段存在，不能自动判断影响范围、紧急程度、是否可开工。标签体系负责把这些判断编码成稳定信号，使列表筛选、项目看板、自动化和维护者协作成为可能。</p>
+      <p>标签的本质是低成本元数据。没有标签时，维护者只能逐条阅读标题和正文；有稳定标签时，可以用 <code>type:bug</code> 筛出缺陷，用 <code>priority:p0</code> 找出阻断问题，用 <code>status:ready</code> 找到可以直接实现的任务。标签把文本队列升级为可查询数据集。</p>
+      <p>本节采用四维标签模型：type 表达“做什么”，area 表达“影响哪里”，priority 表达“多紧急”，status 表达“现在处于哪一步”。四者不能混用。若把优先级写进 type，或把状态写进 area，后续筛选和自动化都会变得脆弱。</p>
+      <table>
+        <thead><tr><th>维度</th><th>回答的问题</th><th>示例</th><th>设计原因</th></tr></thead>
+        <tbody>
+          <tr><td>type</td><td>任务性质是什么？</td><td><code>type:bug</code></td><td>决定处理方式和审查关注点。</td></tr>
+          <tr><td>area</td><td>影响哪个仓库表面？</td><td><code>area:github</code></td><td>决定需要查看哪些文件和 owner。</td></tr>
+          <tr><td>priority</td><td>应当多快处理？</td><td><code>priority:p1</code></td><td>决定排期和响应顺序。</td></tr>
+          <tr><td>status</td><td>现在能否开工？</td><td><code>status:ready</code></td><td>决定任务是否进入实现队列。</td></tr>
+        </tbody>
+      </table>
+      <p>优先级不是严重程度的同义词。严重程度描述影响范围，优先级描述维护者行动顺序。教学仓库中，一个断掉的课程入口可能没有线上事故严重，但会阻断所有新手学习，所以可标为 <code>priority:p1</code> 甚至 <code>priority:p0</code>。</p>
+      <p>状态标签是一种轻量状态机。<code>status:needs-repro</code> 表示证据不足，<code>status:needs-design</code> 表示需要方案收敛，<code>status:ready</code> 表示可实现，<code>status:blocked</code> 表示等待外部输入，<code>status:done</code> 表示已完成并可关闭。状态让维护工作从“靠记忆”变成“靠队列”。</p>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code># Issue Triage Workflow</code></pre>
+      <p>标题说明该文件不是普通说明文，而是 issue 分流工作流契约。它与 Issue Forms、PR Template、CODEOWNERS 属于同一类仓库治理文件，放在 <code>.github/</code> 目录下，便于贡献者在 GitHub 协作入口附近找到。</p>
+
+      <pre><code>This document defines how course issues move from structured intake to actionable maintenance work.</code></pre>
+      <p>首段定义边界：Issue Forms 只负责 structured intake，triage 负责 actionable maintenance work。若不拆清边界，维护者容易误以为模板存在就等于任务已可执行。</p>
+
+      <pre><code>## Label Taxonomy</code></pre>
+      <p><code>Label Taxonomy</code> 是标签分类法。taxonomy 的作用是防止标签随意增殖。没有分类法时，仓库会出现 <code>bug</code>、<code>Bug</code>、<code>broken</code>、<code>fix</code> 等语义重叠标签，筛选和自动化都会失效。</p>
+
+      <pre><code>| Type | `type:bug`, `type:lesson`, `type:docs`, `type:workflow` | What kind of work is required. |</code></pre>
+      <p>type 维度只能表达任务类型。<code>type:bug</code> 对应可复现错误；<code>type:lesson</code> 对应课程内容建设；<code>type:docs</code> 对应文档修复；<code>type:workflow</code> 对应 GitHub 协作、CI、模板、分支保护等流程工作。</p>
+
+      <pre><code>| Area | `area:api`, `area:tests`, `area:lessons`, `area:reference`, `area:github` | Which repository surface is affected. |</code></pre>
+      <p>area 维度表达受影响表面。一个 issue 可以有多个 area，例如导航断链可能同时影响 <code>area:lessons</code> 和 <code>area:reference</code>。area 不等于 owner，但它会提示 reviewer 查看哪些目录。</p>
+
+      <pre><code>| Priority | `priority:p0`, `priority:p1`, `priority:p2`, `priority:p3` | How urgently maintainers should act. |</code></pre>
+      <p>priority 使用 p0-p3 是为了减少主观形容词歧义。<code>high</code>、<code>urgent</code>、<code>important</code> 往往被滥用；p0-p3 更适合作为稳定排序键。</p>
+
+      <pre><code>| Status | `status:needs-repro`, `status:needs-design`, `status:ready`, `status:blocked`, `status:done` | What state the issue is currently in. |</code></pre>
+      <p>status 是流转状态。每个打开的 issue 通常应只有一个 status 标签，否则维护者无法判断下一步动作。多个 area 可以共存，但多个 status 会破坏状态机语义。</p>
+
+      <pre><code>## Priority Rules</code></pre>
+      <p>优先级规则把 p0-p3 从符号变成可执行判断。若没有规则，贡献者会按情绪打优先级；规则能让不同维护者在相似问题上给出一致排序。</p>
+
+      <pre><code>| `priority:p0` | The repository cannot run, tests are broadly broken, or a public learning entry is unusable. |</code></pre>
+      <p><code>p0</code> 对应系统级阻断。课程仓库的系统级阻断包括项目无法运行、测试整体失败、公开学习入口不可用。它不一定是线上事故，但会阻断学习产品的基本功能。</p>
+
+      <pre><code>| `priority:p1` | A lesson, reference, or workflow is materially wrong and blocks learners. |</code></pre>
+      <p><code>p1</code> 对应关键学习阻塞。例如一节课代码解释错误、速查页与课程不一致、PR 流程导致贡献者无法提交。这类问题不一定影响所有文件，但会实质阻断学习或维护。</p>
+
+      <pre><code>| `priority:p2` | The issue improves clarity, coverage, maintainability, or contributor experience. |</code></pre>
+      <p><code>p2</code> 是常规改进。它重要但不阻断，例如补充边界条件、增强说明、改善贡献体验。课程长期质量主要依赖稳定消化 p2 队列。</p>
+
+      <pre><code>| `priority:p3` | The issue is polish, wording cleanup, or optional follow-up work. |</code></pre>
+      <p><code>p3</code> 是锦上添花任务。把小润色标为 p3 可以避免它们和阻断性问题争夺维护者注意力。</p>
+
+      <pre><code>## Status Flow</code></pre>
+      <p>Status Flow 把状态标签组合成单向流。它不是强制 GitHub 自动化，而是维护者手动 triage 的标准流程。后续若引入 project board 或 GitHub Actions，也应以该流程为依据。</p>
+
+      <pre><code>new issue
+  -> status:needs-repro
+  -> status:needs-design
+  -> status:ready
+  -> pull request opened
+  -> status:blocked
+  -> status:done</code></pre>
+      <p>流程并非每个 issue 都必须经过全部状态。复现充分的 bug 可以直接到 <code>status:ready</code>；方案不清的课程重构会先到 <code>status:needs-design</code>；缺少用户反馈或依赖 GitHub 设置时进入 <code>status:blocked</code>。</p>
+
+      <pre><code>## Triage Checklist</code></pre>
+      <p>Checklist 把维护者动作显式化。缺少 checklist 时，不同人会按个人习惯打标签，导致同类 issue 的状态不一致。教学仓库尤其需要清晰流程，让新贡献者能模仿。</p>
+
+      <pre><code>Assign exactly one type label.
+Assign at least one area label.
+Assign one priority label.
+Assign one status label.</code></pre>
+      <p>这四条是 triage 的最小不变量。type、priority、status 应唯一；area 至少一个且可多个。若一个 issue 没有 type，无法知道做什么；没有 priority，无法排期；没有 status，无法知道是否可开工。</p>
+
+      <pre><code>Close the issue only after relevant tests, documentation updates, and navigation updates are complete.</code></pre>
+      <p>关闭条件必须明确。课程仓库不是只改源代码就结束，lesson、reference、index、README、NOTES、COURSE_PROGRESS、契约测试都可能需要同步。该规则防止“代码修了但学习入口断了”。</p>
+
+      <pre><code>## Production Notes</code></pre>
+      <p>生产说明强调本地文档和 GitHub 远程设置的差异。仓库内写了标签名称，不代表 GitHub 已经创建这些 labels；真正使用前需要在仓库设置中创建或用脚本同步。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>Issue created from form
+  -> maintainer reads structured fields
+  -> choose exactly one type label
+  -> choose one or more area labels
+  -> choose one priority label
+  -> choose one status label
+  -> if status:ready:
+       contributor can implement
+     else if status:needs-repro:
+       request reproduction evidence
+     else if status:needs-design:
+       discuss solution shape
+     else if status:blocked:
+       wait for external dependency
+  -> PR opened with issue link
+  -> CI + docs contract + CODEOWNERS review
+  -> issue moves to status:done and closes</code></pre>
+      <p>该流程的关键是“先分流，再实现”。如果 issue 一创建就进入实现，贡献者可能修错范围、忽略优先级、漏掉相关文件。Triage 通过标签先定义任务边界，再让实现者进入 PR 流程。</p>
+      <table>
+        <thead><tr><th>输入</th><th>判定</th><th>标签输出</th><th>下一步</th></tr></thead>
+        <tbody>
+          <tr><td>复现步骤缺失。</td><td>证据不足。</td><td><code>status:needs-repro</code></td><td>要求补步骤、命令、截图或失败断言。</td></tr>
+          <tr><td>课程需求过大。</td><td>方案未收敛。</td><td><code>status:needs-design</code></td><td>拆成可实现课程或文档任务。</td></tr>
+          <tr><td>文件路径明确，验收标准清楚。</td><td>可开工。</td><td><code>status:ready</code></td><td>创建 PR 并填写验证证据。</td></tr>
+          <tr><td>等待真实 GitHub 设置。</td><td>外部状态阻塞。</td><td><code>status:blocked</code></td><td>等待 maintainer 权限或远程配置。</td></tr>
+          <tr><td>PR 合并且文档同步。</td><td>完成。</td><td><code>status:done</code></td><td>关闭 issue 或关联自动关闭。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>type 与 area</td><td><code>area:api</code> 可以表示 bug。</td><td>type 表示任务性质，area 表示影响位置，二者必须分开。</td></tr>
+          <tr><td>priority 与 status</td><td><code>priority:p0</code> 等于马上可做。</td><td>p0 只表示紧急；若缺复现仍然应是 <code>status:needs-repro</code>。</td></tr>
+          <tr><td>status:done 与关闭 issue</td><td>打 done 就可以不管。</td><td>done 应在测试、文档、导航、记录同步后才使用。</td></tr>
+          <tr><td>多个 status</td><td>多打几个状态更完整。</td><td>status 是状态机，打开 issue 通常只能有一个当前状态。</td></tr>
+          <tr><td>标签与权限</td><td>给 <code>area:github</code> 就能限制谁改。</td><td>标签只分类工作，权限由 GitHub repository permission 和 branch protection 控制。</td></tr>
+          <tr><td>标签与 CODEOWNERS</td><td>有 area 标签就不需要 CODEOWNERS。</td><td>area 帮助 triage；CODEOWNERS 在 PR 阶段自动请求对应 owner review。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>表现</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>标签只写在文档里，GitHub 未创建。</td><td>issue 无法自动或手动选择预期标签。</td><td>在 GitHub Labels 设置中创建同名标签，或后续引入 label sync 工具。</td></tr>
+          <tr><td>标签命名不稳定。</td><td>过滤器、项目看板、自动化规则失效。</td><td>使用 <code>dimension:value</code> 命名格式并纳入文档契约测试。</td></tr>
+          <tr><td>优先级被情绪化使用。</td><td>所有 issue 都变成 p0/p1。</td><td>用 Priority Rules 明确 p0-p3 的触发条件。</td></tr>
+          <tr><td>status 长期不更新。</td><td>任务看似 ready，实际已 blocked 或 done。</td><td>在 PR 创建、等待反馈、合并后更新状态标签。</td></tr>
+          <tr><td>area 标签过粗。</td><td>维护者不知道该看课程、速查还是测试。</td><td>至少拆到 api、tests、lessons、reference、github 等仓库表面。</td></tr>
+          <tr><td>关闭 issue 过早。</td><td>代码修复了，但 reference/index/NOTES 未同步。</td><td>关闭前按 triage checklist 与 PR template 验证课程配套文件。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学仓库</th><th>生产仓库</th></tr></thead>
+        <tbody>
+          <tr><td>标签维度</td><td>type、area、priority、status 足够覆盖课程维护。</td><td>通常还需要 team、component、severity、customer-impact、release、security。</td></tr>
+          <tr><td>优先级定义</td><td>围绕学习入口、测试、课程正确性和贡献流程。</td><td>围绕线上影响、SLO、客户数量、收入、安全和合规。</td></tr>
+          <tr><td>状态流转</td><td>手动 triage 为主，文档契约测试保护标签规则。</td><td>常结合 GitHub Projects、bot、SLA、on-call、incident 流程自动流转。</td></tr>
+          <tr><td>完成定义</td><td>代码、课程、速查、索引、记录、测试同步完成。</td><td>代码合并、部署验证、监控观察、回滚预案、客户沟通完成。</td></tr>
+          <tr><td>权限边界</td><td>文档说明 + CODEOWNERS 占位 owner。</td><td>真实团队权限、required reviewer、rulesets、审计日志和安全策略。</td></tr>
+          <tr><td>自动化阶段</td><td>先文档化人工流程，避免过早自动化。</td><td>流程稳定后用 Actions 或 GitHub Apps 自动加标签、移动看板、提醒 owner。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. Issue triage 的核心目标是什么？</summary><p class="answer">把结构化 issue 输入继续转化为可筛选、可排期、可分派、可关闭的维护任务，降低队列治理成本。</p></details>
+      <details><summary>2. type、area、priority、status 分别回答什么问题？</summary><p class="answer">type 回答任务性质，area 回答影响位置，priority 回答处理紧急程度，status 回答当前流转状态。</p></details>
+      <details><summary>3. 为什么 status 标签通常只能有一个？</summary><p class="answer">status 表示状态机当前位置。多个 status 会让维护者无法判断下一步动作，破坏任务流转语义。</p></details>
+      <details><summary>4. 为什么 <code>priority:p0</code> 不等于 <code>status:ready</code>？</summary><p class="answer">p0 表示紧急程度，ready 表示可开工状态。一个紧急问题如果缺复现证据，仍应先处于 <code>status:needs-repro</code>。</p></details>
+      <details><summary>5. 关闭课程仓库 issue 前至少要确认什么？</summary><p class="answer">确认相关代码、课程 HTML、速查页、索引、README/NOTES/COURSE_PROGRESS 和契约测试都已按影响范围同步完成。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：如何设计一个可扩展的 GitHub label taxonomy？</summary><p class="answer">先按维度拆分，而不是按词随意新增。常见维度包括 type、area、priority、status、team、severity。每个维度回答一个独立问题，并使用稳定命名格式，例如 <code>type:bug</code>。</p></details>
+      <details><summary>面试题 2：为什么标签不是越多越好？</summary><p class="answer">标签过多会增加选择成本、制造语义重叠、破坏筛选一致性。高质量标签体系应覆盖核心决策，并让每个标签能触发明确动作。</p></details>
+      <details><summary>面试题 3：Issue triage 与 project board 有什么关系？</summary><p class="answer">Triage 定义任务语义和状态；project board 可视化这些状态。没有稳定标签和状态规则，项目看板只是拖动卡片，无法可靠反映真实工作流。</p></details>
+      <details><summary>面试题 4：为什么要区分 priority 和 severity？</summary><p class="answer">severity 描述影响严重程度，priority 描述处理顺序。某些高严重度问题可能已有绕过方案，优先级未必最高；某些学习入口问题影响范围小但当前必须优先修复。</p></details>
+      <details><summary>面试题 5：如何避免 issue 队列变成无人维护的 backlog？</summary><p class="answer">建立模板、标签分类、状态流转、优先级规则、关闭定义和定期 triage 节奏。每个 issue 必须有下一步动作，否则应进入 blocked、needs-repro 或关闭。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0081-github-issue-templates.html">上一课：GitHub Issue Templates</a>
+        <a href="./0083-github-projects-board-workflow.html">下一课：GitHub Projects Board</a>
+        <a href="../reference/0082-github-issue-triage-labels-workflow-cheatsheet.html">查看速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

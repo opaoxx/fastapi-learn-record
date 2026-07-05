@@ -24,6 +24,20 @@ Common commands:
 git diff --check
 ```
 
+The same quality gates are also encoded in `.github/workflows/ci.yml` so pull requests can be checked by GitHub Actions before merge.
+
+Main branch protection and the required status check name are documented in `.github/BRANCH_PROTECTION.md`.
+
+Pull request evidence requirements are documented in `.github/PULL_REQUEST_TEMPLATE.md`.
+
+Repository review ownership is documented in `.github/CODEOWNERS`; replace placeholder owner teams with real GitHub users or organization teams before enforcing code owner reviews.
+
+Issue intake forms are documented in `.github/ISSUE_TEMPLATE/`; keep bug reports, lesson requests, and documentation fixes separated so triage stays actionable.
+
+Issue label triage is documented in `.github/ISSUE_TRIAGE.md`; use type, area, priority, and status labels before turning feedback into implementation work.
+
+GitHub Projects board workflow is documented in `.github/PROJECT_BOARD.md`; keep project Status, Priority, Area, Type, and Lesson fields aligned with issue labels and course maintenance records.
+
 ## Lesson Change Checklist
 
 Every new lesson should include:

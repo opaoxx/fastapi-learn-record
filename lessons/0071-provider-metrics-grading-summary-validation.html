@@ -64,6 +64,16 @@
           <tr><td>renderer</td><td>渲染 Markdown</td><td>只做最小防御校验</td></tr>
         </tbody>
       </table>
+      <p>复核补强：本节的硬核点在于区分“校验”和“纠错”。校验函数只证明 summary 是否满足契约，不替上游修数据；一旦 validator 自动改值，就会掩盖评分汇总层的真实缺陷，让坏数据以“被修复”的形式继续流向报告。</p>
+      <table>
+        <thead><tr><th>校验类别</th><th>保护内容</th><th>失败说明</th></tr></thead>
+        <tbody>
+          <tr><td>存在性校验</td><td>summary 和 grade 的必备字段</td><td>上游产物结构不完整，不能进入渲染层。</td></tr>
+          <tr><td>类型校验</td><td>数字、布尔、列表等基础类型</td><td>后续计算或 Markdown join 会发生语义误读。</td></tr>
+          <tr><td>数学一致性</td><td><code>failed</code>、<code>unanswered</code>、<code>total</code></td><td>汇总数字和明细数量互相矛盾。</td></tr>
+          <tr><td>完整错误收集</td><td><code>errors</code> 列表</td><td>一次性暴露所有坏点，降低复盘和修复成本。</td></tr>
+        </tbody>
+      </table>
     </section>
 
     <section>
@@ -125,6 +135,8 @@ if isinstance(grades, list) and total != len(grades):
     "errors": errors,
 }</code></pre>
       <p>最终返回统一结构。<code>valid</code> 适合程序快速判断，<code>errors</code> 适合教学复盘和测试断言。</p>
+      <p>逐行精读补充：本函数前半段使用 <code>summary.get("grades")</code>，是因为校验层需要把“缺字段”转成错误文本；后半段在确认字段存在且类型正确后才使用索引读取，是为了避免把类型错误扩散成二次异常。</p>
+      <p><code>all(field in summary and isinstance(summary[field], int) for field in numeric_fields)</code> 是数学校验的安全闸门。没有这个闸门，<code>total - passed</code> 可能在字段缺失或类型错误时抛出无关异常，降低错误报告质量。</p>
     </section>
 
     <section>

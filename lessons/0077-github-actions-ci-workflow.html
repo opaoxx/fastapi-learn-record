@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0077 - GitHub Actions CI Workflow</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0077</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0076-github-development-workflow.html">上一课</a>
+        <a href="./0078-github-branch-protection-required-checks.html">下一课</a>
+        <a href="../reference/0077-github-actions-ci-workflow-cheatsheet.html">速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0077 GitHub Actions CI Workflow：把本地质量门禁升级为仓库级自动化</h1>
+      <p class="lead">本节新增 <code>.github/workflows/ci.yml</code>，把 provider 测试、文档契约测试、全量 pytest 和 whitespace 检查固化为 GitHub Actions 工作流。重点不是背 YAML，而是理解 CI 如何把协作规范变成可阻断合并的工程契约。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>GitHub Actions CI Workflow
+├── 触发器
+│   ├── push: main 分支更新后执行
+│   └── pull_request: PR 指向 main 时执行
+├── 执行环境
+│   ├── runner: ubuntu-latest
+│   ├── Python: actions/setup-python@v5
+│   └── dependencies: requirements.txt
+├── 质量门禁
+│   ├── tests/test_provider_http.py
+│   ├── tests/test_course_docs_contract.py
+│   ├── python -m pytest -q
+│   └── git diff --check
+├── 契约测试
+│   └── test_github_actions_ci_runs_course_quality_gates
+└── 工程目标
+    ├── 本地流程自动化
+    ├── PR 合并前暴露问题
+    ├── 防止课程导航和文档结构退化
+    └── 为 GitHub 新手提供可复制 CI 模板</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>CI，Continuous Integration，持续集成，本质是“每次代码进入共享仓库前，由独立环境重新拉取代码、安装依赖、执行检查，并用进程退出码决定通过或失败”。它解决的不是语法问题，而是协作问题：本地能跑不等于别人 clone 后能跑，作者记得跑测试不等于每个贡献者都会跑测试。</p>
+      <p>GitHub Actions 的抽象层级是 workflow、event、job、runner、step。workflow 是一份 YAML 文件；event 决定什么时候执行；job 是一组在同一 runner 上执行的步骤；runner 是一次性的虚拟机；step 是具体命令或复用 action。测试失败时，pytest 返回非 0 退出码，GitHub 将该 step 标记为失败，整个 job 失败。</p>
+      <p>本仓库上一节已经把维护流程写入 <code>DEVELOPMENT.md</code>。这一节进一步把流程迁移到 <code>.github/workflows/ci.yml</code>。文档是人读的契约，CI 是机器执行的契约。只有二者同时存在，开源课程仓库才不会依赖某个维护者的记忆。</p>
+      <table>
+        <thead><tr><th>概念</th><th>底层含义</th><th>本节落点</th></tr></thead>
+        <tbody>
+          <tr><td>workflow</td><td>仓库级自动化流程定义</td><td><code>.github/workflows/ci.yml</code></td></tr>
+          <tr><td>event</td><td>触发 workflow 的 GitHub 事件</td><td><code>push</code> 与 <code>pull_request</code></td></tr>
+          <tr><td>job</td><td>在 runner 上执行的一组 step</td><td><code>test</code> 质量门禁 job</td></tr>
+          <tr><td>runner</td><td>GitHub 提供的临时执行环境</td><td><code>ubuntu-latest</code></td></tr>
+          <tr><td>step</td><td>复用 action 或执行 shell 命令</td><td>checkout、setup-python、pytest、diff check</td></tr>
+        </tbody>
+      </table>
+      <p>CI 与单元测试不是同一层概念。单元测试描述“代码行为是否正确”，CI 描述“何时、在哪个环境、按什么顺序执行这些验证”。因此 CI 不是 pytest 的替代品，而是 pytest、文档契约、格式检查、构建命令的编排层。</p>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code>name: Course CI</code></pre>
+      <p>定义工作流显示名称。名称会出现在 GitHub Actions 页面和 PR 检查列表中。若名称含糊，失败时贡献者无法快速判断是哪类质量门禁失败。</p>
+      <pre><code>on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main</code></pre>
+      <p><code>on</code> 是触发器入口。<code>push</code> 保护 main 分支上的直接提交，<code>pull_request</code> 保护合并前变更。只监听 main 可以避免教学仓库在任意实验分支上频繁消耗 CI 资源。</p>
+      <pre><code>jobs:
+  test:
+    name: pytest and documentation contracts
+    runs-on: ubuntu-latest</code></pre>
+      <p><code>jobs</code> 下可以有多个任务。本节只需要一个 <code>test</code> job。<code>runs-on</code> 选择 Linux runner，因为本项目是纯 Python/FastAPI 课程仓库，跨平台风险较低。若项目依赖 Windows 路径或系统库，应增加 matrix 测试。</p>
+      <pre><code>- name: Checkout repository
+  uses: actions/checkout@v4
+  with:
+    fetch-depth: 0</code></pre>
+      <p><code>actions/checkout</code> 把仓库代码拉到 runner。<code>fetch-depth: 0</code> 保留完整历史，便于后续 <code>git diff --check</code> 比较 PR base 与 HEAD。若只浅克隆最新提交，PR diff 检查可能找不到 base ref。</p>
+      <pre><code>- name: Set up Python
+  uses: actions/setup-python@v5
+  with:
+    python-version: "3.11"
+    cache: pip
+    cache-dependency-path: requirements.txt</code></pre>
+      <p>设置 Python 版本并开启 pip 缓存。<code>cache-dependency-path</code> 指向 <code>requirements.txt</code>，依赖文件不变时可复用缓存。教学仓库固定 3.11，降低初学者理解成本；生产仓库可使用 matrix 同时测试多个版本。</p>
+      <pre><code>- name: Install dependencies
+  run: |
+    python -m pip install --upgrade pip
+    python -m pip install -r requirements.txt</code></pre>
+      <p>先升级 pip，再安装项目依赖。这里使用 <code>python -m pip</code> 而不是裸 <code>pip</code>，可以保证 pip 与当前 Python 解释器一致，避免多 Python 环境下安装到错误位置。</p>
+      <pre><code>- name: Run provider HTTP tests
+  run: python -m pytest tests/test_provider_http.py -q</code></pre>
+      <p>先跑 provider HTTP 目标测试。这组测试覆盖 provider health、prediction adapter、retry、metrics、runbook、practice package 等课程后半段核心业务逻辑。若这里失败，问题通常集中在服务边界或 metrics 训练包。</p>
+      <pre><code>- name: Run documentation contract tests
+  run: python -m pytest tests/test_course_docs_contract.py -q</code></pre>
+      <p>再跑文档契约测试。课程仓库的产品不仅是 API，还包括 lesson、reference、README、DEVELOPMENT 和索引导航。该测试能防止课程九段结构、GitHub 学习入口、runbook 链接和 CI 契约被误删。</p>
+      <pre><code>- name: Run full test suite
+  run: python -m pytest -q</code></pre>
+      <p>最后跑全量 pytest。目标测试用于快速定位，全量测试用于发现跨模块回归。只跑目标测试会遗漏 CRUD、OpenAPI、静态前端、任务接口等不在当前主题内的破坏。</p>
+      <pre><code>- name: Check whitespace in committed diff
+  run: |
+    if [ "${{ github.event_name }}" = "pull_request" ]; then
+      git diff --check "origin/${{ github.base_ref }}...HEAD"
+    elif git rev-parse HEAD^ &gt;/dev/null 2&gt;&amp;1; then
+      git diff --check HEAD^ HEAD
+    else
+      git diff --check
+    fi</code></pre>
+      <p>最后检查 diff 中的尾随空格等 whitespace 问题。PR 场景比较 base 分支与当前 HEAD；普通 push 场景比较当前提交与父提交；初始提交没有父提交时退回到工作区检查。若直接在 CI 中只写 <code>git diff --check</code>，干净 checkout 往往没有工作区 diff，检查价值会下降。</p>
+      <pre><code>def test_github_actions_ci_runs_course_quality_gates() -&gt; None:
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")</code></pre>
+      <p>文档契约测试直接读取 CI 文件。这里不引入 YAML 解析库，是为了避免为了测试 workflow 而增加新依赖。测试保护的是关键门禁短语，而不是 YAML 的完整语义。</p>
+      <pre><code>assert "actions/checkout@v4" in workflow
+assert "actions/setup-python@v5" in workflow
+assert "python -m pytest tests/test_provider_http.py -q" in workflow
+assert "python -m pytest tests/test_course_docs_contract.py -q" in workflow
+assert "python -m pytest -q" in workflow
+assert "git diff --check" in workflow</code></pre>
+      <p>这些断言把 CI 的核心职责锁住：拉代码、装 Python、跑业务测试、跑文档测试、跑全量测试、检查 whitespace。未来若有人删掉文档契约测试或全量测试，CI 契约测试会先失败。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>Developer pushes / opens PR
+  -> GitHub receives event
+  -> Match .github/workflows/ci.yml
+  -> Create ubuntu-latest runner
+  -> checkout repository
+  -> setup Python 3.11
+  -> install requirements.txt
+  -> run targeted provider tests
+  -> run course documentation contract tests
+  -> run full pytest
+  -> run committed diff whitespace check
+  -> report pass/fail status to commit or PR</code></pre>
+      <p>CI 的关键在“全新环境”。本地机器可能有隐藏依赖、旧虚拟环境、未提交文件和特殊环境变量；runner 每次从仓库重新开始，能暴露“只在我电脑上能跑”的问题。</p>
+      <table>
+        <thead><tr><th>阶段</th><th>输入</th><th>输出</th><th>失败含义</th></tr></thead>
+        <tbody>
+          <tr><td>checkout</td><td>GitHub 仓库</td><td>runner 本地工作区</td><td>仓库权限或 ref 获取失败</td></tr>
+          <tr><td>setup-python</td><td>版本号与缓存配置</td><td>可用 Python 解释器</td><td>版本不可用或 action 配置错误</td></tr>
+          <tr><td>install</td><td><code>requirements.txt</code></td><td>依赖环境</td><td>依赖声明缺失、版本冲突、网络问题</td></tr>
+          <tr><td>pytest</td><td>测试文件与源码</td><td>行为验证结果</td><td>业务逻辑、文档结构或契约回归</td></tr>
+          <tr><td>diff check</td><td>提交 diff</td><td>whitespace 诊断</td><td>尾随空格等提交质量问题</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>CI 与 pytest</td><td>CI 就是测试框架</td><td>CI 是自动化编排层，pytest 是其中一个被执行的检查工具。</td></tr>
+          <tr><td>push 与 pull_request</td><td>只配一个就够</td><td>push 保护主干提交，pull_request 保护合并前审查，二者覆盖不同协作入口。</td></tr>
+          <tr><td>runner 与本地电脑</td><td>runner 复用我的虚拟环境</td><td>runner 是独立临时机器，必须从依赖文件重新构建环境。</td></tr>
+          <tr><td>targeted tests 与 full tests</td><td>目标测试通过即可合并</td><td>目标测试用于定位，全量测试用于防跨模块回归。</td></tr>
+          <tr><td>文档测试</td><td>文档不需要 CI</td><td>课程仓库的文档就是交付物，结构和链接必须被自动保护。</td></tr>
+          <tr><td>git diff --check</td><td>只能本地跑</td><td>CI 中可对 PR base 与 HEAD 做 committed diff 检查。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>报错或坑点</th><th>原因</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td><code>ModuleNotFoundError: No module named 'first_api'</code></td><td>CI 工作目录不在仓库根目录，或包导入路径被破坏。</td><td>保持 workflow 在仓库根目录运行，测试命令使用 <code>python -m pytest</code>。</td></tr>
+          <tr><td><code>pip install -r requirements.txt</code> 失败</td><td>依赖文件缺包、网络临时错误或版本冲突。</td><td>先本地删除虚拟环境重装验证，必要时固定关键依赖版本。</td></tr>
+          <tr><td>文档契约测试失败</td><td>新增课程未更新九段结构、README、索引或 workflow 契约。</td><td>按 DEVELOPMENT.md 的 Lesson Change Checklist 补齐配套文件。</td></tr>
+          <tr><td><code>git diff --check</code> 报 trailing whitespace</td><td>提交中存在尾随空格或空白格式问题。</td><td>删除尾随空格，本地运行同一命令后再提交。</td></tr>
+          <tr><td>PR 中 CI 没触发</td><td>workflow 文件不在 <code>.github/workflows/</code>，或目标分支不匹配。</td><td>确认文件路径、YAML 缩进、PR base 分支与 <code>branches</code> 配置。</td></tr>
+          <tr><td>本地通过但 CI 失败</td><td>本地有未提交文件、缓存依赖或不同 Python 版本。</td><td>在干净 clone 中复现，检查 requirements 与 CI Python 版本。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学仓库实现</th><th>生产仓库常见做法</th></tr></thead>
+        <tbody>
+          <tr><td>Python 版本</td><td>固定 3.11，降低理解成本。</td><td>使用 matrix 覆盖多个版本或锁定运行时版本。</td></tr>
+          <tr><td>测试范围</td><td>provider 测试、文档契约、全量 pytest。</td><td>增加 lint、type check、security scan、build、e2e。</td></tr>
+          <tr><td>密钥管理</td><td>当前 CI 不需要 secrets。</td><td>通过 GitHub Secrets 或 OIDC 获取云资源权限。</td></tr>
+          <tr><td>部署</td><td>只做质量门禁，不自动发布。</td><td>测试通过后进入 artifact、staging、production 部署流水线。</td></tr>
+          <tr><td>分支保护</td><td>提供 CI workflow 模板。</td><td>在 GitHub branch protection 中强制 required checks。</td></tr>
+          <tr><td>缓存策略</td><td>仅缓存 pip。</td><td>细分依赖缓存、构建缓存、远程缓存和失效策略。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. CI 与本地测试的本质区别是什么？</summary><p class="answer">本地测试依赖开发者主动执行和本机环境；CI 在共享仓库事件触发后，用独立 runner 自动重建环境并执行检查，结果会反馈到 commit 或 PR。</p></details>
+      <details><summary>2. 为什么本节同时监听 push 和 pull_request？</summary><p class="answer">push 覆盖 main 分支上的直接提交，pull_request 覆盖合并前审查场景。二者共同保护主干质量。</p></details>
+      <details><summary>3. 为什么使用 <code>python -m pytest</code> 而不是直接 <code>pytest</code>？</summary><p class="answer">它保证 pytest 由当前 Python 解释器执行，减少多 Python 环境下命令绑定错误。</p></details>
+      <details><summary>4. 为什么文档契约测试应进入 CI？</summary><p class="answer">课程仓库的 lesson、reference、README 和索引是核心交付物，文档结构退化会直接破坏学习体验，因此必须像代码行为一样被自动检查。</p></details>
+      <details><summary>5. <code>fetch-depth: 0</code> 在本节 workflow 中解决什么问题？</summary><p class="answer">它保留完整 Git 历史，使 PR 场景可以比较 base 分支与当前 HEAD，避免浅克隆导致 diff 检查缺少参照。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：CI/CD 中 CI 和 CD 的边界是什么？</summary><p class="answer">CI 关注集成前后的自动验证，例如安装依赖、测试、静态检查、构建。CD 关注验证通过后的交付或部署，例如发布 artifact、部署 staging、灰度生产。本节只实现 CI，不包含自动部署。</p></details>
+      <details><summary>面试题 2：为什么 CI 必须从干净环境安装依赖？</summary><p class="answer">干净环境能暴露依赖声明缺失、隐式本地配置和未提交文件问题。如果 CI 复用开发者本机环境，它就无法证明仓库本身是可复现的。</p></details>
+      <details><summary>面试题 3：为什么生产仓库常用 required checks？</summary><p class="answer">required checks 将 CI 结果与分支保护绑定，未通过检查的 PR 不能合并。这样质量门禁从“建议执行”升级为“制度性阻断”。</p></details>
+      <details><summary>面试题 4：如何设计一个不会拖慢开发节奏的 CI？</summary><p class="answer">常见做法是分层执行：快速单元测试和契约测试作为 PR 必跑，耗时 e2e 或安全扫描按路径、标签或定时任务执行；同时使用缓存降低依赖安装时间。</p></details>
+      <details><summary>面试题 5：为什么要把文档检查纳入工程质量门禁？</summary><p class="answer">对课程、SDK、API 平台和开源项目而言，文档是用户接触系统的公共接口。文档链接、命令、结构错误会造成真实使用失败，因此应通过测试和 CI 保护。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0076-github-development-workflow.html">上一课：GitHub Development Workflow</a>
+        <a href="./0078-github-branch-protection-required-checks.html">下一课：GitHub Branch Protection</a>
+        <a href="../reference/0077-github-actions-ci-workflow-cheatsheet.html">查看速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

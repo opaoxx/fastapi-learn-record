@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0080 - GitHub CODEOWNERS Review Ownership</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0080</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0079-github-pull-request-template.html">上一课</a>
+        <a href="./0081-github-issue-templates.html">下一课</a>
+        <a href="../reference/0080-github-codeowners-review-ownership-cheatsheet.html">速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0080 GitHub CODEOWNERS：把文件审查责任写成可执行所有权规则</h1>
+      <p class="lead">本节新增 <code>.github/CODEOWNERS</code>，把后端源码、测试、课程讲义、速查页、学习记录、根文档和 GitHub 协作配置映射到对应 owner。PR template 解决“贡献者应说明什么”，CODEOWNERS 解决“谁应该审查什么”。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>GitHub CODEOWNERS
+├── 核心文件
+│   └── .github/CODEOWNERS
+├── 所有权映射
+│   ├── * -> @course-maintainers
+│   ├── /first_api/ -> @backend-maintainers
+│   ├── /tests/ -> @quality-maintainers
+│   ├── /lessons/ -> @course-maintainers
+│   ├── /reference/ -> @course-maintainers
+│   └── /.github/ -> @repository-maintainers
+├── 与协作链路关系
+│   ├── PR template: 提交者给证据
+│   ├── CODEOWNERS: GitHub 自动请求对应 owner review
+│   ├── CI: 自动验证行为和文档契约
+│   └── branch protection: 将 required review/checks 变成合并门禁
+└── 生产注意
+    ├── owner 必须是真实 GitHub 用户或组织 team
+    ├── 后写规则可覆盖前面更宽泛规则
+    ├── 大仓库需要按模块拆 owner
+    └── 课程仓库重点保护代码、测试、文档和导航</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>CODEOWNERS 是 GitHub 的路径到审查责任人的映射文件。创建 PR 后，GitHub 会根据变更文件路径匹配 <code>CODEOWNERS</code> 规则，并自动请求匹配 owner 审查。它把“这类文件该找谁看”从口头经验变成仓库级协作规则。</p>
+      <p>匹配机制近似路径模式匹配：左侧是文件或目录 pattern，右侧是一个或多个 GitHub 用户或团队。更具体的路径规则通常用于覆盖宽泛规则。本节先用 <code>*</code> 给全仓库设置默认课程维护者，再对 <code>first_api/</code>、<code>tests/</code>、<code>.github/</code> 等关键区域指定更合适的 owner。</p>
+      <p>CODEOWNERS 不是权限系统本身。它不会自动让 owner 拥有仓库权限，也不会让占位用户名生效。生产仓库必须把 <code>@course-maintainers</code> 等占位符替换成真实 GitHub 用户或组织 team，并在 branch protection 中启用 code owner review required，才能把 ownership 变成合并门禁。</p>
+      <table>
+        <thead><tr><th>文件区域</th><th>审查关注点</th><th>推荐 owner 类型</th></tr></thead>
+        <tbody>
+          <tr><td><code>first_api/</code></td><td>FastAPI 行为、服务边界、schema、依赖注入。</td><td>后端维护者。</td></tr>
+          <tr><td><code>tests/</code></td><td>回归覆盖、契约测试、测试隔离。</td><td>质量维护者。</td></tr>
+          <tr><td><code>lessons/</code></td><td>九段结构、代码精读、课程深度。</td><td>课程维护者。</td></tr>
+          <tr><td><code>reference/</code></td><td>速查准确性、导航一致性。</td><td>课程维护者。</td></tr>
+          <tr><td><code>.github/</code></td><td>CI、PR 模板、分支保护、owner 规则。</td><td>仓库治理维护者。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code># CODEOWNERS teaching template.</code></pre>
+      <p>首行说明这是教学模板。原因是本地仓库无法知道你 GitHub 组织里的真实用户名和 team slug。直接写占位 owner 时，必须在课程中说明生产使用前要替换。</p>
+
+      <pre><code># Replace these placeholder teams with real GitHub users or organization teams
+# before relying on automatic review requests.</code></pre>
+      <p>这两行是关键安全说明。若 owner 不存在或没有仓库权限，GitHub 不会产生有效审查请求。教学模板可以保存结构，生产落地必须替换成真实 owner。</p>
+
+      <pre><code>* @course-maintainers</code></pre>
+      <p><code>*</code> 是全仓库兜底规则。任何没有被更具体规则覆盖的文件，默认由课程维护者关注。没有兜底规则时，新目录可能完全没有 owner。</p>
+
+      <pre><code>/first_api/ @backend-maintainers</code></pre>
+      <p><code>/first_api/</code> 匹配后端示例项目。该目录包含 FastAPI app、router、schema、service、database 和 frontend 静态资源，改动可能影响运行行为，应由后端 owner 审查。</p>
+
+      <pre><code>/tests/ @quality-maintainers</code></pre>
+      <p><code>/tests/</code> 由质量维护者负责。测试文件不仅验证代码，还保护 OpenAPI、文档结构、CI、README 和 GitHub 协作规则。测试变更可能降低质量门槛，因此不能只由功能作者自审。</p>
+
+      <pre><code>/lessons/ @course-maintainers
+/reference/ @course-maintainers
+/learning-records/ @course-maintainers</code></pre>
+      <p>课程内容由课程维护者负责。lesson 决定深度，reference 决定复习效率，learning-records 决定进度追踪。三者缺一都会破坏 GitHub 学习体验。</p>
+
+      <pre><code>/README.md @repository-maintainers
+/DEVELOPMENT.md @repository-maintainers</code></pre>
+      <p>根入口文档由仓库维护者审查。README 是外部学习者第一入口，DEVELOPMENT 是贡献者维护入口；任何错误命令或断链都会影响新人上手。</p>
+
+      <pre><code>/.github/ @repository-maintainers</code></pre>
+      <p><code>.github/</code> 是协作治理目录，包含 CI、branch protection 文档、PR template 和 CODEOWNERS。该目录变更会影响整个协作流程，应由仓库治理 owner 审查。</p>
+
+      <pre><code>def test_codeowners_maps_repository_ownership() -&gt; None:
+    owners = Path(".github/CODEOWNERS").read_text(encoding="utf-8")</code></pre>
+      <p>文档契约测试读取 CODEOWNERS。这里不验证 GitHub 服务器是否启用 code owner review，因为那属于远程仓库设置；本地测试保护的是 owner 映射文件必须存在并保留核心路径。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>Contributor opens PR
+  -> GitHub computes changed files
+  -> GitHub reads .github/CODEOWNERS
+  -> Match each changed path against owner rules
+  -> Request reviews from matched owners
+  -> CI runs required checks
+  -> Branch protection evaluates:
+       required status check passed?
+       required code owner review approved?
+       conversations resolved?
+  -> merge allowed or blocked</code></pre>
+      <p>CODEOWNERS 处在“人类审查路由”层。它不决定测试是否通过，也不解释变更意图；它根据文件路径把 PR 送到合适 reviewer 面前。复杂项目中，这是避免错误 owner 审查关键文件的基础设施。</p>
+      <table>
+        <thead><tr><th>输入</th><th>处理</th><th>输出</th></tr></thead>
+        <tbody>
+          <tr><td>PR changed files</td><td>路径匹配 CODEOWNERS pattern。</td><td>匹配 owner 列表。</td></tr>
+          <tr><td>owner 列表</td><td>GitHub 发起 review request。</td><td>对应团队或用户进入 review 流程。</td></tr>
+          <tr><td>branch protection</td><td>检查 code owner review 是否满足。</td><td>允许或阻断合并。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>CODEOWNERS 与权限</td><td>写入 owner 就自动授权</td><td>CODEOWNERS 只请求审查，不授予仓库权限。</td></tr>
+          <tr><td>占位 owner</td><td>随便写 team 名也能生效</td><td>owner 必须是真实用户或组织 team，且有仓库访问权限。</td></tr>
+          <tr><td>CODEOWNERS 与 PR template</td><td>二者作用重复</td><td>PR template 收集证据；CODEOWNERS 路由 reviewer。</td></tr>
+          <tr><td>CODEOWNERS 与 CI</td><td>有 owner review 就不用测试</td><td>owner review 负责设计判断，CI 负责自动验证。</td></tr>
+          <tr><td>默认规则</td><td>只写具体目录即可</td><td>建议保留兜底 <code>*</code>，避免新文件无人负责。</td></tr>
+          <tr><td>.github 目录</td><td>只是配置文件，不重要</td><td>.github 影响 CI、模板、owner 和协作门禁，应重点审查。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>表现</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>owner 不存在</td><td>GitHub 不会发起有效 review request。</td><td>替换为真实 GitHub 用户或组织 team。</td></tr>
+          <tr><td>owner 没有权限</td><td>规则看似存在，但审查请求无效。</td><td>确认 owner 对仓库有 read 或更高权限。</td></tr>
+          <tr><td>路径模式写错</td><td>改了文件却没有匹配 owner。</td><td>使用以 <code>/</code> 开头的根路径规则保护关键目录。</td></tr>
+          <tr><td>缺少兜底 owner</td><td>新增目录无人审查。</td><td>添加 <code>* @course-maintainers</code> 作为默认规则。</td></tr>
+          <tr><td>未启用 code owner review required</td><td>owner 被请求但不是合并门禁。</td><td>在 branch protection 中要求 code owner review。</td></tr>
+          <tr><td>过度细分 owner</td><td>小改动需要过多审批，贡献体验变差。</td><td>教学仓库按高风险区域分 owner，不按每个小文件拆分。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学仓库</th><th>生产仓库</th></tr></thead>
+        <tbody>
+          <tr><td>owner 名称</td><td>使用占位 team 展示结构。</td><td>必须使用真实用户或组织 team。</td></tr>
+          <tr><td>审查强制</td><td>文档说明 + 契约测试保护文件。</td><td>branch protection 强制 code owner review。</td></tr>
+          <tr><td>模块划分</td><td>后端、测试、课程、根文档、GitHub 配置。</td><td>按服务、平台、数据、安全、合规、发布系统拆分。</td></tr>
+          <tr><td>风险重点</td><td>学习路径、课程质量、测试门禁。</td><td>线上稳定性、数据安全、权限、客户影响。</td></tr>
+          <tr><td>自动化程度</td><td>用文档契约测试保护 CODEOWNERS 文件。</td><td>结合 rulesets、CODEOWNERS、CI、policy bot 和审计系统。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. CODEOWNERS 解决什么问题？</summary><p class="answer">它把文件路径映射到负责审查的用户或团队，让 PR 自动请求合适 owner review，避免关键文件无人或错人审查。</p></details>
+      <details><summary>2. CODEOWNERS 会自动授予仓库权限吗？</summary><p class="answer">不会。它只定义审查请求规则。owner 必须已经是有仓库访问权限的真实 GitHub 用户或团队。</p></details>
+      <details><summary>3. 为什么本节文件里要保留 <code>* @course-maintainers</code>？</summary><p class="answer">这是兜底规则，保证新增或未细分路径仍有默认课程维护者负责。</p></details>
+      <details><summary>4. CODEOWNERS 如何和 branch protection 联动？</summary><p class="answer">GitHub 先根据 CODEOWNERS 请求 owner review；branch protection 若启用 required code owner review，则没有 owner 批准的 PR 不能合并。</p></details>
+      <details><summary>5. 为什么 <code>.github/</code> 目录需要专门 owner？</summary><p class="answer">因为它控制 CI、PR 模板、分支保护说明和 CODEOWNERS，本质上影响整个仓库协作治理。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：CODEOWNERS、reviewer、approver 有什么区别？</summary><p class="answer">CODEOWNERS 是路径到责任人的规则；reviewer 是被请求审查的人；approver 是实际批准 PR 的人。开启 code owner required review 后，匹配 owner 的批准才满足该门禁。</p></details>
+      <details><summary>面试题 2：为什么大仓库需要 CODEOWNERS？</summary><p class="answer">大仓库中模块多、风险边界不同，普通 reviewer 很难覆盖全部上下文。CODEOWNERS 能把数据库、安全、前端、后端、文档等改动路由到懂该区域的人。</p></details>
+      <details><summary>面试题 3：为什么 CODEOWNERS 不能替代测试？</summary><p class="answer">owner review 关注设计合理性、风险和领域知识；测试负责可重复验证行为。人类审查不能稳定覆盖所有回归路径。</p></details>
+      <details><summary>面试题 4：如何设计课程仓库的 owner 边界？</summary><p class="answer">应围绕交付物划分：后端行为、测试契约、课程讲义、速查页、学习记录、根文档和 GitHub 治理文件。每类文件的审查重点不同。</p></details>
+      <details><summary>面试题 5：CODEOWNERS 文件中的占位团队有什么风险？</summary><p class="answer">如果占位 team 不存在或无权限，GitHub 不会产生有效审查请求。生产使用前必须替换为真实 GitHub 用户或组织 team。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0079-github-pull-request-template.html">上一课：GitHub Pull Request Template</a>
+        <a href="./0081-github-issue-templates.html">下一课：GitHub Issue Templates</a>
+        <a href="../reference/0080-github-codeowners-review-ownership-cheatsheet.html">查看速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>

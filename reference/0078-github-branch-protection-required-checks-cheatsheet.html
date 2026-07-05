@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>GitHub Branch Protection Required Checks Cheat Sheet</title><link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+  <nav class="course-nav" aria-label="速查表导航"><span class="nav-title">Reference 0078</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0078-github-branch-protection-required-checks.html">回到第 78 课</a><a href="./0077-github-actions-ci-workflow-cheatsheet.html">上一张速查</a><a href="./0079-github-pull-request-template-cheatsheet.html">下一张速查</a></span></nav>
+  <header><p class="eyebrow">Reference 0078</p><h1>GitHub Branch Protection Required Checks 速查</h1><p class="lead">把 CI 成功结果变成 PR 合并前必须满足的硬门禁。</p></header>
+  <h2>核心文件</h2><pre><code>.github/BRANCH_PROTECTION.md</code></pre>
+  <h2>必配规则</h2><ul><li>Require a pull request before merging.</li><li>Require status checks to pass before merging.</li><li>Require branches to be up to date before merging.</li><li>Require conversation resolution before merging.</li><li>Block force pushes.</li><li>Block branch deletion.</li></ul>
+  <h2>required check 名称</h2><pre><code>pytest and documentation contracts</code></pre>
+  <h2>保护范围</h2><pre><code>provider HTTP behavior tests
+course documentation contract tests
+full pytest suite
+committed diff whitespace checks</code></pre>
+  <h2>测试保护</h2><pre><code>test_branch_protection_documents_required_status_check</code></pre>
+  <nav class="course-nav bottom" aria-label="速查表底部导航"><span class="nav-title">继续学习</span><span class="nav-links"><a href="../index.html">课程目录</a><a href="../lessons/0078-github-branch-protection-required-checks.html">回到第 78 课</a><a href="./0077-github-actions-ci-workflow-cheatsheet.html">上一张速查</a><a href="./0079-github-pull-request-template-cheatsheet.html">下一张速查</a></span></nav>
+</main></body></html>

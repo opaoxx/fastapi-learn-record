@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesson 0078 - GitHub Branch Protection Required Checks</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+  <main>
+    <nav class="course-nav" aria-label="课程导航">
+      <span class="nav-title">Lesson 0078</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0077-github-actions-ci-workflow.html">上一课</a>
+        <a href="./0079-github-pull-request-template.html">下一课</a>
+        <a href="../reference/0078-github-branch-protection-required-checks-cheatsheet.html">速查</a>
+      </span>
+    </nav>
+
+    <header>
+      <p class="eyebrow">Final Review + CSDN Deep Dive</p>
+      <h1>0078 GitHub Branch Protection：把 CI 结果升级为 PR 合并硬门禁</h1>
+      <p class="lead">本节新增 <code>.github/BRANCH_PROTECTION.md</code>，把 GitHub 仓库页面中的分支保护规则沉淀为可审查、可测试、可复用的工程文档。上一节 CI 负责“自动检查”，本节 required checks 负责“未通过不得合并”。</p>
+    </header>
+
+    <section>
+      <h2>① 本节核心知识框架</h2>
+      <pre><code>GitHub Branch Protection
+├── 目标分支
+│   └── main
+├── 协作约束
+│   ├── Require a pull request before merging
+│   ├── Require conversation resolution
+│   ├── Block force pushes
+│   └── Block branch deletion
+├── 质量门禁
+│   ├── Require status checks to pass before merging
+│   ├── Require branches to be up to date before merging
+│   └── Required check: pytest and documentation contracts
+├── 仓库文档化
+│   ├── .github/BRANCH_PROTECTION.md
+│   ├── README.md
+│   ├── DEVELOPMENT.md
+│   └── tests/test_course_docs_contract.py
+└── 核心目标
+    ├── 防止红 CI 被合并
+    ├── 防止绕过 PR 审查
+    ├── 防止 main 被强推破坏
+    └── 让开源课程仓库具备可维护治理边界</code></pre>
+    </section>
+
+    <section>
+      <h2>② 核心概念底层原理</h2>
+      <p>Branch protection 是 GitHub 对分支写入操作设置的服务器端规则。它不改变代码运行逻辑，而是改变“谁能把什么状态的提交写入 main”。没有分支保护时，CI 即使失败，也只是一个红色提示；开启 required checks 后，失败的 CI 会成为合并阻断条件。</p>
+      <p>required status check 的底层对象是某个 commit 上的检查结果。GitHub Actions job 结束后会把结论写回对应 commit：success、failure、cancelled、skipped 等。分支保护读取这些状态，判断 PR 是否允许 merge。也就是说，CI 负责产生信号，branch protection 负责消费信号并执行治理规则。</p>
+      <p>本仓库的 required check 名称是 <code>pytest and documentation contracts</code>。它来自上一节 <code>.github/workflows/ci.yml</code> 中 job 的 <code>name</code>。如果 workflow 改名、job 改名或 required check 配置错名，GitHub 可能会一直等待不存在的检查，导致 PR 无法合并。</p>
+      <table>
+        <thead><tr><th>机制</th><th>作用层级</th><th>失败后果</th></tr></thead>
+        <tbody>
+          <tr><td>pytest</td><td>代码行为验证</td><td>进程返回非 0，CI step 失败。</td></tr>
+          <tr><td>GitHub Actions job</td><td>自动化执行层</td><td>commit 上产生失败 check。</td></tr>
+          <tr><td>Required status checks</td><td>分支治理层</td><td>PR merge 按钮被阻断。</td></tr>
+          <tr><td>Branch protection</td><td>仓库写入策略</td><td>禁止绕过 PR、强推或删除主分支。</td></tr>
+        </tbody>
+      </table>
+      <p>教学仓库不能通过普通文件直接启用 GitHub 分支保护，因为该设置保存在 GitHub 服务器侧。可版本化的最佳做法是把规则写进 <code>.github/BRANCH_PROTECTION.md</code>，再用文档契约测试保护关键字段。生产仓库可以进一步用 Terraform、GitHub API 或组织级 rulesets 自动化配置。</p>
+    </section>
+
+    <section>
+      <h2>③ 全套代码逐行精读解析</h2>
+      <pre><code># Branch Protection Required Checks</code></pre>
+      <p>标题直接点明文档职责：不是泛泛介绍 GitHub 设置，而是记录本仓库 required checks 的精确配置。文档名称放在 <code>.github/</code> 下，是因为该目录天然承载仓库协作、模板、workflow 等 GitHub 相关资产。</p>
+
+      <pre><code>This repository uses GitHub Actions as a course quality gate.</code></pre>
+      <p>第一句定义分支保护的前置条件：本仓库已经有 GitHub Actions 质量门禁。若没有 CI，required checks 没有可消费的状态信号，branch protection 只能约束 PR 流程，无法判断代码和课程文档是否合格。</p>
+
+      <pre><code>Configure branch protection for `main` so pull requests cannot be merged until the CI job passes.</code></pre>
+      <p>这里明确目标分支和治理目标。<code>main</code> 是默认发布分支，保护 main 等价于保护 GitHub 访问者看到的默认项目状态。若只保护临时分支，课程首页、README 和代码仍可能被破坏后直接进入主线。</p>
+
+      <pre><code>1. Require a pull request before merging.</code></pre>
+      <p>要求所有改动通过 PR 进入 main。没有这一条，维护者可以直接 push 到 main，CI 仍会运行，但失败结果只会在破坏已经进入主分支后出现。</p>
+
+      <pre><code>2. Require status checks to pass before merging.</code></pre>
+      <p>把 CI 结果接入合并门禁。它是本节核心规则：测试失败、文档契约失败或 whitespace 检查失败时，PR 不允许合并。</p>
+
+      <pre><code>3. Require branches to be up to date before merging.</code></pre>
+      <p>要求 PR 分支基于最新 main 重新验证。否则 A、B 两个 PR 分别通过 CI，但合并后组合状态可能失败。该规则能减少“单独正确，合并后错误”的集成风险。</p>
+
+      <pre><code>4. Require conversation resolution before merging.</code></pre>
+      <p>要求 review 讨论全部解决。课程仓库中，评论可能指出讲义链接、术语、代码解释或测试缺口；未解决评论不应被静默带入 main。</p>
+
+      <pre><code>5. Block force pushes.
+6. Block branch deletion.</code></pre>
+      <p>阻止对 main 的破坏性写入。force push 会重写历史，branch deletion 会删除主分支引用。教学仓库虽然不是线上服务，但学习者依赖稳定历史和入口页，因此也应禁止这两类操作。</p>
+
+      <pre><code>Use this required status check name:
+
+```text
+pytest and documentation contracts
+```</code></pre>
+      <p>这是最容易配错的字段。required check 必须匹配 GitHub Actions job 展示名称。本仓库 CI job 名为 <code>pytest and documentation contracts</code>，它同时覆盖 provider 行为测试、文档契约测试、全量测试和 whitespace 检查。</p>
+
+      <pre><code>def test_branch_protection_documents_required_status_check() -&gt; None:
+    protection = Path(".github/BRANCH_PROTECTION.md").read_text(encoding="utf-8")</code></pre>
+      <p>文档契约测试读取分支保护说明。因为 GitHub 服务器侧设置无法从本地仓库直接断言，所以本节测试保护的是“仓库中必须存在精确配置说明”。这能避免未来贡献者删掉 required check 名称或关键规则。</p>
+
+      <pre><code>assert "pytest and documentation contracts" in protection
+assert "Require status checks to pass before merging" in protection
+assert "Block force pushes" in protection</code></pre>
+      <p>断言只锁关键治理骨架，不锁每一句解释。这样文档仍可维护、可扩写，但不能丢掉主分支保护、required check 和破坏性操作限制。</p>
+    </section>
+
+    <section>
+      <h2>④ 核心机制运行全流程拆解</h2>
+      <pre><code>Contributor opens PR
+  -> GitHub Actions runs Course CI
+     -> job: pytest and documentation contracts
+        -> provider tests
+        -> docs contract tests
+        -> full pytest
+        -> git diff --check
+  -> GitHub writes check result to PR commit
+  -> Branch protection reads required check
+     -> success: merge allowed after other rules pass
+     -> failure: merge blocked
+     -> missing: merge blocked because required check has no result</code></pre>
+      <p>关键调用链是“job 产出状态，分支保护消费状态”。分支保护本身不懂 pytest，也不解析 HTML 课程结构；它只关心 required check 是否在当前 commit 上成功。具体检查逻辑仍由 CI workflow 和测试文件承担。</p>
+      <table>
+        <thead><tr><th>数据</th><th>来源</th><th>消费者</th><th>意义</th></tr></thead>
+        <tbody>
+          <tr><td>PR head SHA</td><td>贡献者分支</td><td>GitHub Actions</td><td>决定 CI 检查哪一次提交。</td></tr>
+          <tr><td>job conclusion</td><td>CI runner</td><td>GitHub checks API</td><td>记录 success 或 failure。</td></tr>
+          <tr><td>required check name</td><td>branch protection 设置</td><td>merge gate</td><td>决定必须等待哪个检查。</td></tr>
+          <tr><td>merge permission</td><td>branch protection 规则汇总</td><td>GitHub UI/API</td><td>决定 PR 是否能进入 main。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑤ 重难点、易混淆点对比辨析</h2>
+      <table>
+        <thead><tr><th>易混点</th><th>错误理解</th><th>正确理解</th></tr></thead>
+        <tbody>
+          <tr><td>CI 与 required checks</td><td>配置 CI 就等于禁止失败合并</td><td>CI 只产生结果；required checks 才把结果变成合并阻断。</td></tr>
+          <tr><td>job name 与 workflow name</td><td>required check 写 workflow 名称即可</td><td>通常应匹配具体 job 展示名称，本仓库是 <code>pytest and documentation contracts</code>。</td></tr>
+          <tr><td>Require up to date</td><td>只是浪费时间</td><td>它防止 PR 基于旧 main 通过后，与最新 main 组合失败。</td></tr>
+          <tr><td>文档化保护规则</td><td>没有真实启用价值</td><td>GitHub 设置虽在服务器侧，但文档化能让规则可审查、可迁移、可测试。</td></tr>
+          <tr><td>Force push</td><td>高级维护者才会用，不必禁</td><td>主分支 force push 会重写学习历史，应默认禁止。</td></tr>
+          <tr><td>教学仓库</td><td>不需要分支治理</td><td>课程页面和代码同样是公共交付物，破坏 main 会影响所有学习者。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑥ 开发常见报错+坑点+解决方案</h2>
+      <table>
+        <thead><tr><th>坑点</th><th>表现</th><th>解决方案</th></tr></thead>
+        <tbody>
+          <tr><td>required check 名称写错</td><td>PR 一直等待不存在的检查。</td><td>打开 PR checks 面板复制 job 展示名称，保持与 <code>.github/BRANCH_PROTECTION.md</code> 一致。</td></tr>
+          <tr><td>只开 CI，不开 required checks</td><td>CI 失败但仍可点击 merge。</td><td>在 branch protection 中启用 Require status checks to pass before merging。</td></tr>
+          <tr><td>未要求分支最新</td><td>多个 PR 单独通过，合并后主分支失败。</td><td>启用 Require branches to be up to date before merging。</td></tr>
+          <tr><td>允许直接 push main</td><td>绕过 PR review 和合并前 CI。</td><td>启用 Require a pull request before merging，并限制管理员绕过规则。</td></tr>
+          <tr><td>允许 force push</td><td>历史被重写，学习记录和回滚依据丢失。</td><td>禁用 force pushes，必要迁移通过新分支和 PR 处理。</td></tr>
+          <tr><td>规则只存在口头说明</td><td>换维护者后配置漂移。</td><td>把规则写入 <code>.github/BRANCH_PROTECTION.md</code>，并用文档契约测试保护。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑦ 生产环境 vs 教学环境 核心差异</h2>
+      <table>
+        <thead><tr><th>维度</th><th>教学仓库</th><th>生产仓库</th></tr></thead>
+        <tbody>
+          <tr><td>规则落地</td><td>用文档记录 GitHub UI 应配置项。</td><td>用 Terraform、GitHub API、Rulesets 或组织策略自动下发。</td></tr>
+          <tr><td>required checks</td><td>一个核心 CI job 覆盖测试和文档契约。</td><td>拆分 lint、unit、integration、security、build、deploy preview。</td></tr>
+          <tr><td>管理员绕过</td><td>建议尽量不绕过，保持学习主线稳定。</td><td>通常受审计、审批和 incident 流程约束。</td></tr>
+          <tr><td>合并策略</td><td>PR + CI 成功即可满足基本维护。</td><td>可能要求 CODEOWNERS、签名提交、线性历史、变更审批。</td></tr>
+          <tr><td>失败处理</td><td>修复测试、文档、导航或 whitespace 后重跑。</td><td>可能触发 rollback、hotfix、release freeze 或事故复盘。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>⑧ 课后记忆习题+标准答案</h2>
+      <details open><summary>1. CI 失败但 PR 仍能合并，通常缺了什么？</summary><p class="answer">通常缺少 branch protection 中的 Require status checks to pass before merging，或 required check 名称没有正确匹配 CI job。</p></details>
+      <details><summary>2. 本仓库 required status check 的名称是什么？</summary><p class="answer"><code>pytest and documentation contracts</code>，它来自 <code>.github/workflows/ci.yml</code> 中 CI job 的显示名称。</p></details>
+      <details><summary>3. 为什么要要求 branch up to date？</summary><p class="answer">因为 PR 基于旧 main 通过 CI，并不代表它与最新 main 合并后仍然通过。要求更新后重跑可以发现组合冲突和集成回归。</p></details>
+      <details><summary>4. 为什么要阻止 force push 到 main？</summary><p class="answer">force push 会重写主分支历史，破坏学习记录、回滚依据和协作信任。公共课程仓库应默认禁止。</p></details>
+      <details><summary>5. 为什么本节要把 GitHub UI 设置写进仓库文件？</summary><p class="answer">因为 GitHub 分支保护设置保存在服务器侧，普通 clone 看不到。写入仓库文档后，规则可以被审查、复制、迁移，并由文档契约测试保护关键字段。</p></details>
+    </section>
+
+    <section>
+      <h2>⑨ 面试高频真题+解析</h2>
+      <details open><summary>面试题 1：CI 通过和 PR 可合并之间是什么关系？</summary><p class="answer">CI 通过只是产生 success check；PR 可合并还取决于 branch protection、review、冲突状态、conversation resolution、required checks 是否全部满足。CI 是信号源，分支保护是合并判定器。</p></details>
+      <details><summary>面试题 2：required status check 名称为什么容易出问题？</summary><p class="answer">因为 GitHub 显示的 check 名称可能来自 workflow、job、matrix 组合或外部应用。配置时如果写错名称，GitHub 会等待一个不存在的检查，导致 PR 永远不能满足规则。</p></details>
+      <details><summary>面试题 3：为什么生产环境会把分支保护配置代码化？</summary><p class="answer">代码化可以避免 UI 手工配置漂移，支持审计、review、跨仓库复用和灾难恢复。常见方式包括 Terraform、GitHub API、组织 rulesets 或内部平台。</p></details>
+      <details><summary>面试题 4：为什么文档仓库也要 required checks？</summary><p class="answer">文档仓库的交付物是阅读路径、命令和知识结构。错误链接、过期命令和破坏的索引会直接影响用户，因此文档契约测试应作为 required check 的一部分。</p></details>
+      <details><summary>面试题 5：如何处理紧急修复与 required checks 的冲突？</summary><p class="answer">成熟团队会有受审计的紧急流程，例如临时 hotfix 分支、最小化测试集、事后补全测试与复盘。默认不应随意关闭 required checks，否则规则会失去治理可信度。</p></details>
+    </section>
+
+    <nav class="course-nav bottom" aria-label="课程底部导航">
+      <span class="nav-title">继续学习</span>
+      <span class="nav-links">
+        <a href="../index.html">课程目录</a>
+        <a href="./0077-github-actions-ci-workflow.html">上一课：GitHub Actions CI Workflow</a>
+        <a href="./0079-github-pull-request-template.html">下一课：GitHub Pull Request Template</a>
+        <a href="../reference/0078-github-branch-protection-required-checks-cheatsheet.html">查看速查</a>
+      </span>
+    </nav>
+  </main>
+</body>
+</html>
